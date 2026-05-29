@@ -35,9 +35,9 @@ SCOPES       = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
-BATCH_SIZE   = 10    # symbols per yf.download() batch
-SLEEP_BATCH  = 2     # seconds between batches
-SLEEP_INFO   = 0.3   # seconds between .info calls
+BATCH_SIZE   = 5     # smaller batches
+SLEEP_BATCH  = 8     # longer wait between batches
+SLEEP_INFO   = 3     # longer wait between .info calls
 
 # ══════════════════════════════════════════════
 # GOOGLE SHEETS AUTH
@@ -165,41 +165,44 @@ def get_xirr(sym, trades, current_price):
 # BATCH PRICE FETCH — fast, minimal API calls
 # ══════════════════════════════════════════════
 def fetch_prices_batch(symbols):
-    """
-    Use yf.download() to get closing prices for all symbols at once.
-    Much faster than calling .info per symbol.
-    Returns dict: { sym: latest_close_price }
-    """
     prices = {}
     ns_syms = [s + ".NS" for s in symbols]
 
     for i in range(0, len(ns_syms), BATCH_SIZE):
-        batch = ns_syms[i:i+BATCH_SIZE]
-        batch_orig = symbols[i:i+BATCH_SIZE]
-        try:
-            df = yf.download(
-                tickers  = batch,
-                period   = "5d",
-                interval = "1d",
-                group_by = "ticker",
-                auto_adjust = True,
-                progress = False,
-                threads  = True
-            )
-            for sym, ns in zip(batch_orig, batch):
-                try:
-                    if len(batch) == 1:
-                        close = df["Close"].dropna().iloc[-1]
-                    else:
-                        close = df[ns]["Close"].dropna().iloc[-1]
-                    prices[sym] = round(float(close), 2)
-                except:
-                    prices[sym] = None
-            log.info(f"Batch {i//BATCH_SIZE+1}: fetched {len(batch)} prices")
-        except Exception as e:
-            log.warning(f"Batch download failed: {e}")
-            for sym in batch_orig:
-                prices[sym] = None
+        batch     = ns_syms[i:i+BATCH_SIZE]
+        batch_orig= symbols[i:i+BATCH_SIZE]
+
+        for attempt in range(3):
+            try:
+                df = yf.download(
+                    tickers     = batch,
+                    period      = "5d",
+                    interval    = "1d",
+                    group_by    = "ticker",
+                    auto_adjust = True,
+                    progress    = False,
+                    threads     = False   # threads=False more reliable on CI
+                )
+                for sym, ns in zip(batch_orig, batch):
+                    try:
+                        close = df[ns]["Close"].dropna().iloc[-1] if len(batch) > 1 else df["Close"].dropna().iloc[-1]
+                        prices[sym] = round(float(close), 2)
+                    except:
+                        prices[sym] = None
+                log.info(f"Batch {i//BATCH_SIZE+1}: fetched {len(batch)} prices")
+                break  # success — exit retry loop
+
+            except Exception as e:
+                if "429" in str(e) or "Too Many" in str(e):
+                    wait = (attempt + 1) * 20
+                    log.warning(f"Batch rate limited, waiting {wait}s (attempt {attempt+1}/3)")
+                    time.sleep(wait)
+                else:
+                    log.warning(f"Batch failed: {e}")
+                    for sym in batch_orig:
+                        prices[sym] = None
+                    break
+
         time.sleep(SLEEP_BATCH)
 
     return prices
@@ -207,37 +210,42 @@ def fetch_prices_batch(symbols):
 # ══════════════════════════════════════════════
 # FETCH FUNDAMENTALS — one .info call per symbol
 # ══════════════════════════════════════════════
-def fetch_fundamentals(sym):
-    """Single .info call — returns dict of fundamentals."""
-    try:
-        info = yf.Ticker(sym + ".NS").info
-        mcap_raw = info.get("marketCap", 0) or 0
-        mcap_cr  = round(mcap_raw / 10_000_000, 0) if mcap_raw else None
-
-        ebit = info.get("ebit", 0) or 0
-        ta   = info.get("totalAssets", 0) or 0
-        tl   = info.get("totalCurrentLiabilities", 0) or 0
-        roce = round(ebit/(ta-tl)*100, 2) if (ta-tl) > 0 else None
-
-        return {
-            "sector":    info.get("sector",""),
-            "industry":  info.get("industry",""),
-            "high52":    info.get("fiftyTwoWeekHigh") or None,
-            "low52":     info.get("fiftyTwoWeekLow") or None,
-            "mcap_cr":   mcap_cr,
-            "pe":        round(info.get("trailingPE",0),2)        if info.get("trailingPE")        else None,
-            "eps":       round(info.get("trailingEps",0),2)       if info.get("trailingEps")       else None,
-            "bv":        round(info.get("bookValue",0),2)         if info.get("bookValue")         else None,
-            "pb":        round(info.get("priceToBook",0),2)       if info.get("priceToBook")       else None,
-            "div":       round(info.get("dividendYield",0)*100,2) if info.get("dividendYield")     else None,
-            "roe":       round(info.get("returnOnEquity",0)*100,2)if info.get("returnOnEquity")    else None,
-            "roce":      roce,
-            "debt_eq":   round(info.get("debtToEquity",0),2)      if info.get("debtToEquity")      else None,
-            "beta":      round(info.get("beta",0),2)              if info.get("beta")              else None,
-        }
-    except Exception as e:
-        log.warning(f"  fundamentals failed {sym}: {e}")
-        return {}
+def fetch_fundamentals(sym, retries=3):
+    for attempt in range(retries):
+        try:
+            info = yf.Ticker(sym + ".NS").info
+            mcap_raw = info.get("marketCap", 0) or 0
+            mcap_cr  = round(mcap_raw / 10_000_000, 0) if mcap_raw else None
+            ebit = info.get("ebit", 0) or 0
+            ta   = info.get("totalAssets", 0) or 0
+            tl   = info.get("totalCurrentLiabilities", 0) or 0
+            roce = round(ebit/(ta-tl)*100, 2) if (ta-tl) > 0 else None
+            return {
+                "sector":   info.get("sector",""),
+                "industry": info.get("industry",""),
+                "high52":   info.get("fiftyTwoWeekHigh") or None,
+                "low52":    info.get("fiftyTwoWeekLow") or None,
+                "mcap_cr":  mcap_cr,
+                "pe":       round(info.get("trailingPE",0),2)         if info.get("trailingPE")        else None,
+                "eps":      round(info.get("trailingEps",0),2)        if info.get("trailingEps")       else None,
+                "bv":       round(info.get("bookValue",0),2)          if info.get("bookValue")         else None,
+                "pb":       round(info.get("priceToBook",0),2)        if info.get("priceToBook")       else None,
+                "div":      round(info.get("dividendYield",0)*100,2)  if info.get("dividendYield")     else None,
+                "roe":      round(info.get("returnOnEquity",0)*100,2) if info.get("returnOnEquity")    else None,
+                "roce":     roce,
+                "debt_eq":  round(info.get("debtToEquity",0),2)       if info.get("debtToEquity")      else None,
+                "beta":     round(info.get("beta",0),2)               if info.get("beta")              else None,
+            }
+        except Exception as e:
+            if "429" in str(e) or "Too Many" in str(e):
+                wait = (attempt + 1) * 15
+                log.warning(f"  Rate limited {sym}, waiting {wait}s (attempt {attempt+1}/{retries})")
+                time.sleep(wait)
+            else:
+                log.warning(f"  fundamentals failed {sym}: {e}")
+                return {}
+    log.warning(f"  fundamentals failed {sym}: all retries exhausted")
+    return {}
 
 def fetch_rev_growth(sym):
     """Separate call for revenue growth — uses financials endpoint."""
