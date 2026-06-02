@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 SIDDEGOWDA PORTFOLIO — GitHub Actions Auto-Updater
-Runs daily after NSE market close (Mon-Fri 16:00 IST)
+Runs daily after NSE market close (Mon-Fri)
 """
 
 import os
@@ -30,14 +30,14 @@ log = logging.getLogger(__name__)
 # ══════════════════════════════════════════════
 # CONFIG
 # ══════════════════════════════════════════════
-SHEET_ID     = os.environ.get("SHEET_ID", "")
-SCOPES       = [
+SHEET_ID   = os.environ.get("SHEET_ID", "")
+SCOPES     = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
-BATCH_SIZE   = 5     # smaller batches
-SLEEP_BATCH  = 8     # longer wait between batches
-SLEEP_INFO   = 3     # longer wait between .info calls
+BATCH_SIZE  = 5
+SLEEP_BATCH = 8
+SLEEP_INFO  = 3
 
 # ══════════════════════════════════════════════
 # GOOGLE SHEETS AUTH
@@ -51,13 +51,12 @@ def get_gspread_client():
     return gspread.authorize(creds)
 
 # ══════════════════════════════════════════════
-# READ SYMBOLS FROM SHEET
+# READ SYMBOLS
 # ══════════════════════════════════════════════
 def read_symbols(sh):
     skip = {"TOTAL","SYMBOL","SUM","SUBTOTAL","GRAND","NA","N/A",""}
     symbols = []
 
-    # Portfolio col A
     try:
         pws  = sh.worksheet("Portfolio")
         rows = pws.get_all_values()[1:]
@@ -69,7 +68,6 @@ def read_symbols(sh):
     except Exception as e:
         log.warning(f"Could not read Portfolio tab: {e}")
 
-    # Trade Log col A (symbol col in new structure)
     try:
         tws        = sh.worksheet("Trade Log")
         trade_rows = tws.get_all_values()[1:]
@@ -84,11 +82,11 @@ def read_symbols(sh):
     return symbols
 
 # ══════════════════════════════════════════════
-# READ TRADES FOR XIRR + AVG BUY
+# READ TRADES
 # ══════════════════════════════════════════════
 def read_trades(sh):
     try:
-        tws    = sh.worksheet("Trade Log")
+        tws = sh.worksheet("Trade Log")
         return tws.get_all_values()[1:]
     except:
         return []
@@ -120,7 +118,7 @@ def compute_xirr(cashflows, dates):
         return None
     rate = 0.1
     for _ in range(100):
-        t0  = dates[0].toordinal()
+        t0 = dates[0].toordinal()
         try:
             fv  = sum(cf / (1+rate)**((d.toordinal()-t0)/365.25) for cf,d in zip(cashflows,dates))
             dfv = sum(-((d.toordinal()-t0)/365.25)*cf / (1+rate)**((d.toordinal()-t0)/365.25+1) for cf,d in zip(cashflows,dates))
@@ -162,15 +160,126 @@ def get_xirr(sym, trades, current_price):
     return round(r*100, 2) if r else None
 
 # ══════════════════════════════════════════════
-# BATCH PRICE FETCH — fast, minimal API calls
+# SECTOR CLASSIFICATION
+# ══════════════════════════════════════════════
+FINANCIAL_SECTORS = {
+    "banks", "bank", "nbfc", "insurance", "financial services",
+    "capital markets", "diversified financials",
+    "thrifts & mortgage finance", "consumer finance",
+    "asset management", "mortgage finance"
+}
+
+FINANCIAL_KEYWORDS = {
+    "BANK", "FIN", "FINCORP", "FINSERV", "CAPITAL", "INSURANCE",
+    "HOUSING", "NBFC", "AMC", "INVEST", "WEALTH", "MONEY", "CREDIT",
+    "LENDING", "MICRO", "GOLD", "MUTHOOT", "MANAPPURAM", "BAJAJFINSV",
+    "BAJFINANCE", "CHOLAFIN", "SBICARD", "SBILIFE", "HDFCLIFE",
+    "HDFCAMC", "STARHEALTH", "JIOFIN", "NUVAMA", "MOTILALOFS",
+    "SHRIRAMFIN", "SUNDARMFIN", "TATAINVEST", "JMFINANCIL", "ARMANFIN",
+    "FIVESTAR", "AAVAS", "APTUS", "PNBHOUSING", "UJJIVANSFB",
+    "EQUITASBNK", "BANDHANBNK", "IDFCFIRSTB", "CUB", "KTKBANK",
+    "GEOJITFSL", "5PAISA", "ANGELONE", "CHOLAHLDNG"
+}
+
+def is_financial_stock(sym, sector="", industry=""):
+    sym_upper     = sym.upper()
+    sector_lower  = sector.lower()
+    industry_lower= industry.lower()
+    for fs in FINANCIAL_SECTORS:
+        if fs in sector_lower or fs in industry_lower:
+            return True
+    for kw in FINANCIAL_KEYWORDS:
+        if kw in sym_upper:
+            return True
+    return False
+
+# ══════════════════════════════════════════════
+# FETCH FUNDAMENTALS — with retry + sector logic
+# ══════════════════════════════════════════════
+def fetch_fundamentals(sym, retries=3):
+    for attempt in range(retries):
+        try:
+            tk   = yf.Ticker(sym + ".NS")
+            info = tk.info
+
+            mcap_raw = info.get("marketCap", 0) or 0
+            mcap_cr  = round(mcap_raw / 10_000_000, 0) if mcap_raw else None
+
+            ebit = info.get("ebit", 0) or 0
+            ta   = info.get("totalAssets", 0) or 0
+            tl   = info.get("totalCurrentLiabilities", 0) or 0
+            roce = round(ebit/(ta-tl)*100, 2) if (ta-tl) > 0 else None
+
+            sector   = info.get("sector", "")
+            industry = info.get("industry", "")
+            is_fin   = is_financial_stock(sym, sector, industry)
+
+            roa           = round(info.get("returnOnAssets", 0)*100, 2) if info.get("returnOnAssets")  else None
+            current_ratio = round(info.get("currentRatio", 0), 2)       if info.get("currentRatio")    else None
+            quick_ratio   = round(info.get("quickRatio", 0), 2)         if info.get("quickRatio")      else None
+            book_value    = round(info.get("bookValue", 0), 2)          if info.get("bookValue")       else None
+            price_book    = round(info.get("priceToBook", 0), 2)        if info.get("priceToBook")     else None
+
+            # Debt/Equity only for non-financials
+            debt_eq = None
+            if not is_fin:
+                debt_eq = round(info.get("debtToEquity", 0), 2) if info.get("debtToEquity") else None
+
+            return {
+                "sector":        sector,
+                "industry":      industry,
+                "is_financial":  is_fin,
+                "high52":        info.get("fiftyTwoWeekHigh") or None,
+                "low52":         info.get("fiftyTwoWeekLow")  or None,
+                "mcap_cr":       mcap_cr,
+                "pe":            round(info.get("trailingPE",     0), 2) if info.get("trailingPE")        else None,
+                "eps":           round(info.get("trailingEps",    0), 2) if info.get("trailingEps")       else None,
+                "bv":            book_value,
+                "pb":            price_book,
+                "div":           round(info.get("dividendYield",  0)*100, 2) if info.get("dividendYield") else None,
+                "roe":           round(info.get("returnOnEquity", 0)*100, 2) if info.get("returnOnEquity")else None,
+                "roa":           roa,
+                "roce":          roce,
+                "debt_eq":       debt_eq,
+                "current_ratio": current_ratio,
+                "quick_ratio":   quick_ratio,
+                "beta":          round(info.get("beta", 0), 2)               if info.get("beta")          else None,
+                "total_assets":  round(ta / 10_000_000, 0)                   if ta                        else None,
+            }
+
+        except Exception as e:
+            if "429" in str(e) or "Too Many" in str(e):
+                wait = (attempt + 1) * 15
+                log.warning(f"  Rate limited {sym}, waiting {wait}s (attempt {attempt+1}/{retries})")
+                time.sleep(wait)
+            else:
+                log.warning(f"  fundamentals failed {sym}: {e}")
+                return {}
+
+    log.warning(f"  fundamentals failed {sym}: all retries exhausted")
+    return {}
+
+def fetch_rev_growth(sym):
+    try:
+        fin = yf.Ticker(sym + ".NS").financials
+        if fin is not None and not fin.empty and "Total Revenue" in fin.index:
+            rv = fin.loc["Total Revenue"].dropna()
+            if len(rv) >= 2:
+                return round((rv.iloc[0]-rv.iloc[1])/abs(rv.iloc[1])*100, 2)
+    except:
+        pass
+    return None
+
+# ══════════════════════════════════════════════
+# BATCH PRICE FETCH
 # ══════════════════════════════════════════════
 def fetch_prices_batch(symbols):
-    prices = {}
+    prices  = {}
     ns_syms = [s + ".NS" for s in symbols]
 
     for i in range(0, len(ns_syms), BATCH_SIZE):
-        batch     = ns_syms[i:i+BATCH_SIZE]
-        batch_orig= symbols[i:i+BATCH_SIZE]
+        batch      = ns_syms[i:i+BATCH_SIZE]
+        batch_orig = symbols[i:i+BATCH_SIZE]
 
         for attempt in range(3):
             try:
@@ -181,7 +290,7 @@ def fetch_prices_batch(symbols):
                     group_by    = "ticker",
                     auto_adjust = True,
                     progress    = False,
-                    threads     = False   # threads=False more reliable on CI
+                    threads     = False
                 )
                 for sym, ns in zip(batch_orig, batch):
                     try:
@@ -190,7 +299,7 @@ def fetch_prices_batch(symbols):
                     except:
                         prices[sym] = None
                 log.info(f"Batch {i//BATCH_SIZE+1}: fetched {len(batch)} prices")
-                break  # success — exit retry loop
+                break
 
             except Exception as e:
                 if "429" in str(e) or "Too Many" in str(e):
@@ -208,79 +317,113 @@ def fetch_prices_batch(symbols):
     return prices
 
 # ══════════════════════════════════════════════
-# FETCH FUNDAMENTALS — one .info call per symbol
+# AI DECISION — SECTOR AWARE
 # ══════════════════════════════════════════════
-def fetch_fundamentals(sym, retries=3):
-    for attempt in range(retries):
-        try:
-            info = yf.Ticker(sym + ".NS").info
-            mcap_raw = info.get("marketCap", 0) or 0
-            mcap_cr  = round(mcap_raw / 10_000_000, 0) if mcap_raw else None
-            ebit = info.get("ebit", 0) or 0
-            ta   = info.get("totalAssets", 0) or 0
-            tl   = info.get("totalCurrentLiabilities", 0) or 0
-            roce = round(ebit/(ta-tl)*100, 2) if (ta-tl) > 0 else None
-            return {
-                "sector":   info.get("sector",""),
-                "industry": info.get("industry",""),
-                "high52":   info.get("fiftyTwoWeekHigh") or None,
-                "low52":    info.get("fiftyTwoWeekLow") or None,
-                "mcap_cr":  mcap_cr,
-                "pe":       round(info.get("trailingPE",0),2)         if info.get("trailingPE")        else None,
-                "eps":      round(info.get("trailingEps",0),2)        if info.get("trailingEps")       else None,
-                "bv":       round(info.get("bookValue",0),2)          if info.get("bookValue")         else None,
-                "pb":       round(info.get("priceToBook",0),2)        if info.get("priceToBook")       else None,
-                "div":      round(info.get("dividendYield",0)*100,2)  if info.get("dividendYield")     else None,
-                "roe":      round(info.get("returnOnEquity",0)*100,2) if info.get("returnOnEquity")    else None,
-                "roce":     roce,
-                "debt_eq":  round(info.get("debtToEquity",0),2)       if info.get("debtToEquity")      else None,
-                "beta":     round(info.get("beta",0),2)               if info.get("beta")              else None,
-            }
-        except Exception as e:
-            if "429" in str(e) or "Too Many" in str(e):
-                wait = (attempt + 1) * 15
-                log.warning(f"  Rate limited {sym}, waiting {wait}s (attempt {attempt+1}/{retries})")
-                time.sleep(wait)
-            else:
-                log.warning(f"  fundamentals failed {sym}: {e}")
-                return {}
-    log.warning(f"  fundamentals failed {sym}: all retries exhausted")
-    return {}
+def ai_decision(sym, pe, roe, roa, roce, debt_eq, rev_growth, div,
+                ret_pct, is_financial, current_ratio, quick_ratio,
+                pb, beta):
 
-def fetch_rev_growth(sym):
-    """Separate call for revenue growth — uses financials endpoint."""
-    try:
-        fin = yf.Ticker(sym + ".NS").financials
-        if fin is not None and not fin.empty and "Total Revenue" in fin.index:
-            rv = fin.loc["Total Revenue"].dropna()
-            if len(rv) >= 2:
-                return round((rv.iloc[0]-rv.iloc[1])/abs(rv.iloc[1])*100, 2)
-    except:
-        pass
-    return None
-
-# ══════════════════════════════════════════════
-# AI DECISION LOGIC
-# ══════════════════════════════════════════════
-def ai_decision(pe, roe, roce, debt_eq, rev_growth, div, ret_pct):
     score, reason = 0, []
-    if roe:
-        if roe>=15:  score+=2; reason.append(f"Good ROE {roe:.1f}%")
-        elif roe<10: score-=1; reason.append(f"Weak ROE {roe:.1f}%")
-    if roce and roce>=15:
-        score+=2; reason.append(f"Strong ROCE {roce:.1f}%")
-    if debt_eq is not None:
-        if debt_eq<0.5:  score+=1; reason.append("Low debt")
-        elif debt_eq>1.5:score-=2; reason.append(f"High debt {debt_eq:.1f}x")
-    if rev_growth:
-        if rev_growth>=10: score+=1; reason.append(f"Rev growth {rev_growth:.1f}%")
-        elif rev_growth<0: score-=1; reason.append("Revenue declining")
-    if pe and pe>0:
-        if pe<20:  score+=1; reason.append(f"Fair PE {pe:.1f}")
-        elif pe>50:score-=1; reason.append(f"Expensive PE {pe:.1f}")
-    if ret_pct and ret_pct<-25:
-        reason.append("Large drawdown")
-    decision = "HOLD" if score>=4 else ("WATCH" if score>=1 else "SELL")
+
+    if is_financial:
+        # ── FINANCIAL SECTOR LOGIC ────────────────
+        # Banks / NBFCs / Insurance / Capital Markets
+        # Debt/Equity is NOT used — it is structurally
+        # high for all financial businesses by design
+
+        # ROE — primary profitability metric
+        if roe:
+            if   roe >= 15: score += 3; reason.append(f"Strong ROE {roe:.1f}%")
+            elif roe >= 12: score += 2; reason.append(f"Good ROE {roe:.1f}%")
+            elif roe >= 8:  score += 1; reason.append(f"Moderate ROE {roe:.1f}%")
+            else:           score -= 1; reason.append(f"Weak ROE {roe:.1f}%")
+
+        # ROA — asset quality proxy
+        # Good banks have ROA > 1.5%, stressed banks < 0.5%
+        if roa:
+            if   roa >= 2.0: score += 3; reason.append(f"Excellent ROA {roa:.1f}%")
+            elif roa >= 1.5: score += 2; reason.append(f"Good ROA {roa:.1f}%")
+            elif roa >= 1.0: score += 1; reason.append(f"Adequate ROA {roa:.1f}%")
+            elif roa >= 0.5: score += 0
+            else:            score -= 2; reason.append(f"Poor ROA {roa:.1f}% — asset stress?")
+
+        # P/B ratio — key valuation for financials
+        if pb:
+            if   pb < 1.0: score += 2; reason.append(f"Undervalued P/B {pb:.1f}x")
+            elif pb < 2.5: score += 1; reason.append(f"Fair P/B {pb:.1f}x")
+            elif pb < 4.0: score += 0
+            else:          score -= 1; reason.append(f"Expensive P/B {pb:.1f}x")
+
+        # PE
+        if pe and pe > 0:
+            if   pe < 15: score += 1; reason.append(f"Cheap PE {pe:.1f}")
+            elif pe > 40: score -= 1; reason.append(f"Expensive PE {pe:.1f}")
+
+        # Revenue growth
+        if rev_growth:
+            if   rev_growth >= 15: score += 2; reason.append(f"Strong rev growth {rev_growth:.1f}%")
+            elif rev_growth >= 8:  score += 1; reason.append(f"Rev growth {rev_growth:.1f}%")
+            elif rev_growth < 0:   score -= 1; reason.append("Revenue declining")
+
+        # Liquidity
+        if current_ratio:
+            if   current_ratio >= 1.5: score += 1; reason.append(f"Good liquidity CR {current_ratio:.1f}")
+            elif current_ratio < 1.0:  score -= 1; reason.append(f"Liquidity stress CR {current_ratio:.1f}")
+
+        # Beta — volatility
+        if beta and beta > 1.5:
+            reason.append(f"High volatility β{beta:.1f}")
+
+        # Large drawdown
+        if ret_pct and ret_pct < -30:
+            reason.append("Large drawdown — check asset quality")
+
+        # Dividend
+        if div and div >= 1.5:
+            score += 1; reason.append(f"Div yield {div:.1f}%")
+
+        decision = "HOLD" if score >= 5 else ("WATCH" if score >= 2 else "SELL")
+
+    else:
+        # ── NON-FINANCIAL LOGIC ───────────────────
+        # Manufacturing / Pharma / FMCG / IT / Energy
+
+        # ROE
+        if roe:
+            if   roe >= 15: score += 2; reason.append(f"Good ROE {roe:.1f}%")
+            elif roe < 10:  score -= 1; reason.append(f"Weak ROE {roe:.1f}%")
+
+        # ROCE
+        if roce and roce >= 15:
+            score += 2; reason.append(f"Strong ROCE {roce:.1f}%")
+
+        # Debt/Equity — PRIMARY risk metric for non-financials
+        if debt_eq is not None:
+            if   debt_eq < 0.3:  score += 2; reason.append("Very low debt")
+            elif debt_eq < 0.8:  score += 1; reason.append(f"Manageable debt {debt_eq:.1f}x")
+            elif debt_eq < 1.5:  score -= 1; reason.append(f"High debt {debt_eq:.1f}x")
+            else:                score -= 2; reason.append(f"Dangerous debt {debt_eq:.1f}x")
+
+        # Revenue growth
+        if rev_growth:
+            if   rev_growth >= 10: score += 1; reason.append(f"Rev growth {rev_growth:.1f}%")
+            elif rev_growth < 0:   score -= 1; reason.append("Revenue declining")
+
+        # PE
+        if pe and pe > 0:
+            if   pe < 20:  score += 1; reason.append(f"Fair PE {pe:.1f}")
+            elif pe > 50:  score -= 1; reason.append(f"Expensive PE {pe:.1f}")
+
+        # Dividend
+        if div and div >= 2:
+            score += 1; reason.append(f"Div yield {div:.1f}%")
+
+        # Large drawdown
+        if ret_pct and ret_pct < -25:
+            reason.append("Large drawdown")
+
+        decision = "HOLD" if score >= 4 else ("WATCH" if score >= 1 else "SELL")
+
     return decision, " | ".join(reason[:3]) if reason else "Insufficient data"
 
 # ══════════════════════════════════════════════
@@ -308,19 +451,28 @@ def indian_cr(value):
 # ══════════════════════════════════════════════
 def hex_rgb(h):
     h = h.lstrip("#")
-    return {"red":int(h[0:2],16)/255,"green":int(h[2:4],16)/255,"blue":int(h[4:6],16)/255}
+    return {
+        "red":   int(h[0:2],16)/255,
+        "green": int(h[2:4],16)/255,
+        "blue":  int(h[4:6],16)/255
+    }
 
 def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
     return {
         "repeatCell": {
             "range": {
-                "sheetId": sheet_id,
-                "startRowIndex": row_idx, "endRowIndex": row_idx+1,
-                "startColumnIndex": col_idx, "endColumnIndex": col_idx+1
+                "sheetId":        sheet_id,
+                "startRowIndex":  row_idx,
+                "endRowIndex":    row_idx+1,
+                "startColumnIndex": col_idx,
+                "endColumnIndex": col_idx+1
             },
             "cell": {"userEnteredFormat": {
                 "backgroundColor": hex_rgb(bg),
-                "textFormat": {"foregroundColor": hex_rgb(fg), "bold": bold}
+                "textFormat": {
+                    "foregroundColor": hex_rgb(fg),
+                    "bold": bold
+                }
             }},
             "fields": "userEnteredFormat(backgroundColor,textFormat)"
         }
@@ -356,7 +508,7 @@ def write_colab_data(sh, rows):
     if rows:
         ws.append_rows(rows)
 
-    # ── Header format ──────────────────────────
+    # Header format
     sh.batch_update({"requests":[{"repeatCell":{
         "range":{"sheetId":ws.id,"startRowIndex":0,"endRowIndex":1,"startColumnIndex":0,"endColumnIndex":27},
         "cell":{"userEnteredFormat":{
@@ -367,26 +519,28 @@ def write_colab_data(sh, rows):
         "fields":"userEnteredFormat"
     }}]})
 
-    # ── Freeze ────────────────────────────────
+    # Freeze
     sh.batch_update({"requests":[{"updateSheetProperties":{
         "properties":{"sheetId":ws.id,"gridProperties":{"frozenRowCount":1,"frozenColumnCount":1}},
         "fields":"gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
     }}]})
 
-    # ── Column widths ─────────────────────────
+    # Column widths
     widths = [90,90,100,120,90,90,100,130,90,60,70,80,65,70,70,70,70,80,60,90,220,70,100,120,110,130,160]
     sh.batch_update({"requests":[{"updateDimensionProperties":{
         "range":{"sheetId":ws.id,"dimension":"COLUMNS","startIndex":i,"endIndex":i+1},
         "properties":{"pixelSize":w},"fields":"pixelSize"
     }} for i,w in enumerate(widths)]})
 
-    # ── Cell colors ───────────────────────────
-    all_data = ws.get_all_values()[1:]
-    reqs = []
+    # Cell colors
+    all_out = ws.get_all_values()[1:]
+    reqs    = []
 
-    for i, row in enumerate(all_data):
-        rn = i+1
+    for i, row in enumerate(all_out):
+        rn  = i+1
         alt = "f8f9fa" if i%2==0 else "ffffff"
+
+        # Alternating row bg
         reqs.append({"repeatCell":{
             "range":{"sheetId":ws.id,"startRowIndex":rn,"endRowIndex":rn+1,"startColumnIndex":0,"endColumnIndex":27},
             "cell":{"userEnteredFormat":{"backgroundColor":hex_rgb(alt)}},
@@ -394,37 +548,42 @@ def write_colab_data(sh, rows):
         }})
 
         def sf(idx):
-            try: return float(str(row[idx]).replace("%","").replace(",","").replace("₹","").replace(" Cr","").strip()) if len(row)>idx and row[idx] else None
-            except: return None
+            try:
+                v = str(row[idx]).replace("%","").replace(",","").replace("₹","").replace(" Cr","").strip()
+                return float(v) if len(row)>idx and v else None
+            except:
+                return None
 
         cap    = row[8].strip()  if len(row)>8  else ""
         ai     = row[19].strip() if len(row)>19 else ""
-        pct    = sf(6);  mcap_v = sf(7);   pe_v  = sf(9)
-        eps_v  = sf(10); roe_v  = sf(14);  de_v  = sf(16)
-        rg_v   = sf(17); xirr_v = sf(21);  tgt_v = sf(23)
-        med_pe = sf(24); wt_v   = sf(25)
+        pct    = sf(6);   pe_v  = sf(9);   eps_v = sf(10)
+        roe_v  = sf(14);  de_v  = sf(16);  rg_v  = sf(17)
+        xirr_v = sf(21);  tgt_v = sf(23);  med_pe= sf(24)
+        wt_v   = sf(25)
         swing  = row[26].strip() if len(row)>26 else ""
 
-        # Cap Type colors — Symbol + Mkt Cap + Cap Type cols
+        # Cap Type — Symbol + Mkt Cap + Cap Type cols
         if   cap=="Large Cap": cb,cf = "d9ead3","0b8043"
         elif cap=="Mid Cap":   cb,cf = "d9eaf7","1565c0"
         elif cap=="Small Cap": cb,cf = "fde9d9","c62828"
         else:                  cb,cf = "ffffff","000000"
         if cap:
-            reqs += [color_cell_req(ws.id,rn,0,cb,cf),
-                     color_cell_req(ws.id,rn,7,cb,cf),
-                     color_cell_req(ws.id,rn,8,cb,cf)]
+            reqs += [
+                color_cell_req(ws.id,rn,0,cb,cf),
+                color_cell_req(ws.id,rn,7,cb,cf),
+                color_cell_req(ws.id,rn,8,cb,cf)
+            ]
 
         # 52W High blue, 52W Low red
         reqs.append(color_cell_req(ws.id,rn,4,"eaf4fb","1565c0",bold=False))
         reqs.append(color_cell_req(ws.id,rn,5,"fdf2f2","c62828",bold=False))
 
-        # % from 52W High — green >= -20, red < -20
+        # % from 52W High
         if pct is not None:
             reqs.append(color_cell_req(ws.id,rn,6,"d9ead3","0b8043") if pct>=-20 else color_cell_req(ws.id,rn,6,"fde9d9","c62828"))
 
-        # PE — green < 20, red >= 20
-        if pe_v and pe_v>0:
+        # PE
+        if pe_v and pe_v > 0:
             reqs.append(color_cell_req(ws.id,rn,9,"d9ead3","0b8043") if pe_v<20 else color_cell_req(ws.id,rn,9,"fde9d9","c62828"))
 
         # EPS by cap type
@@ -434,18 +593,18 @@ def write_colab_data(sh, rows):
 
         # ROE
         if roe_v is not None:
-            if   roe_v>=15: reqs.append(color_cell_req(ws.id,rn,14,"d9ead3","0b8043"))
-            elif roe_v<10:  reqs.append(color_cell_req(ws.id,rn,14,"fde9d9","c62828"))
+            if   roe_v >= 15: reqs.append(color_cell_req(ws.id,rn,14,"d9ead3","0b8043"))
+            elif roe_v < 10:  reqs.append(color_cell_req(ws.id,rn,14,"fde9d9","c62828"))
 
-        # Debt/Eq
+        # Debt/Equity — only color if value present (blanked for financials)
         if de_v is not None:
-            if   de_v<0.5:  reqs.append(color_cell_req(ws.id,rn,16,"d9ead3","0b8043"))
-            elif de_v>1.5:  reqs.append(color_cell_req(ws.id,rn,16,"fde9d9","c62828"))
+            if   de_v < 0.5:  reqs.append(color_cell_req(ws.id,rn,16,"d9ead3","0b8043"))
+            elif de_v > 1.5:  reqs.append(color_cell_req(ws.id,rn,16,"fde9d9","c62828"))
 
         # Rev Growth
         if rg_v is not None:
-            if   rg_v>=10: reqs.append(color_cell_req(ws.id,rn,17,"d9ead3","0b8043"))
-            elif rg_v<0:   reqs.append(color_cell_req(ws.id,rn,17,"fde9d9","c62828"))
+            if   rg_v >= 10: reqs.append(color_cell_req(ws.id,rn,17,"d9ead3","0b8043"))
+            elif rg_v < 0:   reqs.append(color_cell_req(ws.id,rn,17,"fde9d9","c62828"))
 
         # AI Decision
         if   ai=="HOLD":  reqs.append(color_cell_req(ws.id,rn,19,"d9ead3","0b8043"))
@@ -458,23 +617,23 @@ def write_colab_data(sh, rows):
 
         # Target Progress
         if tgt_v is not None:
-            if   tgt_v>=20: reqs.append(color_cell_req(ws.id,rn,23,"00c853","ffffff"))
-            elif tgt_v>=10: reqs.append(color_cell_req(ws.id,rn,23,"d9ead3","0b8043"))
-            elif tgt_v>=0:  reqs.append(color_cell_req(ws.id,rn,23,"fff2cc","7f4f00"))
-            else:           reqs.append(color_cell_req(ws.id,rn,23,"fde9d9","c62828"))
+            if   tgt_v >= 20: reqs.append(color_cell_req(ws.id,rn,23,"00c853","ffffff"))
+            elif tgt_v >= 10: reqs.append(color_cell_req(ws.id,rn,23,"d9ead3","0b8043"))
+            elif tgt_v >= 0:  reqs.append(color_cell_req(ws.id,rn,23,"fff2cc","7f4f00"))
+            else:             reqs.append(color_cell_req(ws.id,rn,23,"fde9d9","c62828"))
 
         # Sector Median PE
-        if pe_v and med_pe and pe_v>0 and med_pe>0:
+        if pe_v and med_pe and pe_v > 0 and med_pe > 0:
             reqs.append(color_cell_req(ws.id,rn,24,"d9ead3","0b8043") if pe_v<med_pe else color_cell_req(ws.id,rn,24,"fde9d9","c62828"))
 
         # Portfolio Weight
-        if wt_v and wt_v>0:
-            if   wt_v>15: reqs.append(color_cell_req(ws.id,rn,25,"fde9d9","c62828"))
-            elif wt_v>7:  reqs.append(color_cell_req(ws.id,rn,25,"fff2cc","7f4f00"))
-            else:         reqs.append(color_cell_req(ws.id,rn,25,"d9ead3","0b8043"))
+        if wt_v and wt_v > 0:
+            if   wt_v > 15: reqs.append(color_cell_req(ws.id,rn,25,"fde9d9","c62828"))
+            elif wt_v > 7:  reqs.append(color_cell_req(ws.id,rn,25,"fff2cc","7f4f00"))
+            else:           reqs.append(color_cell_req(ws.id,rn,25,"d9ead3","0b8043"))
 
         # Swing Rotation
-        if "BUY ZONE" in swing: reqs.append(color_cell_req(ws.id,rn,26,"00c853","ffffff"))
+        if "BUY ZONE" in swing:  reqs.append(color_cell_req(ws.id,rn,26,"00c853","ffffff"))
         elif "DEEP DIP" in swing: reqs.append(color_cell_req(ws.id,rn,26,"fff2cc","7f4f00"))
 
     batch_update_safe(sh, reqs)
@@ -496,19 +655,20 @@ def write_growth_screener(sh, all_out):
 
     for row in all_out:
         if not row or not row[0]: continue
-        sym=row[0].strip(); cap=row[8].strip() if len(row)>8 else ""
+        sym = row[0].strip()
+        cap = row[8].strip() if len(row)>8 else ""
 
         def sf(v):
             try: return float(str(v).replace("%","").replace(",","").replace("₹","").replace(" Cr","").strip())
             except: return None
 
-        f_roe=sf(row[14] if len(row)>14 else "")
-        f_roce=sf(row[15] if len(row)>15 else "")
-        f_de=sf(row[16] if len(row)>16 else "")
-        f_rev=sf(row[17] if len(row)>17 else "")
-        f_pe=sf(row[9] if len(row)>9 else "")
-        f_pcthi=sf(row[6] if len(row)>6 else "")
-        f_div=sf(row[13] if len(row)>13 else "")
+        f_roe  = sf(row[14] if len(row)>14 else "")
+        f_roce = sf(row[15] if len(row)>15 else "")
+        f_de   = sf(row[16] if len(row)>16 else "")
+        f_rev  = sf(row[17] if len(row)>17 else "")
+        f_pe   = sf(row[9]  if len(row)>9  else "")
+        f_pcthi= sf(row[6]  if len(row)>6  else "")
+        f_div  = sf(row[13] if len(row)>13 else "")
 
         score, notes, flags = 0, [], []
 
@@ -517,29 +677,36 @@ def write_growth_screener(sh, all_out):
             elif f_roe>=15: score+=2; notes.append(f"Good ROE {f_roe:.1f}%")
             elif f_roe>=10: score+=1
             else:           flags.append(f"Weak ROE {f_roe:.1f}%")
+
         if f_roce:
             if   f_roce>=20: score+=3; notes.append(f"Strong ROCE {f_roce:.1f}%")
             elif f_roce>=12: score+=2; notes.append(f"Decent ROCE {f_roce:.1f}%")
             elif f_roce>=8:  score+=1
             else:            flags.append(f"Poor ROCE {f_roce:.1f}%")
+
         if f_rev is not None:
             if   f_rev>=20: score+=3; notes.append(f"High rev growth {f_rev:.1f}%")
             elif f_rev>=10: score+=2; notes.append(f"Rev growth {f_rev:.1f}%")
             elif f_rev>=0:  score+=1
             else:           score-=1; flags.append(f"Revenue declining {f_rev:.1f}%")
+
         if f_de is not None:
             if   f_de<0.3:  score+=2; notes.append("Very low debt")
             elif f_de<1.0:  score+=1; notes.append(f"Manageable debt {f_de:.1f}x")
             elif f_de<2.0:  score-=1; flags.append(f"High debt {f_de:.1f}x")
             else:           score-=2; flags.append(f"Dangerous debt {f_de:.1f}x")
+
         if f_pe and f_pe>0:
             if   f_pe<15:  score+=2; notes.append(f"Undervalued PE {f_pe:.1f}")
             elif f_pe<30:  score+=1; notes.append(f"Fair PE {f_pe:.1f}")
             elif f_pe>=50: score-=1; flags.append(f"Expensive PE {f_pe:.1f}")
-        if cap=="Large Cap": score+=1
-        elif cap=="Small Cap": score-=1
+
+        if cap=="Large Cap":  score+=1
+        elif cap=="Small Cap":score-=1
+
         if f_div and f_div>=2:
             score+=1; notes.append(f"Div yield {f_div:.1f}%")
+
         if f_pcthi is not None:
             if   f_pcthi>=-10:  notes.append("Near 52W high — strong momentum")
             elif f_pcthi<-40:   notes.append(f"Deep correction {f_pcthi:.1f}% — potential entry")
@@ -552,14 +719,18 @@ def write_growth_screener(sh, all_out):
 
         concern   = " | ".join(flags[:2])
         positives = " | ".join(notes[:3]) if notes else "Insufficient data"
+
         if   rating in ["STRONG BUY","BUY"]: note = f"✅ {positives}" + (f" ⚠️ {concern}" if concern else "")
         elif rating=="WATCH":                 note = f"👀 {positives}" + (f" | Risk: {concern}" if concern else "")
         elif rating=="AVOID":                 note = f"❌ {concern or 'Weak fundamentals'}"
         else:                                 note = f"➡️ {positives}" + (f" | {concern}" if concern else "")
 
         growth.append([
-            sym, row[1], row[2], cap,
-            row[9] if len(row)>9 else "",
+            sym,
+            row[1]  if len(row)>1  else "",
+            row[2]  if len(row)>2  else "",
+            cap,
+            row[9]  if len(row)>9  else "",
             row[14] if len(row)>14 else "",
             row[15] if len(row)>15 else "",
             row[16] if len(row)>16 else "",
@@ -578,7 +749,11 @@ def write_growth_screener(sh, all_out):
     except:
         gsw = sh.add_worksheet("Growth Screener", rows=200, cols=16)
 
-    gsw.append_row(["Symbol","CMP","Sector","Cap Type","PE","ROE%","ROCE%","Debt/Eq","Rev Growth%","Div Yield%","% from 52W High","Score","Rating","Analyst Note","AI Decision"])
+    gsw.append_row([
+        "Symbol","CMP","Sector","Cap Type","PE","ROE%","ROCE%",
+        "Debt/Eq","Rev Growth%","Div Yield%","% from 52W High",
+        "Score","Rating","Analyst Note","AI Decision"
+    ])
     if growth: gsw.append_rows(growth)
 
     reqs = [{"repeatCell":{
@@ -590,12 +765,13 @@ def write_growth_screener(sh, all_out):
         }},
         "fields":"userEnteredFormat"
     }}]
+
     reqs.append({"updateSheetProperties":{
         "properties":{"sheetId":gsw.id,"gridProperties":{"frozenRowCount":1,"frozenColumnCount":1}},
         "fields":"gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
     }})
 
-    gs_widths=[90,90,110,90,60,65,65,70,90,80,100,55,100,380,100]
+    gs_widths = [90,90,110,90,60,65,65,70,90,80,100,55,100,380,100]
     reqs += [{"updateDimensionProperties":{
         "range":{"sheetId":gsw.id,"dimension":"COLUMNS","startIndex":i,"endIndex":i+1},
         "properties":{"pixelSize":w},"fields":"pixelSize"
@@ -604,14 +780,16 @@ def write_growth_screener(sh, all_out):
     for i, row in enumerate(growth):
         rn = i+1
         alt = "f8f9fa" if i%2==0 else "ffffff"
-        fg_hex,bg_hex = rating_colors.get(row[12],("000000","ffffff"))
+        fg_hex, bg_hex = rating_colors.get(row[12], ("000000","ffffff"))
+
         reqs.append({"repeatCell":{
             "range":{"sheetId":gsw.id,"startRowIndex":rn,"endRowIndex":rn+1,"startColumnIndex":0,"endColumnIndex":15},
             "cell":{"userEnteredFormat":{"backgroundColor":hex_rgb(alt)}},
             "fields":"userEnteredFormat.backgroundColor"
         }})
         reqs.append(color_cell_req(gsw.id,rn,12,bg_hex,fg_hex))
-        cap=row[3]
+
+        cap = row[3]
         if   cap=="Large Cap": reqs.append(color_cell_req(gsw.id,rn,3,"d9ead3","0b8043"))
         elif cap=="Mid Cap":   reqs.append(color_cell_req(gsw.id,rn,3,"d9eaf7","1565c0"))
         elif cap=="Small Cap": reqs.append(color_cell_req(gsw.id,rn,3,"fde9d9","c62828"))
@@ -635,56 +813,56 @@ def main():
     log.info(f"Run time: {datetime.now().strftime('%d-%b-%Y %H:%M:%S IST')}")
     log.info("═"*55)
 
-    # ── Auth ──────────────────────────────────
     gc = get_gspread_client()
     sh = gc.open_by_key(SHEET_ID)
     log.info("Connected to Google Sheets")
 
-    # ── Read data ─────────────────────────────
     symbols = read_symbols(sh)
     if not symbols:
         log.error("No symbols found. Exiting.")
         return
+
     trades = read_trades(sh)
     log.info(f"Symbols: {symbols}")
 
-    # ── Step 1: Batch price fetch ─────────────
+    # Batch price fetch
     log.info("Fetching prices (batch)...")
     prices = fetch_prices_batch(symbols)
 
-    # ── Step 2: Fundamentals per symbol ───────
+    # Fundamentals per symbol
     log.info("Fetching fundamentals...")
-    fund_map    = {}
-    rev_map     = {}
-    ind_pe_map  = {}
+    fund_map   = {}
+    rev_map    = {}
+    ind_pe_map = {}
 
     for sym in symbols:
         f = fetch_fundamentals(sym)
         fund_map[sym] = f
         rev_map[sym]  = fetch_rev_growth(sym)
-        # Collect industry PE for median calculation
         ind = f.get("industry","")
         pe  = f.get("pe")
         if ind and pe and pe > 0:
             ind_pe_map.setdefault(ind,[]).append(pe)
         time.sleep(SLEEP_INFO)
 
-    # Sector median PE
-    sector_med = {ind: round(statistics.median(v),2) for ind,v in ind_pe_map.items() if v}
+    sector_med = {
+        ind: round(statistics.median(v),2)
+        for ind,v in ind_pe_map.items() if v
+    }
 
-    # ── Step 3: Portfolio live value ──────────
-    holdings = {}
+    # Portfolio live value
+    holdings             = {}
     portfolio_live_value = 0.0
     for sym in symbols:
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         cmp = prices.get(sym)
         if qty > 0 and cmp and cmp > 0:
-            holdings[sym]        = (qty, cmp, avg_buy)
+            holdings[sym]         = (qty, cmp, avg_buy)
             portfolio_live_value += qty * cmp
 
     owned = set(holdings.keys())
 
-    # ── Step 4: Build output rows ─────────────
+    # Build output rows
     results, failed = [], []
 
     for sym in symbols:
@@ -699,12 +877,16 @@ def main():
         high52   = f.get("high52")
         low52    = f.get("low52")
         mcap_cr  = f.get("mcap_cr")
-        pe       = f.get("pe");    eps  = f.get("eps")
-        bv       = f.get("bv");    pb   = f.get("pb")
-        div      = f.get("div");   roe  = f.get("roe")
-        roce     = f.get("roce");  de   = f.get("debt_eq")
-        beta     = f.get("beta")
-        sector   = f.get("sector",""); industry = f.get("industry","")
+        pe       = f.get("pe");      eps  = f.get("eps")
+        bv       = f.get("bv");      pb   = f.get("pb")
+        div      = f.get("div");     roe  = f.get("roe")
+        roa      = f.get("roa");     roce = f.get("roce")
+        de       = f.get("debt_eq"); beta = f.get("beta")
+        cr       = f.get("current_ratio")
+        qr       = f.get("quick_ratio")
+        sector   = f.get("sector","")
+        industry = f.get("industry","")
+        is_fin   = f.get("is_financial", False)
 
         cap_type = ""
         if mcap_cr:
@@ -723,42 +905,52 @@ def main():
                 try: ret_pct=(cmp-float(t[4]))/float(t[4])*100
                 except: pass
 
-        decision, reason = ai_decision(pe,roe,roce,de,rev_gr,div,ret_pct)
+        # Sector-aware AI decision
+        decision, reason = ai_decision(
+            sym, pe, roe, roa, roce, de, rev_gr, div,
+            ret_pct, is_fin, cr, qr, pb, beta
+        )
 
         # Enhancements
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         tgt_progress = round(((cmp-avg_buy)/avg_buy)*100,2) if avg_buy and qty>0 else ""
         med_pe       = sector_med.get(industry,"")
         port_weight  = round((qty*cmp/portfolio_live_value)*100,2) if sym in owned and portfolio_live_value>0 else ""
+
         swing = ""
         if sym not in owned and pct_high!="" and pct_high<=-25 and decision in ("HOLD","WATCH"):
             swing = "🎯 BUY ZONE (VALUE)"
         elif sym not in owned and pct_high!="" and pct_high<=-25:
             swing = "⚠️ DEEP DIP — CHECK"
 
+        # For financials — show ROA instead of Debt/Equity
+        de_display = de if not is_fin else ""
+
         results.append([
             sym, cmp, sector, industry,
             high52 or "", low52 or "", pct_high,
             mcap_fmt, cap_type,
             pe or "", eps or "", bv or "", pb or "",
-            div or "", roe or "", roce or "", de or "",
+            div or "", roe or "", roce or "", de_display,
             rev_gr or "", beta or "",
             decision, reason,
             xirr_val if xirr_val else "",
             datetime.now().strftime("%d-%b-%Y %H:%M"),
             tgt_progress, med_pe, port_weight, swing
         ])
-        log.info(f"  OK  {sym:12} ₹{cmp:>8} | {cap_type:10} | PE:{pe} | ROE:{roe}% | {decision}")
 
-    # ── Step 5: Write sheets ──────────────────
-    ws  = write_colab_data(sh, results)
+        fin_tag = " [FIN]" if is_fin else ""
+        log.info(f"  OK  {sym:12} ₹{cmp:>8} | {cap_type:10} | PE:{pe} | ROE:{roe}%{fin_tag} | {decision}")
+
+    # Write sheets
+    ws      = write_colab_data(sh, results)
     all_out = ws.get_all_values()[1:]
     growth  = write_growth_screener(sh, all_out)
 
-    # ── Summary ───────────────────────────────
-    exit_ready  = [r[0] for r in results if isinstance(r[23],(int,float)) and r[23]>=20]
-    overweight  = [r[0] for r in results if isinstance(r[25],(int,float)) and r[25]>15]
-    buy_zone    = [r[0] for r in results if "BUY ZONE" in str(r[26])]
+    # Summary
+    exit_ready = [r[0] for r in results if isinstance(r[23],(int,float)) and r[23]>=20]
+    overweight = [r[0] for r in results if isinstance(r[25],(int,float)) and r[25]>15]
+    buy_zone   = [r[0] for r in results if "BUY ZONE" in str(r[26])]
 
     log.info("═"*55)
     log.info(f"✅ {len(results)} stocks updated | ❌ Failed: {failed or 'None'}")
