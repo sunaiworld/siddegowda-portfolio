@@ -61,23 +61,13 @@ def read_symbols(sh):
         pws  = sh.worksheet("Portfolio")
         rows = pws.get_all_values()[1:]
         for row in rows:
-            sym = row[0].strip().upper() if row else ""
+            # col B = index 1
+            sym = row[1].strip().upper() if len(row) > 1 else ""
             if sym and sym not in symbols and sym not in skip and len(sym)<=15 and sym.replace("&","").isalnum():
                 symbols.append(sym)
-        log.info(f"Portfolio tab: {len(symbols)} symbols")
+        log.info(f"Portfolio tab col B: {len(symbols)} symbols")
     except Exception as e:
         log.warning(f"Could not read Portfolio tab: {e}")
-
-    try:
-        tws        = sh.worksheet("Trade Log")
-        trade_rows = tws.get_all_values()[1:]
-        for row in trade_rows:
-            sym = row[0].strip().upper() if row else ""
-            if sym and sym not in symbols and sym not in skip and len(sym)<=15 and sym.replace("&","").isalnum():
-                symbols.append(sym)
-        log.info(f"After Trade Log merge: {len(symbols)} total symbols")
-    except Exception as e:
-        log.warning(f"Could not read Trade Log tab: {e}")
 
     return symbols
 
