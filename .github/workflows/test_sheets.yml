@@ -1,0 +1,39 @@
+name: test-sheets
+on: workflow_dispatch
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Test Sheets connection
+        env:
+          SHEET_ID: ${{ secrets.SHEET_ID }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: |
+          pip install gspread google-auth -q
+          python - <<'EOF'
+import os, json
+from google.oauth2.service_account import Credentials
+import gspread
+
+creds_json = os.environ["GOOGLE_CREDENTIALS_JSON"]
+sheet_id   = os.environ["SHEET_ID"]
+
+print(f"SHEET_ID length: {len(sheet_id)}")
+print(f"SHEET_ID value:  [{sheet_id}]")
+
+creds_obj = json.loads(creds_json)
+print(f"client_email: {creds_obj['client_email']}")
+print(f"project_id:   {creds_obj['project_id']}")
+
+creds = Credentials.from_service_account_info(
+    creds_obj,
+    scopes=[
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+)
+gc = gspread.authorize(creds)
+sh = gc.open_by_key(sheet_id)
+print(f"SUCCESS: {sh.title}")
+EOF
