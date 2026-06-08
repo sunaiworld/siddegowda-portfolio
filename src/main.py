@@ -587,14 +587,14 @@ def batch_update_safe(sh, requests, chunk=100):
         time.sleep(0.2)
 
 # ══════════════════════════════════════════════
-# WRITE COLAB DATA TAB
+# WRITE GITHUB DATA TAB
 # ══════════════════════════════════════════════
 def write_colab_data(sh, rows):
     try:
-        ws = sh.worksheet("Colab Data")
+        ws = sh.worksheet("GITHUB DATA")
         ws.clear()
     except:
-        ws = sh.add_worksheet("Colab Data", rows=300, cols=35)
+        ws = sh.add_worksheet("GITHUB DATA", rows=300, cols=35)
 
     headers = [
         "Symbol","CMP","Sector","Industry",
@@ -764,7 +764,7 @@ def write_colab_data(sh, rows):
         elif "WATCH"      in swing: reqs.append(color_cell_req(ws.id,rn,33,"fff2cc","7f4f00"))
 
     batch_update_safe(sh, reqs)
-    log.info("Colab Data tab formatted")
+    log.info("GITHUB DATA tab formatted")
     return ws
 
 # ══════════════════════════════════════════════
