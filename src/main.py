@@ -952,17 +952,25 @@ def main():
     log.info(f"Run time: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}")
     log.info("═"*55)
 
+    def main():
+    log.info("═"*55)
+    log.info("SIDDEGOWDA PORTFOLIO — Daily Auto-Update")
+    log.info(f"Run time: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}")
+    log.info("═"*55)
+
     gc = get_gspread_client()
-    import os
-print(f"[DEBUG] SHEET_ID = '{SHEET_ID}'")
-creds_raw = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
-import json
-try:
-    creds_obj = json.loads(creds_raw)
-    print(f"[DEBUG] client_email = {creds_obj.get('client_email')}")
-    print(f"[DEBUG] project_id   = {creds_obj.get('project_id')}")
-except Exception as e:
-    print(f"[DEBUG] Failed to parse creds JSON: {e}")
+
+    # ── DEBUG — remove after fix confirmed ────
+    log.info(f"[DEBUG] SHEET_ID = '{SHEET_ID}'")
+    creds_raw = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
+    try:
+        creds_obj = json.loads(creds_raw)
+        log.info(f"[DEBUG] client_email = {creds_obj.get('client_email')}")
+        log.info(f"[DEBUG] project_id   = {creds_obj.get('project_id')}")
+    except Exception as e:
+        log.info(f"[DEBUG] Failed to parse creds JSON: {e}")
+    # ── END DEBUG ──────────────────────────────
+
     sh = gc.open_by_key(SHEET_ID)
     log.info("Connected to Google Sheets")
 
