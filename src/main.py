@@ -952,25 +952,7 @@ def main():
     log.info(f"Run time: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}")
     log.info("═"*55)
 
-    def main():
-    log.info("═"*55)
-    log.info("SIDDEGOWDA PORTFOLIO — Daily Auto-Update")
-    log.info(f"Run time: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}")
-    log.info("═"*55)
-
     gc = get_gspread_client()
-
-    # ── DEBUG — remove after fix confirmed ────
-    log.info(f"[DEBUG] SHEET_ID = '{SHEET_ID}'")
-    creds_raw = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
-    try:
-        creds_obj = json.loads(creds_raw)
-        log.info(f"[DEBUG] client_email = {creds_obj.get('client_email')}")
-        log.info(f"[DEBUG] project_id   = {creds_obj.get('project_id')}")
-    except Exception as e:
-        log.info(f"[DEBUG] Failed to parse creds JSON: {e}")
-    # ── END DEBUG ──────────────────────────────
-
     sh = gc.open_by_key(SHEET_ID)
     log.info("Connected to Google Sheets")
 
@@ -983,11 +965,9 @@ def main():
     trades = read_trades(sh)
     log.info(f"Found {len(symbols)} symbols")
 
-    # ── Batch price fetch ──────────────────────
     log.info("Fetching prices...")
     prices = fetch_prices_batch(symbols)
 
-    # ── Fundamentals + Technicals ──────────────
     log.info("Fetching fundamentals + technicals...")
     fund_map   = {}
     tech_map   = {}
@@ -998,11 +978,8 @@ def main():
         f = fetch_fundamentals(sym)
         fund_map[sym] = f
         rev_map[sym]  = fetch_rev_growth(sym)
-
-        # Technical indicators
         log.info(f"  Technicals: {sym}")
         tech_map[sym] = fetch_technicals(sym)
-
         ind = f.get("industry","")
         pe  = f.get("pe")
         if ind and pe and pe > 0:
@@ -1014,7 +991,6 @@ def main():
         for ind,v in ind_pe_map.items() if v
     }
 
-    # ── Portfolio value ────────────────────────
     holdings             = {}
     portfolio_live_value = 0.0
     for sym in symbols:
@@ -1026,7 +1002,6 @@ def main():
 
     owned = set(holdings.keys())
 
-    # ── Build results + collect alerts ────────
     results = []
     failed  = []
     alerts  = {
@@ -1037,8 +1012,8 @@ def main():
         "strong_buy": []
     }
 
-    SL_PCT     = 0.07   # 7% stop loss
-    TARGET_PCT = 0.20   # 20% target
+    SL_PCT     = 0.07
+    TARGET_PCT = 0.20
 
     for sym in symbols:
         cmp = prices.get(sym)
@@ -1071,7 +1046,6 @@ def main():
 
         pct_high = round((cmp-high52)/high52*100,2) if high52 else ""
         mcap_fmt = indian_cr(mcap_cr) if mcap_cr else ""
-
         xirr_val = get_xirr(sym, trades, cmp)
 
         ret_pct = None
@@ -1085,7 +1059,6 @@ def main():
             ret_pct, is_fin, cr, pb, beta
         )
 
-        # Enhancements
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         tgt_progress = round(((cmp-avg_buy)/avg_buy)*100,2) if avg_buy and qty>0 else ""
         med_pe       = sector_med.get(industry,"")
@@ -1097,7 +1070,6 @@ def main():
 
         de_display = de if not is_fin else ""
 
-        # Technical data
         rsi         = tech.get("rsi","")
         sma50       = tech.get("sma50","")
         sma200      = tech.get("sma200","")
@@ -1107,34 +1079,19 @@ def main():
         swing_sig   = tech.get("swing_signal","")
         swing_rsn   = tech.get("swing_reason","")
 
-        # ── ALERT DETECTION ───────────────────
         if avg_buy and qty > 0:
             sl_price  = avg_buy * (1 - SL_PCT)
             tgt_price = avg_buy * (1 + TARGET_PCT)
-
             if cmp <= sl_price:
-                alerts["sl_breach"].append({
-                    "sym": sym, "cmp": cmp,
-                    "sl": round(sl_price,2)
-                })
-
+                alerts["sl_breach"].append({"sym": sym, "cmp": cmp, "sl": round(sl_price,2)})
             if cmp >= tgt_price:
-                alerts["target_hit"].append({
-                    "sym": sym, "cmp": cmp,
-                    "tgt": round(tgt_price,2)
-                })
+                alerts["target_hit"].append({"sym": sym, "cmp": cmp, "tgt": round(tgt_price,2)})
 
         if decision == "SELL":
-            alerts["sell_signal"].append({
-                "sym": sym, "reason": reason
-            })
+            alerts["sell_signal"].append({"sym": sym, "reason": reason})
 
         if swing_sig == "SWING BUY":
-            alerts["swing_buy"].append({
-                "sym": sym,
-                "rsi": rsi,
-                "reason": swing_rsn
-            })
+            alerts["swing_buy"].append({"sym": sym, "rsi": rsi, "reason": swing_rsn})
 
         results.append([
             sym, cmp, sector, industry,
@@ -1147,7 +1104,6 @@ def main():
             xirr_val if xirr_val else "",
             datetime.now().strftime("%d-%b-%Y %H:%M"),
             tgt_progress, med_pe, port_weight, swing_rot,
-            # Technical columns
             rsi, sma50, sma200, ema20,
             vol_spike, trend,
             f"{swing_sig} — {swing_rsn}" if swing_sig and swing_rsn else swing_sig
@@ -1156,12 +1112,10 @@ def main():
         fin_tag = " [FIN]" if is_fin else ""
         log.info(f"  OK  {sym:12} ₹{cmp:>8} | {cap_type:10} | RSI:{rsi} | {swing_sig:12} | {decision}{fin_tag}")
 
-    # ── Write sheets ───────────────────────────
     ws      = write_colab_data(sh, results)
     all_out = ws.get_all_values()[1:]
     growth  = write_growth_screener(sh, all_out)
 
-    # ── Collect strong buys for Telegram ──────
     for r in growth:
         if r[12] in ("STRONG BUY","BUY"):
             alerts["strong_buy"].append({
@@ -1170,11 +1124,9 @@ def main():
                 "reason": r[13][:60]
             })
 
-    # ── Send Telegram alert ───────────────────
     msg = build_alert_message(alerts, portfolio_live_value, growth)
     send_telegram(msg)
 
-    # ── Summary ────────────────────────────────
     swing_buys = [r[0] for r in results if "SWING BUY" in str(r[33])]
     exit_ready = [r[0] for r in results if isinstance(r[23],(int,float)) and r[23]>=20]
 
@@ -1189,6 +1141,7 @@ def main():
     for r in growth[:5]:
         log.info(f"   {r[0]:<12} Score:{r[11]:>3}  {r[12]:<12} RSI:{r[15]}")
     log.info("═"*55)
+
 
 if __name__ == "__main__":
     main()
