@@ -598,7 +598,7 @@ def write_colab_data(sh, rows):
 
     headers = [
         "Symbol","CMP","Sector","Industry",
-        "52W High","52W Low","% from 52W High",
+        "52W High","52W Low","Buy 20% Less",
         "Mkt Cap Cr","Cap Type",
         "PE","EPS","Book Value","P/B",
         "Div Yield%","ROE%","ROCE%","Debt/Equity",
@@ -696,7 +696,7 @@ def write_colab_data(sh, rows):
         reqs.append(color_cell_req(ws.id,rn,4,"eaf4fb","1565c0",bold=False))
         reqs.append(color_cell_req(ws.id,rn,5,"fdf2f2","c62828",bold=False))
 
-        # % from 52W High
+        # Buy 20% Less
         if pct is not None:
             reqs.append(color_cell_req(ws.id,rn,6,"d9ead3","0b8043") if pct>=-20 else color_cell_req(ws.id,rn,6,"fde9d9","c62828"))
 
@@ -882,7 +882,7 @@ def write_growth_screener(sh, all_out):
 
     gsw.append_row([
         "Symbol","CMP","Sector","Cap Type","PE","ROE%","ROCE%",
-        "Debt/Eq","Rev Growth%","Div Yield%","% from 52W High",
+        "Debt/Eq","Rev Growth%","Div Yield%","Buy 20% Less",
         "Score","Rating","Analyst Note","AI Decision","RSI","Swing Signal"
     ])
     if growth: gsw.append_rows(growth)
