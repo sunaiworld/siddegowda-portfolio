@@ -1045,7 +1045,7 @@ def main():
             else:                cap_type="Small Cap"
 
         pct_high = round((cmp-high52)/high52*100,2) if high52 else ""
-pct_high_display = f"{pct_high}%" if pct_high != "" else ""
+        pct_high_display = f"{pct_high}%" if pct_high != "" else ""
         mcap_fmt = indian_cr(mcap_cr) if mcap_cr else ""
         xirr_val = get_xirr(sym, trades, cmp)
 
