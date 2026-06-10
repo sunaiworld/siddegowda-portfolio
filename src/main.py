@@ -1129,6 +1129,9 @@ def main():
     if len(msg) > 4000:
         msg = msg[:4000] + "\n\n<i>...truncated. See Google Sheet for full details.</i>"
     send_telegram(msg)
+    log.info(f"Telegram token length: {len(TELEGRAM_TOKEN)}")
+    log.info(f"Telegram chat ID: {TELEGRAM_CHAT_ID}")
+    log.info(f"Message length: {len(msg)}")
 
     swing_buys = [r[0] for r in results if "SWING BUY" in str(r[33])]
     exit_ready = [r[0] for r in results if isinstance(r[23],(int,float)) and r[23]>=20]
