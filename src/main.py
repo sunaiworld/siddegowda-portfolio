@@ -1125,7 +1125,7 @@ def main():
                 "reason": r[13][:60]
             })
 
- msg = build_alert_message(alerts, portfolio_live_value, growth)
+    msg = build_alert_message(alerts, portfolio_live_value, growth)
     if len(msg) > 4000:
         msg = msg[:4000] + "\n\n<i>...truncated. See Google Sheet for full details.</i>"
     send_telegram(msg)
