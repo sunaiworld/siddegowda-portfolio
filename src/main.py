@@ -862,7 +862,7 @@ def write_growth_screener(sh, all_out):
         elif rating=="AVOID":                 note = f"❌ {concern or 'Weak fundamentals'}"
         else:                                 note = f"➡️ {positives}" + (f" | {concern}" if concern else "")
 
-     pct_raw = f_pcthi
+    pct_raw = f_pcthi
         pct_display = f"{pct_raw}%" if pct_raw != "" and pct_raw is not None else ""
         growth.append([
             sym, cap,
