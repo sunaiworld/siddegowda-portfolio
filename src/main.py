@@ -886,7 +886,7 @@ def write_growth_screener(sh, all_out):
     except:
         gsw = sh.add_worksheet("Growth Screener", rows=200, cols=18)
 
-   gsw.append_row([
+    gsw.append_row([
         "Symbol","Cap Type","PE","ROE%",
         "Debt/Eq","Rev Growth%","Div Yield%","Buy 20% Less",
         "Score","Rating","Analyst Note","AI Decision","RSI","Swing Signal"
