@@ -752,6 +752,12 @@ def write_colab_data(sh, rows):
             elif rsi_v > 70:  reqs.append(color_cell_req(ws.id,rn,27,"fde9d9","c62828"))
             elif rsi_v > 60:  reqs.append(color_cell_req(ws.id,rn,27,"fff2cc","7f4f00"))
 
+        try:
+            pct_val = float(str(row[7]).replace("%","").strip())
+            if   pct_val >= -20: reqs.append(color_cell_req(gsw.id,rn,7,"d9ead3","0b8043"))
+            else:                reqs.append(color_cell_req(gsw.id,rn,7,"fde9d9","c62828"))
+        except: pass
+
         # Volume spike color
         if vol_v is not None:
             if vol_v > 2.0: reqs.append(color_cell_req(ws.id,rn,31,"fff2cc","7f4f00"))
@@ -856,16 +862,16 @@ def write_growth_screener(sh, all_out):
         elif rating=="AVOID":                 note = f"❌ {concern or 'Weak fundamentals'}"
         else:                                 note = f"➡️ {positives}" + (f" | {concern}" if concern else "")
 
+     pct_raw = f_pcthi
+        pct_display = f"{pct_raw}%" if pct_raw != "" and pct_raw is not None else ""
         growth.append([
-            sym, row[1] if len(row)>1 else "",
-            row[2] if len(row)>2 else "", cap,
+            sym, cap,
             row[9]  if len(row)>9  else "",
             row[14] if len(row)>14 else "",
-            row[15] if len(row)>15 else "",
             row[16] if len(row)>16 else "",
             row[17] if len(row)>17 else "",
             row[13] if len(row)>13 else "",
-            row[6]  if len(row)>6  else "",
+            pct_display,
             score, rating, note,
             row[19] if len(row)>19 else "",
             row[27] if len(row)>27 else "",
@@ -880,8 +886,8 @@ def write_growth_screener(sh, all_out):
     except:
         gsw = sh.add_worksheet("Growth Screener", rows=200, cols=18)
 
-    gsw.append_row([
-        "Symbol","CMP","Sector","Cap Type","PE","ROE%","ROCE%",
+   gsw.append_row([
+        "Symbol","Cap Type","PE","ROE%",
         "Debt/Eq","Rev Growth%","Div Yield%","Buy 20% Less",
         "Score","Rating","Analyst Note","AI Decision","RSI","Swing Signal"
     ])
@@ -900,7 +906,7 @@ def write_growth_screener(sh, all_out):
         "properties":{"sheetId":gsw.id,"gridProperties":{"frozenRowCount":1,"frozenColumnCount":1}},
         "fields":"gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
     }})
-    gs_widths = [90,90,110,90,60,65,65,70,90,80,100,55,100,380,100,60,110]
+    gs_widths = [90,90,60,65,70,90,80,100,55,100,380,100,60,110]
     reqs += [{"updateDimensionProperties":{
         "range":{"sheetId":gsw.id,"dimension":"COLUMNS","startIndex":i,"endIndex":i+1},
         "properties":{"pixelSize":w},"fields":"pixelSize"
@@ -915,27 +921,26 @@ def write_growth_screener(sh, all_out):
             "cell":{"userEnteredFormat":{"backgroundColor":hex_rgb(alt)}},
             "fields":"userEnteredFormat.backgroundColor"
         }})
-        reqs.append(color_cell_req(gsw.id,rn,12,bg_hex,fg_hex))
-        cap = row[3]
-        if   cap=="Large Cap": reqs.append(color_cell_req(gsw.id,rn,3,"d9ead3","0b8043"))
-        elif cap=="Mid Cap":   reqs.append(color_cell_req(gsw.id,rn,3,"d9eaf7","1565c0"))
-        elif cap=="Small Cap": reqs.append(color_cell_req(gsw.id,rn,3,"fde9d9","c62828"))
-
+        reqs.append(color_cell_req(gsw.id,rn,9,bg_hex,fg_hex))
+        cap = row[1]
+        if   cap=="Large Cap": reqs.append(color_cell_req(gsw.id,rn,1,"d9ead3","0b8043"))
+        elif cap=="Mid Cap":   reqs.append(color_cell_req(gsw.id,rn,1,"d9eaf7","1565c0"))
+        elif cap=="Small Cap": reqs.append(color_cell_req(gsw.id,rn,1,"fde9d9","c62828"))
+            
         # RSI color in growth screener
         try:
-            rsi_val = float(str(row[15]).replace("%",""))
-            if   rsi_val<35: reqs.append(color_cell_req(gsw.id,rn,15,"d9ead3","0b8043"))
-            elif rsi_val>70: reqs.append(color_cell_req(gsw.id,rn,15,"fde9d9","c62828"))
+            rsi_val = float(str(row[12]).replace("%",""))
+            if   rsi_val<35: reqs.append(color_cell_req(gsw.id,rn,12,"d9ead3","0b8043"))
+            elif rsi_val>70: reqs.append(color_cell_req(gsw.id,rn,12,"fde9d9","c62828"))
         except: pass
 
-        # Swing signal color
-        sw = str(row[16])
-        if   "SWING BUY"  in sw: reqs.append(color_cell_req(gsw.id,rn,16,"d9ead3","0b8043"))
-        elif "SWING SELL" in sw: reqs.append(color_cell_req(gsw.id,rn,16,"fde9d9","c62828"))
-        elif "NEUTRAL"    in sw: reqs.append(color_cell_req(gsw.id,rn,16,"f1f3f4","444444"))
-
+        sw = str(row[13])
+        if   "SWING BUY"  in sw: reqs.append(color_cell_req(gsw.id,rn,13,"d9ead3","0b8043"))
+        elif "SWING SELL" in sw: reqs.append(color_cell_req(gsw.id,rn,13,"fde9d9","c62828"))
+        elif "NEUTRAL"    in sw: reqs.append(color_cell_req(gsw.id,rn,13,"f1f3f4","444444"))
+            
     reqs.append({"repeatCell":{
-        "range":{"sheetId":gsw.id,"startRowIndex":1,"endRowIndex":len(growth)+1,"startColumnIndex":13,"endColumnIndex":14},
+        "range":{"sheetId":gsw.id,"startRowIndex":1,"endRowIndex":len(growth)+1,"startColumnIndex":10,"endColumnIndex":11},
         "cell":{"userEnteredFormat":{"wrapStrategy":"WRAP"}},
         "fields":"userEnteredFormat.wrapStrategy"
     }})
