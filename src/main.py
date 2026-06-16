@@ -117,7 +117,7 @@ def build_alert_message(alerts, portfolio_value, top_growth):
     if top_growth:
         msg += "<b>🏆 Top 3 Growth Picks</b>\n"
         for r in top_growth[:3]:
-            msg += f"  {r[0]} — {r[12]} (Score:{r[11]})\n"
+            msg += f"  {r[0]} — {r[9]} (Score:{r[8]})\n"
 
     msg += "\n<i>via GitHub Actions + yfinance</i>"
     return msg
@@ -754,8 +754,8 @@ def write_colab_data(sh, rows):
 
         try:
             pct_val = float(str(row[7]).replace("%","").strip())
-            if   pct_val >= -20: reqs.append(color_cell_req(gsw.id,rn,7,"d9ead3","0b8043"))
-            else:                reqs.append(color_cell_req(gsw.id,rn,7,"fde9d9","c62828"))
+            if   pct_val >= -20: reqs.append(color_cell_req(ws.id,rn,6,"d9ead3","0b8043"))
+            else:                reqs.append(color_cell_req(ws.id,rn,6,"fde9d9","c62828"))
         except: pass
 
         # Volume spike color
@@ -894,7 +894,7 @@ def write_growth_screener(sh, all_out):
     if growth: gsw.append_rows(growth)
 
     reqs = [{"repeatCell":{
-        "range":{"sheetId":gsw.id,"startRowIndex":0,"endRowIndex":1,"startColumnIndex":0,"endColumnIndex":17},
+        "range":{"sheetId":gsw.id,"startRowIndex":0,"endRowIndex":1,"startColumnIndex":0,"endColumnIndex":14},
         "cell":{"userEnteredFormat":{
             "backgroundColor":hex_rgb("0d1b2a"),
             "textFormat":{"foregroundColor":hex_rgb("ffffff"),"bold":True,"fontSize":10},
@@ -917,7 +917,7 @@ def write_growth_screener(sh, all_out):
         alt = "f8f9fa" if i%2==0 else "ffffff"
         fg_hex, bg_hex = rating_colors.get(row[12], ("000000","ffffff"))
         reqs.append({"repeatCell":{
-            "range":{"sheetId":gsw.id,"startRowIndex":rn,"endRowIndex":rn+1,"startColumnIndex":0,"endColumnIndex":17},
+            "range":{"sheetId":gsw.id,"startRowIndex":rn,"endRowIndex":rn+1,"startColumnIndex":0,"endColumnIndex":14},
             "cell":{"userEnteredFormat":{"backgroundColor":hex_rgb(alt)}},
             "fields":"userEnteredFormat.backgroundColor"
         }})
@@ -1123,11 +1123,11 @@ def main():
     growth  = write_growth_screener(sh, all_out)
 
     for r in growth:
-        if r[12] in ("STRONG BUY","BUY"):
+        if r[9] in ("STRONG BUY","BUY"):
             alerts["strong_buy"].append({
                 "sym":    r[0],
-                "score":  r[11],
-                "reason": r[13][:60]
+                "score":  r[8],
+                "reason": r[10][:60]
             })
 
     msg = build_alert_message(alerts, portfolio_live_value, growth)
@@ -1150,7 +1150,7 @@ def main():
     log.info(f"🚀 Exit Ready: {exit_ready or 'None'}")
     log.info(f"Top 5 growth picks:")
     for r in growth[:5]:
-        log.info(f"   {r[0]:<12} Score:{r[11]:>3}  {r[12]:<12} RSI:{r[15]}")
+        log.info(f"   {r[0]:<12} Score:{r[8]:>3}  {r[9]:<12} RSI:{r[12]}")
     log.info("═"*55)
 
 
