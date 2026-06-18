@@ -597,40 +597,28 @@ def write_colab_data(sh, rows):
         ws = sh.add_worksheet("GITHUB DATA", rows=300, cols=35)
 
     headers = [
-        "Symbol","CMP","Sector","Industry",
+        "Symbol","Sector","Industry","CMP",
         "52W High","52W Low","Buy 20% Less",
-        "Mkt Cap Cr","Cap Type",
         "PE","EPS","Book Value","P/B",
-        "Div Yield%","ROE%","ROCE%","Debt/Equity",
+        "Div Yield%","ROE%","Debt/Equity",
         "Rev Growth%","Beta",
+        "Trend","Swing Signal",
         "AI Decision","AI Reason","XIRR%","Updated",
-        "Target Progress%","Sector Median PE",
-        "Portfolio Weight%","Swing Rotation",
-        # Technical columns
-        "RSI","SMA 50","SMA 200","EMA 20",
-        "Vol Spike","Trend","Swing Signal"
+        "Sector Median PE","Swing Rotation",
+        "RSI","SMA 50","SMA 200","EMA 20","Vol Spike",
+        "Mkt Cap Cr","Cap Type"
     ]
     ws.append_row(headers)
     if rows:
         ws.append_rows(rows)
 
-    # Header format
+    # Header format — font size 8
     sh.batch_update({"requests":[{"repeatCell":{
         "range":{"sheetId":ws.id,"startRowIndex":0,"endRowIndex":1,"startColumnIndex":0,"endColumnIndex":len(headers)},
         "cell":{"userEnteredFormat":{
             "backgroundColor":hex_rgb("0d1b2a"),
-            "textFormat":{"foregroundColor":hex_rgb("ffffff"),"bold":True,"fontSize":10},
+            "textFormat":{"foregroundColor":hex_rgb("ffffff"),"bold":True,"fontSize":8},
             "verticalAlignment":"MIDDLE","wrapStrategy":"WRAP"
-        }},
-        "fields":"userEnteredFormat"
-    }}]})
-
-    # Technical headers — different color to distinguish
-    sh.batch_update({"requests":[{"repeatCell":{
-        "range":{"sheetId":ws.id,"startRowIndex":0,"endRowIndex":1,"startColumnIndex":27,"endColumnIndex":len(headers)},
-        "cell":{"userEnteredFormat":{
-            "backgroundColor":hex_rgb("1b2a4f"),
-            "textFormat":{"foregroundColor":hex_rgb("ffffff"),"bold":True,"fontSize":10},
         }},
         "fields":"userEnteredFormat"
     }}]})
@@ -641,12 +629,15 @@ def write_colab_data(sh, rows):
         "fields":"gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
     }}]})
 
-    # Column widths
+    # Column widths — matching new 31-column order
     widths = [
-        90,90,100,120,90,90,100,130,90,
-        60,70,80,65,70,70,70,70,80,60,
-        90,220,70,100,120,110,130,160,
-        60,80,80,70,80,120,110
+        90,100,120,90,90,90,100,
+        60,70,80,65,70,70,70,80,60,
+        110,110,
+        90,220,70,100,
+        110,160,
+        60,80,80,70,80,
+        90,90
     ]
     sh.batch_update({"requests":[{"updateDimensionProperties":{
         "range":{"sheetId":ws.id,"dimension":"COLUMNS","startIndex":i,"endIndex":i+1},
@@ -672,15 +663,13 @@ def write_colab_data(sh, rows):
                 return float(v) if len(row)>idx and v else None
             except: return None
 
-        cap    = row[8].strip()  if len(row)>8  else ""
-        ai     = row[19].strip() if len(row)>19 else ""
-        swing  = row[33].strip() if len(row)>33 else ""
-        pct    = sf(6);   pe_v  = sf(9);   eps_v = sf(10)
-        roe_v  = sf(14);  de_v  = sf(16);  rg_v  = sf(17)
-        xirr_v = sf(21);  tgt_v = sf(23);  wt_v  = sf(25)
-        rsi_v  = sf(27);  vol_v = sf(31)
+        cap    = row[30].strip() if len(row)>30 else ""
+        ai     = row[18].strip() if len(row)>18 else ""
+        swing  = row[17].strip() if len(row)>17 else ""
+        pct    = sf(6);   pe_v  = sf(7);   eps_v = sf(8)
+        roe_v  = sf(12);  de_v  = sf(13);  rg_v  = sf(14)
+        xirr_v = sf(20);  rsi_v = sf(24);  vol_v = sf(28)
 
-        # Cap Type colors
         if   cap=="Large Cap": cb,cf = "d9ead3","0b8043"
         elif cap=="Mid Cap":   cb,cf = "d9eaf7","1565c0"
         elif cap=="Small Cap": cb,cf = "fde9d9","c62828"
@@ -688,86 +677,55 @@ def write_colab_data(sh, rows):
         if cap:
             reqs += [
                 color_cell_req(ws.id,rn,0,cb,cf),
-                color_cell_req(ws.id,rn,7,cb,cf),
-                color_cell_req(ws.id,rn,8,cb,cf)
+                color_cell_req(ws.id,rn,29,cb,cf),
+                color_cell_req(ws.id,rn,30,cb,cf)
             ]
 
-        # 52W High blue, Low red
         reqs.append(color_cell_req(ws.id,rn,4,"eaf4fb","1565c0",bold=False))
         reqs.append(color_cell_req(ws.id,rn,5,"fdf2f2","c62828",bold=False))
 
-        # Buy 20% Less
         if pct is not None:
             reqs.append(color_cell_req(ws.id,rn,6,"d9ead3","0b8043") if pct>=-20 else color_cell_req(ws.id,rn,6,"fde9d9","c62828"))
 
-        # PE
         if pe_v and pe_v>0:
-            reqs.append(color_cell_req(ws.id,rn,9,"d9ead3","0b8043") if pe_v<20 else color_cell_req(ws.id,rn,9,"fde9d9","c62828"))
+            reqs.append(color_cell_req(ws.id,rn,7,"d9ead3","0b8043") if pe_v<20 else color_cell_req(ws.id,rn,7,"fde9d9","c62828"))
 
-        # EPS
         if eps_v is not None:
             thresh = 50 if cap=="Large Cap" else (20 if cap=="Mid Cap" else 5)
-            reqs.append(color_cell_req(ws.id,rn,10,"d9ead3","0b8043") if eps_v>=thresh else color_cell_req(ws.id,rn,10,"fde9d9","c62828"))
+            reqs.append(color_cell_req(ws.id,rn,8,"d9ead3","0b8043") if eps_v>=thresh else color_cell_req(ws.id,rn,8,"fde9d9","c62828"))
 
-        # ROE
         if roe_v is not None:
-            if   roe_v>=15: reqs.append(color_cell_req(ws.id,rn,14,"d9ead3","0b8043"))
-            elif roe_v<10:  reqs.append(color_cell_req(ws.id,rn,14,"fde9d9","c62828"))
+            if   roe_v>=15: reqs.append(color_cell_req(ws.id,rn,12,"d9ead3","0b8043"))
+            elif roe_v<10:  reqs.append(color_cell_req(ws.id,rn,12,"fde9d9","c62828"))
 
-        # Debt/Eq
         if de_v is not None:
-            if   de_v<0.5:  reqs.append(color_cell_req(ws.id,rn,16,"d9ead3","0b8043"))
-            elif de_v>1.5:  reqs.append(color_cell_req(ws.id,rn,16,"fde9d9","c62828"))
+            if   de_v<0.5:  reqs.append(color_cell_req(ws.id,rn,13,"d9ead3","0b8043"))
+            elif de_v>1.5:  reqs.append(color_cell_req(ws.id,rn,13,"fde9d9","c62828"))
 
-        # Rev Growth
         if rg_v is not None:
-            if   rg_v>=10: reqs.append(color_cell_req(ws.id,rn,17,"d9ead3","0b8043"))
-            elif rg_v<0:   reqs.append(color_cell_req(ws.id,rn,17,"fde9d9","c62828"))
+            if   rg_v>=10: reqs.append(color_cell_req(ws.id,rn,14,"d9ead3","0b8043"))
+            elif rg_v<0:   reqs.append(color_cell_req(ws.id,rn,14,"fde9d9","c62828"))
 
-        # AI Decision
-        if   ai=="HOLD":  reqs.append(color_cell_req(ws.id,rn,19,"d9ead3","0b8043"))
-        elif ai=="WATCH": reqs.append(color_cell_req(ws.id,rn,19,"fff2cc","7f4f00"))
-        elif ai=="SELL":  reqs.append(color_cell_req(ws.id,rn,19,"fde9d9","c62828"))
+        if   ai=="HOLD":  reqs.append(color_cell_req(ws.id,rn,18,"d9ead3","0b8043"))
+        elif ai=="WATCH": reqs.append(color_cell_req(ws.id,rn,18,"fff2cc","7f4f00"))
+        elif ai=="SELL":  reqs.append(color_cell_req(ws.id,rn,18,"fde9d9","c62828"))
 
-        # XIRR
         if xirr_v is not None:
-            reqs.append(color_cell_req(ws.id,rn,21,"d9ead3","0b8043") if xirr_v>=0 else color_cell_req(ws.id,rn,21,"fde9d9","c62828"))
+            reqs.append(color_cell_req(ws.id,rn,20,"d9ead3","0b8043") if xirr_v>=0 else color_cell_req(ws.id,rn,20,"fde9d9","c62828"))
 
-        # Target Progress
-        if tgt_v is not None:
-            if   tgt_v>=20: reqs.append(color_cell_req(ws.id,rn,23,"00c853","ffffff"))
-            elif tgt_v>=10: reqs.append(color_cell_req(ws.id,rn,23,"d9ead3","0b8043"))
-            elif tgt_v>=0:  reqs.append(color_cell_req(ws.id,rn,23,"fff2cc","7f4f00"))
-            else:           reqs.append(color_cell_req(ws.id,rn,23,"fde9d9","c62828"))
-
-        # Portfolio Weight
-        if wt_v and wt_v>0:
-            if   wt_v>15: reqs.append(color_cell_req(ws.id,rn,25,"fde9d9","c62828"))
-            elif wt_v>7:  reqs.append(color_cell_req(ws.id,rn,25,"fff2cc","7f4f00"))
-            else:         reqs.append(color_cell_req(ws.id,rn,25,"d9ead3","0b8043"))
-
-        # RSI color — oversold green, overbought red
         if rsi_v is not None:
-            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id,rn,27,"d9ead3","0b8043"))
-            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id,rn,27,"fde9d9","c62828"))
-            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id,rn,27,"fff2cc","7f4f00"))
+            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id,rn,24,"d9ead3","0b8043"))
+            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id,rn,24,"fde9d9","c62828"))
+            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id,rn,24,"fff2cc","7f4f00"))
 
-        try:
-            pct_val = float(str(row[7]).replace("%","").strip())
-            if   pct_val >= -20: reqs.append(color_cell_req(ws.id,rn,6,"d9ead3","0b8043"))
-            else:                reqs.append(color_cell_req(ws.id,rn,6,"fde9d9","c62828"))
-        except: pass
-
-        # Volume spike color
         if vol_v is not None:
-            if vol_v > 2.0: reqs.append(color_cell_req(ws.id,rn,31,"fff2cc","7f4f00"))
-            elif vol_v > 3.0: reqs.append(color_cell_req(ws.id,rn,31,"fde9d9","c62828"))
+            if vol_v > 2.0: reqs.append(color_cell_req(ws.id,rn,28,"fff2cc","7f4f00"))
+            elif vol_v > 3.0: reqs.append(color_cell_req(ws.id,rn,28,"fde9d9","c62828"))
 
-        # Swing Signal color
-        if   "SWING BUY"  in swing: reqs.append(color_cell_req(ws.id,rn,33,"d9ead3","0b8043"))
-        elif "SWING SELL" in swing: reqs.append(color_cell_req(ws.id,rn,33,"fde9d9","c62828"))
-        elif "NEUTRAL"    in swing: reqs.append(color_cell_req(ws.id,rn,33,"f1f3f4","444444"))
-        elif "WATCH"      in swing: reqs.append(color_cell_req(ws.id,rn,33,"fff2cc","7f4f00"))
+        if   "SWING BUY"  in swing: reqs.append(color_cell_req(ws.id,rn,17,"d9ead3","0b8043"))
+        elif "SWING SELL" in swing: reqs.append(color_cell_req(ws.id,rn,17,"fde9d9","c62828"))
+        elif "NEUTRAL"    in swing: reqs.append(color_cell_req(ws.id,rn,17,"f1f3f4","444444"))
+        elif "WATCH"      in swing: reqs.append(color_cell_req(ws.id,rn,17,"fff2cc","7f4f00"))
 
     batch_update_safe(sh, reqs)
     log.info("GITHUB DATA tab formatted")
@@ -1100,19 +1058,19 @@ def main():
             alerts["swing_buy"].append({"sym": sym, "rsi": rsi, "reason": swing_rsn})
 
         results.append([
-            sym, cmp, sector, industry,
+            sym, sector, industry, cmp,
             high52 or "", low52 or "", pct_high_display,
-            mcap_fmt, cap_type,
             pe or "", eps or "", bv or "", pb or "",
-            div or "", roe or "", roce or "", de_display,
+            div or "", roe or "", de_display,
             rev_gr or "", beta or "",
+            trend,
+            f"{swing_sig} — {swing_rsn}" if swing_sig and swing_rsn else swing_sig,
             decision, reason,
             xirr_val if xirr_val else "",
             datetime.now().strftime("%d-%b-%Y %H:%M"),
-            tgt_progress, med_pe, port_weight, swing_rot,
-            rsi, sma50, sma200, ema20,
-            vol_spike, trend,
-            f"{swing_sig} — {swing_rsn}" if swing_sig and swing_rsn else swing_sig
+            med_pe, swing_rot,
+            rsi, sma50, sma200, ema20, vol_spike,
+            mcap_fmt, cap_type
         ])
 
         fin_tag = " [FIN]" if is_fin else ""
