@@ -634,8 +634,8 @@ def write_colab_data(sh, rows):
         "properties":{"pixelSize":45},"fields":"pixelSize"
     }}]})
 
-    # Column widths — matching new 31-column order
-        widths = [
+   # Column widths — matching new 31-column order
+    widths = [
         70,75,85,55,55,55,65,
         45,45,55,45,50,50,55,55,45,
         75,75,
