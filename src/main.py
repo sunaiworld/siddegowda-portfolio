@@ -628,16 +628,21 @@ def write_colab_data(sh, rows):
         "properties":{"sheetId":ws.id,"gridProperties":{"frozenRowCount":1,"frozenColumnCount":1}},
         "fields":"gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
     }}]})
+    
+    sh.batch_update({"requests":[{"updateDimensionProperties":{
+        "range":{"sheetId":ws.id,"dimension":"ROWS","startIndex":0,"endIndex":1},
+        "properties":{"pixelSize":45},"fields":"pixelSize"
+    }}]})
 
     # Column widths — matching new 31-column order
-    widths = [
-        90,100,120,90,90,90,100,
-        60,70,80,65,70,70,70,80,60,
-        110,110,
-        90,220,70,100,
-        110,160,
-        60,80,80,70,80,
-        90,90
+     widths = [
+        70,75,85,55,55,55,65,
+        45,45,55,45,50,50,55,55,45,
+        75,75,
+        75,200,55,75,
+        75,110,
+        45,55,55,55,55,
+        65,65
     ]
     sh.batch_update({"requests":[{"updateDimensionProperties":{
         "range":{"sheetId":ws.id,"dimension":"COLUMNS","startIndex":i,"endIndex":i+1},
