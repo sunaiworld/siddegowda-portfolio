@@ -44,7 +44,18 @@ SLEEP_BATCH = 8
 SLEEP_INFO  = 3
 SL_PCT      = 0.07
 TARGET_PCT  = 0.20
-
+FUTURE_BUY_STOCKS = [
+    "ZYDUSLIFE", "LUPIN", "SUNPHARMA", "ADANIENT", "ADANIPORTS", "OFSS", "AUBANK",
+    "AUROPHARMA", "GLAND", "DRREDDY", "DIVISLAB", "BIOCON", "AJANTPHARM", "MARICO",
+    "BHARATFORG", "ICICIBANK", "POLYCAB", "AXISBANK", "CGPOWER", "HONAUT", "GLENMARK",
+    "CUMMINSIND", "LT", "SIEMENS", "EICHERMOT", "BEL", "NHPC", "FORTIS", "BHARTIARTL",
+    "CIPLA", "COALINDIA", "HAL", "ADANIPOWER", "MOTILALOFS", "BRITANNIA", "NTPC",
+    "BSE", "MRF", "DMART", "OIL", "ONGC", "NATIONALUM", "HINDPETRO", "BPCL",
+    "BLUESTARCO", "DABUR", "MAZDOCK", "ABBOTINDIA", "TECHM", "MPHASIS", "MUTHOOTFIN",
+    "COFORGE", "HINDZINC", "HAVELLS", "COCHINSHIP", "GLAXO", "JWL", "HINDCOPPER",
+    "HCLTECH", "KPITTECH", "MEDPLUS", "ALKYLAMINE", "LAURUSLABS", "TTKPRESTIG",
+    "JYOTHYLAB", "JKPAPER", "MASTEK", "WOCKPHARMA", "DATAPATTNS"
+]
 # ══════════════════════════════════════════════
 # SECTOR ARCHETYPE MAP
 # Maps yfinance industry/sector strings → archetype key
@@ -948,12 +959,12 @@ def batch_update_safe(sh, requests, chunk=100):
 # WRITE GITHUB DATA TAB
 # New unified column layout
 # ══════════════════════════════════════════════
-def write_github_data(sh, rows):
+def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     try:
-        ws = sh.worksheet("GITHUB DATA")
+        ws = sh.worksheet(tab_name)
         ws.clear()
     except:
-        ws = sh.add_worksheet("GITHUB DATA", rows=300, cols=35)
+        ws = sh.add_worksheet(tab_name, rows=300, cols=35)
 
     headers = [
         "Symbol","Sector","Industry","Archetype","CMP",
@@ -1097,9 +1108,77 @@ def write_github_data(sh, rows):
             elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, 27, "fff2cc", "7f4f00"))
 
     batch_update_safe(sh, reqs)
-    log.info("GITHUB DATA tab written and formatted")
+    log.info(f"{tab_name} tab written and formatted")
     return ws
-
+def process_future_buy(sh):
+    log.info(f"Processing Future Buy Watchlist: {len(FUTURE_BUY_STOCKS)} symbols")
+    prices = fetch_prices_batch(FUTURE_BUY_STOCKS)
+    
+    rows = []
+    for sym in FUTURE_BUY_STOCKS:
+        cmp = prices.get(sym)
+        if not cmp:
+            log.warning(f"Skipping {sym} - no price data")
+            continue
+            
+        fund = fetch_fundamentals(sym)
+        tech = fetch_technicals(sym)
+        
+        sector = fund.get("sector", "")
+        industry = fund.get("industry", "")
+        archetype = get_archetype(sym, sector, industry)
+        
+        rev_growth = fetch_rev_growth(sym)
+        
+        metrics = {
+            "roe": fund.get("roe"),
+            "roa": fund.get("roa"),
+            "roce": fund.get("roce"),
+            "debt_eq": fund.get("debt_eq"),
+            "pe": fund.get("pe"),
+            "pb": fund.get("pb"),
+            "div": fund.get("div"),
+            "rev_growth": rev_growth,
+            "rsi": tech.get("rsi"),
+            "sma200": tech.get("sma200"),
+            "cmp": cmp,
+            "vol_spike": tech.get("vol_spike"),
+            "cross": tech.get("cross", "")
+        }
+        
+        q_sc, v_sc, t_sc, tot_sc, action, strengths, weaknesses = compute_unified_score(sym, archetype, metrics)
+        
+        high52 = fund.get("high52")
+        buy_20_less = round((cmp - high52) / high52 * 100, 2) if high52 and high52 > 0 else None
+        
+        mcap_cr = fund.get("mcap_cr")
+        if mcap_cr:
+            if mcap_cr > 20000: cap_type = "Large Cap"
+            elif mcap_cr > 5000: cap_type = "Mid Cap"
+            else: cap_type = "Small Cap"
+        else:
+            cap_type = ""
+            
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        
+        row = [
+            sym, sector, industry, archetype, cmp,
+            fund.get("high52", ""), fund.get("low52", ""), buy_20_less,
+            fund.get("pe", ""), fund.get("eps", ""), fund.get("bv", ""), fund.get("pb", ""),
+            fund.get("div", ""), fund.get("roe", ""), fund.get("roa", ""), fund.get("debt_eq", ""),
+            rev_growth if rev_growth is not None else "", fund.get("beta", ""),
+            q_sc, v_sc, t_sc, tot_sc,
+            action,
+            " | ".join(strengths), " | ".join(weaknesses),
+            "",  # XIRR is blank for Future Buy as they are not portfolio holdings
+            now_str,
+            tech.get("rsi", ""), tech.get("sma50", ""), tech.get("sma200", ""), tech.get("ema20", ""),
+            tech.get("vol_spike", ""), tech.get("trend", ""),
+            mcap_cr if mcap_cr else "", cap_type
+        ]
+        rows.append(row)
+        
+    write_github_data(sh, rows, tab_name="Future Buy")
 # ══════════════════════════════════════════════
 # WRITE GROWTH SCREENER TAB
 # ══════════════════════════════════════════════
@@ -1397,6 +1476,7 @@ def main():
         log.info(f"   {r['sym']:<12} Score:{r['total']:>3}  {r['action']}")
     log.info("═" * 55)
 
-
+    process_future_buy(sh)
 if __name__ == "__main__":
     main()
+    
