@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 SIDDEGOWDA PORTFOLIO — Daily Auto-Updater
-Long-term + Swing Trading Dashboard
+Sector-Aware Unified Scoring Engine v2.0
 GitHub Actions — runs daily 6 PM IST
 """
 
@@ -18,13 +18,6 @@ import pandas as pd
 import yfinance as yf
 import gspread
 from google.oauth2.service_account import Credentials
-
-# ── ta library for technical indicators ───────
-try:
-    import ta
-    TA_AVAILABLE = True
-except ImportError:
-    TA_AVAILABLE = False
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -46,25 +39,562 @@ SCOPES           = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
-BATCH_SIZE       = 5
-SLEEP_BATCH      = 8
-SLEEP_INFO       = 3
+BATCH_SIZE  = 5
+SLEEP_BATCH = 8
+SLEEP_INFO  = 3
+SL_PCT      = 0.07
+TARGET_PCT  = 0.20
+
+# ══════════════════════════════════════════════
+# SECTOR ARCHETYPE MAP
+# Maps yfinance industry/sector strings → archetype key
+# ══════════════════════════════════════════════
+SECTOR_ARCHETYPE_MAP = {
+    # Banks
+    "banks": "FINANCIAL_BANK",
+    "bank": "FINANCIAL_BANK",
+    "banks - regional": "FINANCIAL_BANK",
+    "banks - diversified": "FINANCIAL_BANK",
+    "regional banks": "FINANCIAL_BANK",
+    # NBFCs / Credit
+    "credit services": "FINANCIAL_NBFC",
+    "nbfc": "FINANCIAL_NBFC",
+    "mortgage finance": "FINANCIAL_NBFC",
+    "consumer finance": "FINANCIAL_NBFC",
+    "thrifts & mortgage finance": "FINANCIAL_NBFC",
+    "diversified financials": "FINANCIAL_NBFC",
+    "financial conglomerates": "FINANCIAL_NBFC",
+    # Insurance
+    "insurance": "FINANCIAL_INSURANCE",
+    "insurance - life": "FINANCIAL_INSURANCE",
+    "insurance - diversified": "FINANCIAL_INSURANCE",
+    "insurance brokers": "FINANCIAL_INSURANCE",
+    "insurance - property & casualty": "FINANCIAL_INSURANCE",
+    # Capital Markets
+    "capital markets": "FINANCIAL_CAPITAL_MARKETS",
+    "asset management": "FINANCIAL_CAPITAL_MARKETS",
+    "financial data & stock exchanges": "FINANCIAL_CAPITAL_MARKETS",
+    "investment banking & brokerage": "FINANCIAL_CAPITAL_MARKETS",
+    # IT / Software
+    "software": "QUALITY_GROWTH",
+    "software - application": "QUALITY_GROWTH",
+    "software - infrastructure": "QUALITY_GROWTH",
+    "information technology services": "QUALITY_GROWTH",
+    "technology": "QUALITY_GROWTH",
+    # Pharma / Healthcare
+    "drug manufacturers - general": "QUALITY_GROWTH",
+    "drug manufacturers - specialty & generic": "QUALITY_GROWTH",
+    "pharmaceuticals": "QUALITY_GROWTH",
+    "biotechnology": "QUALITY_GROWTH",
+    "medical devices": "QUALITY_GROWTH",
+    "medical care facilities": "QUALITY_GROWTH",
+    "diagnostics & research": "QUALITY_GROWTH",
+    "healthcare": "QUALITY_GROWTH",
+    # Specialty Chemicals
+    "specialty chemicals": "QUALITY_GROWTH",
+    "chemicals": "QUALITY_GROWTH",
+    # FMCG / Consumer Staples
+    "consumer defensive": "CONSUMER_STAPLES",
+    "beverages - non-alcoholic": "CONSUMER_STAPLES",
+    "beverages - alcoholic": "CONSUMER_STAPLES",
+    "packaged foods": "CONSUMER_STAPLES",
+    "household & personal products": "CONSUMER_STAPLES",
+    "food distribution": "CONSUMER_STAPLES",
+    "tobacco": "CONSUMER_STAPLES",
+    "fmcg": "CONSUMER_STAPLES",
+    "personal care products": "CONSUMER_STAPLES",
+    # Consumer Discretionary / Auto
+    "consumer cyclical": "CONSUMER_DISCRETIONARY",
+    "auto manufacturers": "CONSUMER_DISCRETIONARY",
+    "auto parts": "CONSUMER_DISCRETIONARY",
+    "automotive": "CONSUMER_DISCRETIONARY",
+    "specialty retail": "CONSUMER_DISCRETIONARY",
+    "retail": "CONSUMER_DISCRETIONARY",
+    "restaurants": "CONSUMER_DISCRETIONARY",
+    "leisure": "CONSUMER_DISCRETIONARY",
+    "apparel manufacturing": "CONSUMER_DISCRETIONARY",
+    "apparel retail": "CONSUMER_DISCRETIONARY",
+    "consumer electronics": "CONSUMER_DISCRETIONARY",
+    "home improvement retail": "CONSUMER_DISCRETIONARY",
+    # Industrial / Capital Goods / Infrastructure
+    "industrials": "INDUSTRIAL_CAPEX",
+    "industrial conglomerates": "INDUSTRIAL_CAPEX",
+    "specialty industrial machinery": "INDUSTRIAL_CAPEX",
+    "electrical equipment & parts": "INDUSTRIAL_CAPEX",
+    "engineering & construction": "INDUSTRIAL_CAPEX",
+    "construction": "INDUSTRIAL_CAPEX",
+    "infrastructure": "INDUSTRIAL_CAPEX",
+    "utilities": "INDUSTRIAL_CAPEX",
+    "utilities - regulated electric": "INDUSTRIAL_CAPEX",
+    "utilities - renewable": "INDUSTRIAL_CAPEX",
+    "power": "INDUSTRIAL_CAPEX",
+    "cement": "INDUSTRIAL_CAPEX",
+    "building materials": "INDUSTRIAL_CAPEX",
+    # Commodity / Cyclical
+    "basic materials": "COMMODITY_CYCLICAL",
+    "steel": "COMMODITY_CYCLICAL",
+    "aluminum": "COMMODITY_CYCLICAL",
+    "copper": "COMMODITY_CYCLICAL",
+    "metals & mining": "COMMODITY_CYCLICAL",
+    "other industrial metals & mining": "COMMODITY_CYCLICAL",
+    "oil & gas integrated": "COMMODITY_CYCLICAL",
+    "oil & gas refining & marketing": "COMMODITY_CYCLICAL",
+    "oil & gas e&p": "COMMODITY_CYCLICAL",
+    "energy": "COMMODITY_CYCLICAL",
+    "coal": "COMMODITY_CYCLICAL",
+    "fertilizers & agricultural chemicals": "COMMODITY_CYCLICAL",
+    "agricultural inputs": "COMMODITY_CYCLICAL",
+}
+
+# Symbol-level overrides for stocks that yfinance misclassifies
+SYMBOL_ARCHETYPE_OVERRIDE = {
+    "HDFCBANK": "FINANCIAL_BANK",
+    "KOTAKBANK": "FINANCIAL_BANK",
+    "AUBANK": "FINANCIAL_BANK",
+    "BANDHANBNK": "FINANCIAL_BANK",
+    "IDFCFIRSTB": "FINANCIAL_BANK",
+    "CUB": "FINANCIAL_BANK",
+    "KTKBANK": "FINANCIAL_BANK",
+    "INDUSINDBK": "FINANCIAL_BANK",
+    "EQUITASBNK": "FINANCIAL_BANK",
+    "UJJIVANSFB": "FINANCIAL_BANK",
+    "PNB": "FINANCIAL_BANK",
+    "CANBK": "FINANCIAL_BANK",
+    "BAJFINANCE": "FINANCIAL_NBFC",
+    "BAJAJFINSV": "FINANCIAL_NBFC",
+    "CHOLAFIN": "FINANCIAL_NBFC",
+    "FIVESTAR": "FINANCIAL_NBFC",
+    "ARMANFIN": "FINANCIAL_NBFC",
+    "APTUS": "FINANCIAL_NBFC",
+    "AAVAS": "FINANCIAL_NBFC",
+    "JIOFIN": "FINANCIAL_NBFC",
+    "MANAPPURAM": "FINANCIAL_NBFC",
+    "MUTHOOTFIN": "FINANCIAL_NBFC",
+    "BAJAJHLDNG": "FINANCIAL_NBFC",
+    "HDFCLIFE": "FINANCIAL_INSURANCE",
+    "SBILIFE": "FINANCIAL_INSURANCE",
+    "STARHEALTH": "FINANCIAL_INSURANCE",
+    "POLICYBZR": "FINANCIAL_INSURANCE",
+    "ANGELONE": "FINANCIAL_CAPITAL_MARKETS",
+    "MOTILALOFS": "FINANCIAL_CAPITAL_MARKETS",
+    "NUVAMA": "FINANCIAL_CAPITAL_MARKETS",
+    "GEOJITFSL": "FINANCIAL_CAPITAL_MARKETS",
+    "5PAISA": "FINANCIAL_CAPITAL_MARKETS",
+    "CDSL": "FINANCIAL_CAPITAL_MARKETS",
+    "CAMS": "FINANCIAL_CAPITAL_MARKETS",
+    "HDFCAMC": "FINANCIAL_CAPITAL_MARKETS",
+    "CRISIL": "FINANCIAL_CAPITAL_MARKETS",
+    "IEX": "FINANCIAL_CAPITAL_MARKETS",
+    "COALINDIA": "COMMODITY_CYCLICAL",
+    "HINDPETRO": "COMMODITY_CYCLICAL",
+    "VEDL": "COMMODITY_CYCLICAL",
+    "HINDZINC": "COMMODITY_CYCLICAL",
+    "CASTROLIND": "COMMODITY_CYCLICAL",
+    "PETRONET": "COMMODITY_CYCLICAL",
+    "RECLTD": "INDUSTRIAL_CAPEX",
+    "ADANIPOWER": "INDUSTRIAL_CAPEX",
+    "ITC": "CONSUMER_STAPLES",
+    "COLPAL": "CONSUMER_STAPLES",
+    "HINDUNILVR": "CONSUMER_STAPLES",
+    "DABUR": "CONSUMER_STAPLES",
+    "BRITANNIA": "CONSUMER_STAPLES",
+    "NESTLEIND": "CONSUMER_STAPLES",
+    "MARICO": "CONSUMER_STAPLES",
+    "VBL": "CONSUMER_STAPLES",
+    "PGHH": "CONSUMER_STAPLES",
+    "BECTORFOOD": "CONSUMER_STAPLES",
+    "AWL": "CONSUMER_STAPLES",
+    "HEROMOTOCO": "CONSUMER_DISCRETIONARY",
+    "TVSMOTOR": "CONSUMER_DISCRETIONARY",
+    "MOTHERSON": "CONSUMER_DISCRETIONARY",
+    "EXIDEIND": "CONSUMER_DISCRETIONARY",
+    "TITAN": "CONSUMER_DISCRETIONARY",
+    "KALYANKJIL": "CONSUMER_DISCRETIONARY",
+    "TRENT": "CONSUMER_DISCRETIONARY",
+    "PAGEIND": "CONSUMER_DISCRETIONARY",
+    "SWIGGY": "CONSUMER_DISCRETIONARY",
+    "PVRINOX": "CONSUMER_DISCRETIONARY",
+    "SUNPHARMA": "QUALITY_GROWTH",
+    "CIPLA": "QUALITY_GROWTH",
+    "DRREDDY": "QUALITY_GROWTH",
+    "NATCOPHARM": "QUALITY_GROWTH",
+    "WOCKPHARMA": "QUALITY_GROWTH",
+    "SUPRIYA": "QUALITY_GROWTH",
+    "APOLLOHOSP": "QUALITY_GROWTH",
+    "MAXHEALTH": "QUALITY_GROWTH",
+    "NH": "QUALITY_GROWTH",
+    "FORTIS": "QUALITY_GROWTH",
+    "KIMS": "QUALITY_GROWTH",
+    "LALPATHLAB": "QUALITY_GROWTH",
+    "INDGN": "QUALITY_GROWTH",
+    "MEDPLUS": "QUALITY_GROWTH",
+    "AARTIIND": "QUALITY_GROWTH",
+    "DEEPAKNTR": "QUALITY_GROWTH",
+    "PIIND": "QUALITY_GROWTH",
+    "PIDILITIND": "QUALITY_GROWTH",
+    "INDIGOPNTS": "QUALITY_GROWTH",
+    "TARSONS": "QUALITY_GROWTH",
+    "DIXON": "QUALITY_GROWTH",
+    "POLYCAB": "INDUSTRIAL_CAPEX",
+    "TIINDIA": "INDUSTRIAL_CAPEX",
+    "ARE&M": "INDUSTRIAL_CAPEX",
+    "ACC": "INDUSTRIAL_CAPEX",
+    "IRCTC": "CONSUMER_DISCRETIONARY",
+}
+
+# ══════════════════════════════════════════════
+# SECTOR SCORING RULES
+# Each archetype defines quality, valuation thresholds
+# and which metrics to ignore
+# ══════════════════════════════════════════════
+SECTOR_RULES = {
+    "FINANCIAL_BANK": {
+        "ignore": ["debt_eq", "roce"],
+        "quality": {
+            "roa":        [(2.0, 15), (1.5, 12), (1.0, 8), (0.5, 4), (0, 0)],
+            "roe":        [(18, 15),  (15, 12),  (12, 8),  (8, 4),   (0, 0)],
+            "rev_growth": [(15, 10),  (10, 7),   (5, 4),   (0, 2),   (None, 0)],
+        },
+        "valuation": {
+            "pb":  [(1.0, 20), (1.5, 15), (2.5, 10), (4.0, 5), (None, 0)],
+            "div": [(2.0, 10), (1.0, 6),  (0.5, 3),  (None, 0)],
+        },
+    },
+    "FINANCIAL_NBFC": {
+        "ignore": ["debt_eq", "roce"],
+        "quality": {
+            "roe":        [(20, 20), (16, 15), (12, 10), (8, 5),  (0, 0)],
+            "roa":        [(3.0, 12),(2.0, 9), (1.5, 6), (1.0, 3),(0, 0)],
+            "rev_growth": [(20, 8),  (15, 6),  (10, 4),  (5, 2),  (None, 0)],
+        },
+        "valuation": {
+            "pb":  [(1.5, 20), (2.5, 15), (4.0, 8), (None, 3)],
+            "div": [(1.5, 10), (0.5, 5),  (None, 0)],
+        },
+    },
+    "FINANCIAL_INSURANCE": {
+        "ignore": ["debt_eq", "roce", "pe"],
+        "quality": {
+            "roe":        [(20, 20), (15, 15), (10, 8), (0, 0)],
+            "rev_growth": [(20, 20), (15, 15), (10, 8), (5, 4), (None, 0)],
+        },
+        "valuation": {
+            "pb":  [(2.0, 20), (3.5, 12), (5.0, 6), (None, 2)],
+            "div": [(1.0, 10), (0.5, 5),  (None, 0)],
+        },
+    },
+    "FINANCIAL_CAPITAL_MARKETS": {
+        "ignore": ["debt_eq"],
+        "quality": {
+            "roe":        [(25, 20), (20, 15), (15, 10), (10, 5), (0, 0)],
+            "roce":       [(25, 12), (20, 9),  (15, 6),  (0, 0)],
+            "rev_growth": [(20, 8),  (10, 5),  (0, 2),   (None, 0)],
+        },
+        "valuation": {
+            "pe":  [(20, 20), (30, 14), (40, 8), (None, 3)],
+            "div": [(2.0, 10),(1.0, 5), (None, 0)],
+        },
+    },
+    "QUALITY_GROWTH": {
+        "ignore": [],
+        "quality": {
+            "roce":       [(25, 15), (20, 12), (15, 8), (10, 4), (0, 0)],
+            "roe":        [(20, 10), (15, 8),  (12, 5), (8, 2),  (0, 0)],
+            "rev_growth": [(20, 10), (15, 8),  (10, 5), (5, 2),  (None, 0)],
+            "debt_eq":    [(0.2, 5), (0.5, 3), (1.0, 1),(None, 0)],
+        },
+        "valuation": {
+            "pe":  [(25, 15), (35, 10), (50, 5), (None, 2)],
+            "pb":  [(3.0, 10),(5.0, 7), (8.0, 4),(None, 1)],
+            "div": [(1.5, 5), (0.5, 2), (None, 0)],
+        },
+    },
+    "CONSUMER_STAPLES": {
+        "ignore": ["debt_eq"],
+        "quality": {
+            "roce":       [(40, 20), (30, 16), (20, 10), (15, 5), (0, 0)],
+            "roe":        [(30, 12), (20, 9),  (15, 6),  (0, 0)],
+            "rev_growth": [(15, 8),  (10, 6),  (5, 3),   (None, 0)],
+        },
+        "valuation": {
+            "pe":  [(35, 15), (50, 10), (65, 5), (None, 2)],
+            "div": [(2.5, 15),(1.5, 10),(0.5, 5),(None, 0)],
+        },
+    },
+    "CONSUMER_DISCRETIONARY": {
+        "ignore": [],
+        "quality": {
+            "roce":       [(20, 15), (15, 12), (10, 7), (5, 3), (0, 0)],
+            "roe":        [(18, 12), (14, 9),  (10, 5), (0, 0)],
+            "rev_growth": [(15, 8),  (10, 6),  (5, 3),  (None, 0)],
+            "debt_eq":    [(0.3, 5), (0.8, 3), (1.5, 1),(None, 0)],
+        },
+        "valuation": {
+            "pe":  [(20, 18), (30, 12), (40, 6), (None, 2)],
+            "pb":  [(3.0, 7), (5.0, 4), (None, 1)],
+            "div": [(1.5, 5), (0.5, 2), (None, 0)],
+        },
+    },
+    "INDUSTRIAL_CAPEX": {
+        "ignore": [],
+        "quality": {
+            "roce":       [(15, 15), (12, 11), (8, 7),  (5, 3),  (0, 0)],
+            "roe":        [(15, 12), (12, 9),  (8, 5),  (0, 0)],
+            "rev_growth": [(20, 10), (15, 8),  (10, 5), (5, 2),  (None, 0)],
+            "debt_eq":    [(1.0, 3), (2.0, 2), (3.0, 1),(None, 0)],
+        },
+        "valuation": {
+            "pe":  [(20, 18), (30, 12), (40, 7), (None, 3)],
+            "pb":  [(2.0, 7), (3.0, 4), (None, 1)],
+            "div": [(2.0, 5), (1.0, 3), (None, 0)],
+        },
+    },
+    "COMMODITY_CYCLICAL": {
+        "ignore": [],
+        "quality": {
+            "roe":        [(20, 15), (15, 11), (10, 7), (5, 3), (0, 0)],
+            "debt_eq":    [(0.3, 15),(0.8, 11),(1.5, 7),(2.5, 3),(None, 0)],
+            "rev_growth": [(20, 10), (10, 7),  (0, 3),  (None, 0)],
+        },
+        "valuation": {
+            "pe":  [(8, 10),  (12, 7),  (18, 4), (None, 1)],
+            "pb":  [(1.0, 15),(1.5, 10),(2.5, 5),(None, 2)],
+            "div": [(4.0, 5), (2.0, 3), (1.0, 1),(None, 0)],
+        },
+    },
+    "DEFAULT": {
+        "ignore": [],
+        "quality": {
+            "roe":        [(20, 15), (15, 11), (10, 6), (0, 0)],
+            "roce":       [(20, 15), (15, 11), (10, 6), (0, 0)],
+            "rev_growth": [(15, 10), (10, 7),  (5, 3),  (None, 0)],
+        },
+        "valuation": {
+            "pe":  [(20, 15), (30, 10), (50, 5), (None, 2)],
+            "pb":  [(2.0, 10),(4.0, 6), (None, 2)],
+            "div": [(2.0, 5), (1.0, 3), (None, 0)],
+        },
+    },
+}
+
+# ══════════════════════════════════════════════
+# ARCHETYPE DETECTION
+# ══════════════════════════════════════════════
+def get_archetype(sym, sector, industry):
+    if sym.upper() in SYMBOL_ARCHETYPE_OVERRIDE:
+        return SYMBOL_ARCHETYPE_OVERRIDE[sym.upper()]
+    for key in [industry.lower(), sector.lower()]:
+        if key in SECTOR_ARCHETYPE_MAP:
+            return SECTOR_ARCHETYPE_MAP[key]
+    return "DEFAULT"
+
+# ══════════════════════════════════════════════
+# UNIFIED SCORING ENGINE
+# ══════════════════════════════════════════════
+def score_metric(value, thresholds):
+    """
+    Thresholds: list of (cutoff, points) tuples, descending order.
+    For debt_eq: lower is better (inverted logic flagged by negative cutoffs).
+    Returns points for the metric.
+    """
+    if value is None:
+        return 0
+    for cutoff, pts in thresholds:
+        if cutoff is None:
+            return pts
+        if value >= cutoff:
+            return pts
+    return 0
+
+def score_debt(value, thresholds):
+    """Debt scoring: lower value = better score (inverted)."""
+    if value is None:
+        return 0
+    for cutoff, pts in thresholds:
+        if cutoff is None:
+            return pts
+        if value <= cutoff:
+            return pts
+    return 0
+
+def compute_unified_score(sym, archetype, metrics):
+    """
+    Returns:
+        quality_score (0-40)
+        valuation_score (0-30)
+        timing_score (0-30)
+        total_score (0-100)
+        final_action (str)
+        strengths (list)
+        weaknesses (list)
+    """
+    rules      = SECTOR_RULES.get(archetype, SECTOR_RULES["DEFAULT"])
+    ignore     = rules.get("ignore", [])
+    q_rules    = rules.get("quality", {})
+    v_rules    = rules.get("valuation", {})
+
+    quality_score    = 0
+    valuation_score  = 0
+    strengths        = []
+    weaknesses       = []
+
+    roe        = metrics.get("roe")
+    roa        = metrics.get("roa")
+    roce       = metrics.get("roce")
+    rev_growth = metrics.get("rev_growth")
+    debt_eq    = metrics.get("debt_eq")
+    pe         = metrics.get("pe")
+    pb         = metrics.get("pb")
+    div        = metrics.get("div")
+
+    # ── QUALITY SCORING ──────────────────────
+    for metric, thresholds in q_rules.items():
+        if metric in ignore:
+            continue
+        val = metrics.get(metric)
+        if val is None:
+            continue
+        if metric == "debt_eq":
+            pts = score_debt(val, thresholds)
+            if pts >= 10:
+                strengths.append(f"✓ Very low debt ({val:.1f}x)")
+            elif pts >= 6:
+                strengths.append(f"✓ Manageable debt ({val:.1f}x)")
+            elif pts <= 1:
+                weaknesses.append(f"✗ High debt ({val:.1f}x)")
+        else:
+            pts = score_metric(val, thresholds)
+            label = metric.upper().replace("_", " ")
+            if pts >= int(thresholds[0][1] * 0.8):
+                strengths.append(f"✓ Strong {label} {val:.1f}%")
+            elif pts <= int(thresholds[0][1] * 0.2) and pts > 0:
+                weaknesses.append(f"✗ Weak {label} {val:.1f}%")
+            elif pts == 0 and val is not None:
+                weaknesses.append(f"✗ Poor {label} {val:.1f}%")
+        quality_score += pts
+
+    quality_score = min(quality_score, 40)
+
+    # ── VALUATION SCORING ────────────────────
+    for metric, thresholds in v_rules.items():
+        if metric in ignore:
+            continue
+        val = metrics.get(metric)
+        if val is None:
+            continue
+        if metric == "pe":
+            if val <= 0:
+                continue
+            pts = score_metric(val, [(t[0], t[1]) if t[0] is None else (9999 - t[0], t[1]) for t in thresholds])
+            # pe: lower = better, invert
+            pts = 0
+            for cutoff, p in thresholds:
+                if cutoff is None:
+                    pts = p
+                    break
+                if val <= cutoff:
+                    pts = p
+                    break
+            if pts >= int(thresholds[0][1] * 0.8):
+                strengths.append(f"✓ Attractive PE ({val:.1f}x)")
+            elif pts <= int(thresholds[0][1] * 0.2):
+                weaknesses.append(f"✗ Expensive PE ({val:.1f}x)")
+        elif metric == "pb":
+            pts = 0
+            for cutoff, p in thresholds:
+                if cutoff is None:
+                    pts = p
+                    break
+                if val <= cutoff:
+                    pts = p
+                    break
+            if pts >= int(thresholds[0][1] * 0.8):
+                strengths.append(f"✓ Attractive P/B ({val:.1f}x)")
+            elif pts <= int(thresholds[0][1] * 0.2):
+                weaknesses.append(f"✗ Expensive P/B ({val:.1f}x)")
+        elif metric == "div":
+            pts = 0
+            for cutoff, p in thresholds:
+                if cutoff is None:
+                    pts = p
+                    break
+                if val >= cutoff:
+                    pts = p
+                    break
+            if pts >= int(thresholds[0][1] * 0.8):
+                strengths.append(f"✓ Good dividend yield ({val:.1f}%)")
+        else:
+            pts = score_metric(val, thresholds)
+        valuation_score += pts
+
+    valuation_score = min(valuation_score, 30)
+
+    # ── TIMING SCORE ─────────────────────────
+    rsi      = metrics.get("rsi")
+    sma200   = metrics.get("sma200")
+    cmp      = metrics.get("cmp")
+    vol_spk  = metrics.get("vol_spike")
+    cross    = metrics.get("cross", "")
+    timing_score = 0
+
+    if rsi is not None:
+        if   rsi < 30:  timing_score += 15; strengths.append(f"✓ Deeply oversold RSI ({rsi})")
+        elif rsi < 40:  timing_score += 10; strengths.append(f"✓ Oversold RSI ({rsi}) — good entry")
+        elif rsi < 50:  timing_score += 5
+        elif rsi < 60:  timing_score += 3
+        elif rsi > 75:  weaknesses.append(f"✗ Overbought RSI ({rsi}) — wait")
+        elif rsi > 70:  weaknesses.append(f"✗ High RSI ({rsi})")
+
+    if sma200 and cmp:
+        if cmp > sma200:
+            timing_score += 10
+        else:
+            weaknesses.append("✗ Below 200-day MA — long-term trend broken")
+
+    if cross == "Golden Cross":
+        timing_score += 5
+        strengths.append("✓ Golden Cross — momentum turning positive")
+    elif cross == "Death Cross":
+        timing_score = max(0, timing_score - 5)
+        weaknesses.append("✗ Death Cross — momentum turning negative")
+
+    if vol_spk and vol_spk > 2.0 and cmp and sma200 and cmp > sma200:
+        timing_score += 5
+        strengths.append(f"✓ Volume spike {vol_spk:.1f}x on uptrend")
+
+    timing_score = min(max(timing_score, 0), 30)
+
+    total_score = quality_score + valuation_score + timing_score
+
+    # ── FINAL ACTION ─────────────────────────
+    if   total_score >= 80: final_action = "STRONG BUY"
+    elif total_score >= 65: final_action = "BUY"
+    elif total_score >= 50: final_action = "ACCUMULATE"
+    elif total_score >= 35: final_action = "HOLD"
+    elif total_score >= 20: final_action = "WATCH"
+    elif total_score >= 10: final_action = "AVOID"
+    else:                   final_action = "SELL"
+
+    return (
+        quality_score,
+        valuation_score,
+        timing_score,
+        total_score,
+        final_action,
+        strengths[:4],
+        weaknesses[:3],
+    )
 
 # ══════════════════════════════════════════════
 # TELEGRAM ALERTS
 # ══════════════════════════════════════════════
 def send_telegram(message):
-    """Send message to Telegram."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         log.warning("Telegram not configured — skipping alert")
         return False
     try:
         url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        data = {
-            "chat_id":    TELEGRAM_CHAT_ID,
-            "text":       message,
-            "parse_mode": "HTML"
-        }
+        data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
         resp = requests.post(url, data=data, timeout=10)
         if resp.status_code == 200:
             log.info("Telegram alert sent")
@@ -76,10 +606,9 @@ def send_telegram(message):
         log.warning(f"Telegram error: {e}")
         return False
 
-def build_alert_message(alerts, portfolio_value, top_growth):
-    """Build formatted Telegram message."""
+def build_alert_message(alerts, portfolio_value, top_results):
     now = datetime.now().strftime("%d-%b-%Y %H:%M")
-    msg = f"<b>SiddeGowda Portfolio Update</b>\n"
+    msg  = f"<b>SiddeGowda Portfolio Update</b>\n"
     msg += f"<i>{now} IST</i>\n"
     msg += f"━━━━━━━━━━━━━━━━━━━━\n"
     msg += f"💰 Portfolio: ₹{portfolio_value:,.0f}\n\n"
@@ -96,28 +625,22 @@ def build_alert_message(alerts, portfolio_value, top_growth):
             msg += f"  {a['sym']} — CMP ₹{a['cmp']} | Target ₹{a['tgt']}\n"
         msg += "\n"
 
-    if alerts["sell_signal"]:
-        msg += "<b>⚠️ SELL SIGNALS</b>\n"
-        for a in alerts["sell_signal"]:
-            msg += f"  {a['sym']} — {a['reason']}\n"
-        msg += "\n"
-
-    if alerts["swing_buy"]:
-        msg += "<b>📈 SWING BUY OPPORTUNITIES</b>\n"
-        for a in alerts["swing_buy"]:
-            msg += f"  {a['sym']} — RSI:{a['rsi']} | {a['reason']}\n"
-        msg += "\n"
-
     if alerts["strong_buy"]:
-        msg += "<b>✅ STRONG BUY (Growth)</b>\n"
-        for a in alerts["strong_buy"][:3]:
-            msg += f"  {a['sym']} — Score:{a['score']} | {a['reason']}\n"
+        msg += "<b>✅ STRONG BUY / BUY</b>\n"
+        for a in alerts["strong_buy"][:5]:
+            msg += f"  {a['sym']} — Score:{a['score']} | {a['action']}\n"
         msg += "\n"
 
-    if top_growth:
-        msg += "<b>🏆 Top 3 Growth Picks</b>\n"
-        for r in top_growth[:3]:
-            msg += f"  {r[0]} — {r[9]} (Score:{r[8]})\n"
+    if alerts["sell_watch"]:
+        msg += "<b>⚠️ AVOID / SELL</b>\n"
+        for a in alerts["sell_watch"][:5]:
+            msg += f"  {a['sym']} — Score:{a['score']} | {a['action']}\n"
+        msg += "\n"
+
+    if top_results:
+        msg += "<b>🏆 Top 3 Picks Today</b>\n"
+        for r in top_results[:3]:
+            msg += f"  {r['sym']} — {r['action']} (Score:{r['total']})\n"
 
     msg += "\n<i>via GitHub Actions + yfinance</i>"
     return msg
@@ -230,162 +753,64 @@ def get_xirr(sym, trades, current_price):
     return round(r*100, 2) if r else None
 
 # ══════════════════════════════════════════════
-# TECHNICAL INDICATORS — RSI + Moving Averages
+# TECHNICAL INDICATORS
 # ══════════════════════════════════════════════
 def fetch_technicals(sym):
-    """
-    Fetch 1 year of daily data and calculate:
-    - RSI (14 day)
-    - SMA 50 day
-    - SMA 200 day
-    - EMA 20 day
-    - Volume spike (today vs 20 day avg)
-    - Trend (bullish/bearish/neutral)
-    - Swing signal
-    """
     try:
         df = yf.download(
-            sym + ".NS",
-            period   = "1y",
-            interval = "1d",
-            progress = False,
-            threads  = False
+            sym + ".NS", period="1y", interval="1d",
+            progress=False, threads=False
         )
-
         if df is None or len(df) < 50:
             return {}
 
         close  = df["Close"].squeeze()
         volume = df["Volume"].squeeze()
 
-        # ── RSI (14 period) ────────────────────
-        delta = close.diff()
-        gain  = delta.clip(lower=0)
-        loss  = -delta.clip(upper=0)
+        delta    = close.diff()
+        gain     = delta.clip(lower=0)
+        loss     = -delta.clip(upper=0)
         avg_gain = gain.rolling(14).mean()
         avg_loss = loss.rolling(14).mean()
-        rs  = avg_gain / avg_loss
-        rsi = round(float(100 - (100 / (1 + rs.iloc[-1]))), 1)
+        rs       = avg_gain / avg_loss
+        rsi      = round(float(100 - (100 / (1 + rs.iloc[-1]))), 1)
 
-        # ── Moving Averages ───────────────────
-        sma50  = round(float(close.rolling(50).mean().iloc[-1]),  2)
+        sma50  = round(float(close.rolling(50).mean().iloc[-1]), 2)
         sma200 = round(float(close.rolling(200).mean().iloc[-1]), 2) if len(close) >= 200 else None
         ema20  = round(float(close.ewm(span=20).mean().iloc[-1]), 2)
         cmp    = round(float(close.iloc[-1]), 2)
 
-        # ── Volume spike ──────────────────────
-        vol_today  = float(volume.iloc[-1])
-        vol_avg20  = float(volume.rolling(20).mean().iloc[-1])
-        vol_spike  = round(vol_today / vol_avg20, 2) if vol_avg20 > 0 else 1.0
+        vol_today = float(volume.iloc[-1])
+        vol_avg20 = float(volume.rolling(20).mean().iloc[-1])
+        vol_spike = round(vol_today / vol_avg20, 2) if vol_avg20 > 0 else 1.0
 
-        # ── Trend detection ───────────────────
         if sma200:
-            if cmp > sma50 > sma200:
-                trend = "Strong Uptrend"
-            elif cmp > sma200:
-                trend = "Uptrend"
-            elif cmp < sma50 < sma200:
-                trend = "Strong Downtrend"
-            elif cmp < sma200:
-                trend = "Downtrend"
-            else:
-                trend = "Sideways"
+            if   cmp > sma50 > sma200: trend = "Strong Uptrend"
+            elif cmp > sma200:          trend = "Uptrend"
+            elif cmp < sma50 < sma200: trend = "Strong Downtrend"
+            elif cmp < sma200:          trend = "Downtrend"
+            else:                       trend = "Sideways"
         else:
             trend = "Uptrend" if cmp > sma50 else "Downtrend"
 
-        # ── Golden / Death cross ──────────────
         cross = ""
-        if sma200:
+        if sma200 and len(close) >= 200:
             prev_sma50  = float(close.rolling(50).mean().iloc[-2])
-            prev_sma200 = float(close.rolling(200).mean().iloc[-2]) if len(close) >= 200 else None
-            if prev_sma200:
-                if sma50 > sma200 and prev_sma50 <= prev_sma200:
-                    cross = "Golden Cross"
-                elif sma50 < sma200 and prev_sma50 >= prev_sma200:
-                    cross = "Death Cross"
-
-        # ── Swing signal ──────────────────────
-        swing_signal = ""
-        swing_reason = ""
-
-        # Swing BUY conditions
-        if rsi < 35 and cmp > sma200 * 0.95 if sma200 else True:
-            swing_signal = "SWING BUY"
-            swing_reason = f"Oversold RSI {rsi}"
-        elif rsi < 40 and cmp > sma50 and vol_spike > 1.5:
-            swing_signal = "SWING BUY"
-            swing_reason = f"RSI {rsi} + Volume spike {vol_spike}x"
-        elif cross == "Golden Cross":
-            swing_signal = "SWING BUY"
-            swing_reason = "Golden Cross detected"
-
-        # Swing SELL conditions
-        elif rsi > 75:
-            swing_signal = "SWING SELL"
-            swing_reason = f"Overbought RSI {rsi}"
-        elif rsi > 70 and cmp < sma20 if 'sma20' in dir() else False:
-            swing_signal = "SWING SELL"
-            swing_reason = f"RSI {rsi} + Below EMA20"
-        elif cross == "Death Cross":
-            swing_signal = "SWING SELL"
-            swing_reason = "Death Cross detected"
-
-        # Neutral
-        elif 40 <= rsi <= 60:
-            swing_signal = "NEUTRAL"
-            swing_reason = f"RSI {rsi} — wait for setup"
-        else:
-            swing_signal = "WATCH"
-            swing_reason = f"RSI {rsi}"
+            prev_sma200 = float(close.rolling(200).mean().iloc[-2])
+            if sma50 > sma200 and prev_sma50 <= prev_sma200:
+                cross = "Golden Cross"
+            elif sma50 < sma200 and prev_sma50 >= prev_sma200:
+                cross = "Death Cross"
 
         return {
-            "rsi":          rsi,
-            "sma50":        sma50,
-            "sma200":       sma200 or "",
-            "ema20":        ema20,
-            "vol_spike":    vol_spike,
-            "trend":        trend,
-            "cross":        cross,
-            "swing_signal": swing_signal,
-            "swing_reason": swing_reason,
+            "rsi": rsi, "sma50": sma50,
+            "sma200": sma200 or "", "ema20": ema20,
+            "vol_spike": vol_spike, "trend": trend,
+            "cross": cross, "cmp_tech": cmp,
         }
-
     except Exception as e:
         log.warning(f"  technicals failed {sym}: {e}")
         return {}
-
-# ══════════════════════════════════════════════
-# SECTOR CLASSIFICATION
-# ══════════════════════════════════════════════
-FINANCIAL_SECTORS = {
-    "banks","bank","nbfc","insurance","financial services",
-    "capital markets","diversified financials",
-    "thrifts & mortgage finance","consumer finance",
-    "asset management","mortgage finance"
-}
-FINANCIAL_KEYWORDS = {
-    "BANK","FIN","FINCORP","FINSERV","CAPITAL","INSURANCE",
-    "HOUSING","NBFC","AMC","INVEST","WEALTH","MONEY","CREDIT",
-    "LENDING","MICRO","GOLD","MUTHOOT","MANAPPURAM","BAJAJFINSV",
-    "BAJFINANCE","CHOLAFIN","SBICARD","SBILIFE","HDFCLIFE",
-    "HDFCAMC","STARHEALTH","JIOFIN","NUVAMA","MOTILALOFS",
-    "SHRIRAMFIN","SUNDARMFIN","TATAINVEST","JMFINANCIL","ARMANFIN",
-    "FIVESTAR","AAVAS","APTUS","PNBHOUSING","UJJIVANSFB",
-    "EQUITASBNK","BANDHANBNK","IDFCFIRSTB","CUB","KTKBANK",
-    "GEOJITFSL","5PAISA","ANGELONE","CHOLAHLDNG"
-}
-
-def is_financial_stock(sym, sector="", industry=""):
-    sym_upper      = sym.upper()
-    sector_lower   = sector.lower()
-    industry_lower = industry.lower()
-    for fs in FINANCIAL_SECTORS:
-        if fs in sector_lower or fs in industry_lower:
-            return True
-    for kw in FINANCIAL_KEYWORDS:
-        if kw in sym_upper:
-            return True
-    return False
 
 # ══════════════════════════════════════════════
 # FETCH FUNDAMENTALS
@@ -396,41 +821,32 @@ def fetch_fundamentals(sym, retries=3):
             tk   = yf.Ticker(sym + ".NS")
             info = tk.info
             mcap_raw = info.get("marketCap", 0) or 0
-            mcap_cr  = round(mcap_raw/10_000_000, 0) if mcap_raw else None
+            mcap_cr  = round(mcap_raw / 10_000_000, 0) if mcap_raw else None
             ebit = info.get("ebit", 0) or 0
             ta_  = info.get("totalAssets", 0) or 0
             tl   = info.get("totalCurrentLiabilities", 0) or 0
-            roce = round(ebit/(ta_-tl)*100, 2) if (ta_-tl) > 0 else None
-            sector   = info.get("sector", "")
-            industry = info.get("industry", "")
-            is_fin   = is_financial_stock(sym, sector, industry)
-            roa           = round(info.get("returnOnAssets",0)*100,2) if info.get("returnOnAssets") else None
-            current_ratio = round(info.get("currentRatio",0),2)       if info.get("currentRatio")   else None
-            debt_eq = None
-            if not is_fin:
-                debt_eq = round(info.get("debtToEquity",0),2) if info.get("debtToEquity") else None
+            roce = round(ebit / (ta_ - tl) * 100, 2) if (ta_ - tl) > 0 else None
+            roa  = round(info.get("returnOnAssets", 0) * 100, 2) if info.get("returnOnAssets") else None
             return {
-                "sector":        sector,
-                "industry":      industry,
-                "is_financial":  is_fin,
-                "high52":        info.get("fiftyTwoWeekHigh") or None,
-                "low52":         info.get("fiftyTwoWeekLow")  or None,
-                "mcap_cr":       mcap_cr,
-                "pe":            round(info.get("trailingPE",0),2)         if info.get("trailingPE")        else None,
-                "eps":           round(info.get("trailingEps",0),2)        if info.get("trailingEps")       else None,
-                "bv":            round(info.get("bookValue",0),2)          if info.get("bookValue")         else None,
-                "pb":            round(info.get("priceToBook",0),2)        if info.get("priceToBook")       else None,
-                "div":           round(info.get("dividendYield",0)*100,2)  if info.get("dividendYield")     else None,
-                "roe":           round(info.get("returnOnEquity",0)*100,2) if info.get("returnOnEquity")    else None,
-                "roa":           roa,
-                "roce":          roce,
-                "debt_eq":       debt_eq,
-                "current_ratio": current_ratio,
-                "beta":          round(info.get("beta",0),2)               if info.get("beta")              else None,
+                "sector":   info.get("sector", ""),
+                "industry": info.get("industry", ""),
+                "high52":   info.get("fiftyTwoWeekHigh") or None,
+                "low52":    info.get("fiftyTwoWeekLow")  or None,
+                "mcap_cr":  mcap_cr,
+                "pe":       round(info.get("trailingPE", 0), 2)         if info.get("trailingPE")     else None,
+                "eps":      round(info.get("trailingEps", 0), 2)        if info.get("trailingEps")    else None,
+                "bv":       round(info.get("bookValue", 0), 2)          if info.get("bookValue")      else None,
+                "pb":       round(info.get("priceToBook", 0), 2)        if info.get("priceToBook")    else None,
+                "div":      round(info.get("dividendYield", 0) * 100, 2)if info.get("dividendYield") else None,
+                "roe":      round(info.get("returnOnEquity", 0) * 100, 2)if info.get("returnOnEquity")else None,
+                "roa":      roa,
+                "roce":     roce,
+                "debt_eq":  round(info.get("debtToEquity", 0), 2)      if info.get("debtToEquity")  else None,
+                "beta":     round(info.get("beta", 0), 2)               if info.get("beta")          else None,
             }
         except Exception as e:
             if "429" in str(e) or "Too Many" in str(e):
-                wait = (attempt+1) * 15
+                wait = (attempt + 1) * 15
                 log.warning(f"  Rate limited {sym}, waiting {wait}s")
                 time.sleep(wait)
             else:
@@ -440,11 +856,11 @@ def fetch_fundamentals(sym, retries=3):
 
 def fetch_rev_growth(sym):
     try:
-        fin = yf.Ticker(sym+".NS").financials
+        fin = yf.Ticker(sym + ".NS").financials
         if fin is not None and not fin.empty and "Total Revenue" in fin.index:
             rv = fin.loc["Total Revenue"].dropna()
             if len(rv) >= 2:
-                return round((rv.iloc[0]-rv.iloc[1])/abs(rv.iloc[1])*100, 2)
+                return round((rv.iloc[0] - rv.iloc[1]) / abs(rv.iloc[1]) * 100, 2)
     except:
         pass
     return None
@@ -454,10 +870,10 @@ def fetch_rev_growth(sym):
 # ══════════════════════════════════════════════
 def fetch_prices_batch(symbols):
     prices  = {}
-    ns_syms = [s+".NS" for s in symbols]
+    ns_syms = [s + ".NS" for s in symbols]
     for i in range(0, len(ns_syms), BATCH_SIZE):
-        batch      = ns_syms[i:i+BATCH_SIZE]
-        batch_orig = symbols[i:i+BATCH_SIZE]
+        batch      = ns_syms[i:i + BATCH_SIZE]
+        batch_orig = symbols[i:i + BATCH_SIZE]
         for attempt in range(3):
             try:
                 df = yf.download(
@@ -467,15 +883,15 @@ def fetch_prices_batch(symbols):
                 )
                 for sym, ns in zip(batch_orig, batch):
                     try:
-                        close = df[ns]["Close"].dropna().iloc[-1] if len(batch)>1 else df["Close"].dropna().iloc[-1]
+                        close = df[ns]["Close"].dropna().iloc[-1] if len(batch) > 1 else df["Close"].dropna().iloc[-1]
                         prices[sym] = round(float(close), 2)
                     except:
                         prices[sym] = None
-                log.info(f"Batch {i//BATCH_SIZE+1}: {len(batch)} prices fetched")
+                log.info(f"Batch {i // BATCH_SIZE + 1}: {len(batch)} prices fetched")
                 break
             except Exception as e:
                 if "429" in str(e) or "Too Many" in str(e):
-                    wait = (attempt+1)*20
+                    wait = (attempt + 1) * 20
                     log.warning(f"Batch rate limited, waiting {wait}s")
                     time.sleep(wait)
                 else:
@@ -486,62 +902,7 @@ def fetch_prices_batch(symbols):
     return prices
 
 # ══════════════════════════════════════════════
-# AI DECISION — SECTOR AWARE
-# ══════════════════════════════════════════════
-def ai_decision(sym, pe, roe, roa, roce, debt_eq, rev_growth,
-                div, ret_pct, is_financial, current_ratio, pb, beta):
-    score, reason = 0, []
-
-    if is_financial:
-        if roe:
-            if   roe>=15: score+=3; reason.append(f"Strong ROE {roe:.1f}%")
-            elif roe>=12: score+=2; reason.append(f"Good ROE {roe:.1f}%")
-            elif roe>=8:  score+=1
-            else:         score-=1; reason.append(f"Weak ROE {roe:.1f}%")
-        if roa:
-            if   roa>=2.0: score+=3; reason.append(f"Excellent ROA {roa:.1f}%")
-            elif roa>=1.5: score+=2; reason.append(f"Good ROA {roa:.1f}%")
-            elif roa>=1.0: score+=1
-            elif roa<0.5:  score-=2; reason.append(f"Poor ROA {roa:.1f}%")
-        if pb:
-            if   pb<1.0:  score+=2; reason.append(f"Undervalued P/B {pb:.1f}x")
-            elif pb<2.5:  score+=1
-            elif pb>4.0:  score-=1; reason.append(f"Expensive P/B {pb:.1f}x")
-        if pe and pe>0:
-            if   pe<15: score+=1
-            elif pe>40: score-=1; reason.append(f"Expensive PE {pe:.1f}")
-        if rev_growth:
-            if   rev_growth>=15: score+=2; reason.append(f"Strong rev growth {rev_growth:.1f}%")
-            elif rev_growth>=8:  score+=1; reason.append(f"Rev growth {rev_growth:.1f}%")
-            elif rev_growth<0:   score-=1; reason.append("Revenue declining")
-        if div and div>=1.5:
-            score+=1; reason.append(f"Div yield {div:.1f}%")
-        decision = "HOLD" if score>=5 else ("WATCH" if score>=2 else "SELL")
-    else:
-        if roe:
-            if   roe>=15: score+=2; reason.append(f"Good ROE {roe:.1f}%")
-            elif roe<10:  score-=1; reason.append(f"Weak ROE {roe:.1f}%")
-        if roce and roce>=15:
-            score+=2; reason.append(f"Strong ROCE {roce:.1f}%")
-        if debt_eq is not None:
-            if   debt_eq<0.3:  score+=2; reason.append("Very low debt")
-            elif debt_eq<0.8:  score+=1; reason.append(f"Manageable debt {debt_eq:.1f}x")
-            elif debt_eq<1.5:  score-=1; reason.append(f"High debt {debt_eq:.1f}x")
-            else:              score-=2; reason.append(f"Dangerous debt {debt_eq:.1f}x")
-        if rev_growth:
-            if   rev_growth>=10: score+=1; reason.append(f"Rev growth {rev_growth:.1f}%")
-            elif rev_growth<0:   score-=1; reason.append("Revenue declining")
-        if pe and pe>0:
-            if   pe<20: score+=1; reason.append(f"Fair PE {pe:.1f}")
-            elif pe>50: score-=1; reason.append(f"Expensive PE {pe:.1f}")
-        if div and div>=2:
-            score+=1; reason.append(f"Div yield {div:.1f}%")
-        decision = "HOLD" if score>=4 else ("WATCH" if score>=1 else "SELL")
-
-    return decision, " | ".join(reason[:3]) if reason else "Insufficient data"
-
-# ══════════════════════════════════════════════
-# INDIAN CR FORMAT
+# FORMAT HELPERS
 # ══════════════════════════════════════════════
 def indian_cr(value):
     try:
@@ -558,20 +919,17 @@ def indian_cr(value):
     except:
         return ""
 
-# ══════════════════════════════════════════════
-# COLOR HELPERS
-# ══════════════════════════════════════════════
 def hex_rgb(h):
     h = h.lstrip("#")
-    return {"red":int(h[0:2],16)/255,"green":int(h[2:4],16)/255,"blue":int(h[4:6],16)/255}
+    return {"red": int(h[0:2], 16) / 255, "green": int(h[2:4], 16) / 255, "blue": int(h[4:6], 16) / 255}
 
 def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
     return {
         "repeatCell": {
             "range": {
                 "sheetId": sheet_id,
-                "startRowIndex": row_idx, "endRowIndex": row_idx+1,
-                "startColumnIndex": col_idx, "endColumnIndex": col_idx+1
+                "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
+                "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1
             },
             "cell": {"userEnteredFormat": {
                 "backgroundColor": hex_rgb(bg),
@@ -583,13 +941,14 @@ def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
 
 def batch_update_safe(sh, requests, chunk=100):
     for i in range(0, len(requests), chunk):
-        sh.batch_update({"requests": requests[i:i+chunk]})
+        sh.batch_update({"requests": requests[i:i + chunk]})
         time.sleep(0.2)
 
 # ══════════════════════════════════════════════
 # WRITE GITHUB DATA TAB
+# New unified column layout
 # ══════════════════════════════════════════════
-def write_colab_data(sh, rows):
+def write_github_data(sh, rows):
     try:
         ws = sh.worksheet("GITHUB DATA")
         ws.clear()
@@ -597,251 +956,198 @@ def write_colab_data(sh, rows):
         ws = sh.add_worksheet("GITHUB DATA", rows=300, cols=35)
 
     headers = [
-        "Symbol","Sector","Industry","CMP",
+        "Symbol","Sector","Industry","Archetype","CMP",
         "52W High","52W Low","Buy 20% Less",
         "PE","EPS","Book Value","P/B",
-        "Div Yield%","ROE%","Debt/Equity",
+        "Div Yield%","ROE%","ROA%","Debt/Equity",
         "Rev Growth%","Beta",
-        "Trend","Swing Signal",
-        "AI Decision","AI Reason","XIRR%","Updated",
-        "Sector Median PE","Swing Rotation",
-        "RSI","SMA 50","SMA 200","EMA 20","Vol Spike",
+        "Quality Score","Valuation Score","Timing Score","Total Score",
+        "Final Action",
+        "Strengths","Weaknesses",
+        "XIRR%","Updated",
+        "RSI","SMA 50","SMA 200","EMA 20","Vol Spike","Trend",
         "Mkt Cap Cr","Cap Type"
     ]
     ws.append_row(headers)
     if rows:
         ws.append_rows(rows)
 
-    # Header format — font size 8
-    sh.batch_update({"requests":[{"repeatCell":{
-        "range":{"sheetId":ws.id,"startRowIndex":0,"endRowIndex":1,"startColumnIndex":0,"endColumnIndex":len(headers)},
-        "cell":{"userEnteredFormat":{
-            "backgroundColor":hex_rgb("0d1b2a"),
-            "textFormat":{"foregroundColor":hex_rgb("ffffff"),"bold":True,"fontSize":8},
-            "verticalAlignment":"MIDDLE","wrapStrategy":"WRAP"
+    sh.batch_update({"requests": [{"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
+                  "startColumnIndex": 0, "endColumnIndex": len(headers)},
+        "cell": {"userEnteredFormat": {
+            "backgroundColor": hex_rgb("0d1b2a"),
+            "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
+            "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"
         }},
-        "fields":"userEnteredFormat"
+        "fields": "userEnteredFormat"
     }}]})
 
-    # Freeze
-    sh.batch_update({"requests":[{"updateSheetProperties":{
-        "properties":{"sheetId":ws.id,"gridProperties":{"frozenRowCount":1,"frozenColumnCount":1}},
-        "fields":"gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
-    }}]})
-    
-    sh.batch_update({"requests":[{"updateDimensionProperties":{
-        "range":{"sheetId":ws.id,"dimension":"ROWS","startIndex":0,"endIndex":1},
-        "properties":{"pixelSize":45},"fields":"pixelSize"
+    sh.batch_update({"requests": [{"updateSheetProperties": {
+        "properties": {"sheetId": ws.id, "gridProperties": {"frozenRowCount": 1, "frozenColumnCount": 1}},
+        "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
     }}]})
 
- # Column widths — matching new 31-column order
+    sh.batch_update({"requests": [{"updateDimensionProperties": {
+        "range": {"sheetId": ws.id, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
+        "properties": {"pixelSize": 50}, "fields": "pixelSize"
+    }}]})
+
     widths = [
-        70,75,85,55,55,55,65,
-        45,45,55,45,50,50,55,55,45,
-        75,75,
-        75,200,55,75,
-        75,110,
-        45,55,55,55,55,
-        65,65
+        70, 75, 90, 80, 55,
+        55, 55, 65,
+        45, 45, 55, 45,
+        50, 50, 50, 55,
+        55, 45,
+        55, 60, 55, 55,
+        90,
+        200, 200,
+        55, 90,
+        45, 55, 55, 55, 55, 90,
+        65, 65
     ]
-    sh.batch_update({"requests":[{"updateDimensionProperties":{
-        "range":{"sheetId":ws.id,"dimension":"COLUMNS","startIndex":i,"endIndex":i+1},
-        "properties":{"pixelSize":w},"fields":"pixelSize"
-    }} for i,w in enumerate(widths)]})
+    sh.batch_update({"requests": [{"updateDimensionProperties": {
+        "range": {"sheetId": ws.id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
+        "properties": {"pixelSize": w}, "fields": "pixelSize"
+    }} for i, w in enumerate(widths)]})
 
-    # Cell colors
     all_out = ws.get_all_values()[1:]
     reqs    = []
 
+    ACTION_COLORS = {
+        "STRONG BUY":  ("00c853", "ffffff"),
+        "BUY":         ("0b8043", "ffffff"),
+        "ACCUMULATE":  ("d9ead3", "0b8043"),
+        "HOLD":        ("fff2cc", "7f4f00"),
+        "WATCH":       ("fce8b2", "7f4f00"),
+        "AVOID":       ("fde9d9", "c62828"),
+        "SELL":        ("cc0000", "ffffff"),
+    }
+
     for i, row in enumerate(all_out):
-        rn  = i+1
-        alt = "f8f9fa" if i%2==0 else "ffffff"
-        reqs.append({"repeatCell":{
-            "range":{"sheetId":ws.id,"startRowIndex":rn,"endRowIndex":rn+1,"startColumnIndex":0,"endColumnIndex":len(headers)},
-            "cell":{"userEnteredFormat":{"backgroundColor":hex_rgb(alt)}},
-            "fields":"userEnteredFormat.backgroundColor"
+        rn  = i + 1
+        alt = "f8f9fa" if i % 2 == 0 else "ffffff"
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn + 1,
+                      "startColumnIndex": 0, "endColumnIndex": len(headers)},
+            "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
+            "fields": "userEnteredFormat.backgroundColor"
         }})
 
         def sf(idx):
             try:
-                v = str(row[idx]).replace("%","").replace(",","").replace("₹","").replace(" Cr","").strip()
-                return float(v) if len(row)>idx and v else None
+                v = str(row[idx]).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip()
+                return float(v) if len(row) > idx and v else None
             except: return None
 
-        cap    = row[30].strip() if len(row)>30 else ""
-        ai     = row[18].strip() if len(row)>18 else ""
-        swing  = row[17].strip() if len(row)>17 else ""
-        pct    = sf(6);   pe_v  = sf(7);   eps_v = sf(8)
-        roe_v  = sf(12);  de_v  = sf(13);  rg_v  = sf(14)
-        xirr_v = sf(20);  rsi_v = sf(24);  vol_v = sf(28)
+        cap    = row[34].strip() if len(row) > 34 else ""
+        action = row[22].strip() if len(row) > 22 else ""
+        pct    = sf(7)
+        pe_v   = sf(8)
+        roe_v  = sf(13)
+        rsi_v  = sf(27)
+        q_sc   = sf(18)
+        v_sc   = sf(19)
+        t_sc   = sf(20)
+        tot_sc = sf(21)
 
-        if   cap=="Large Cap": cb,cf = "d9ead3","0b8043"
-        elif cap=="Mid Cap":   cb,cf = "d9eaf7","1565c0"
-        elif cap=="Small Cap": cb,cf = "fde9d9","c62828"
-        else:                  cb,cf = "ffffff","000000"
+        if cap == "Large Cap":       cb, cf = "d9ead3", "0b8043"
+        elif cap == "Mid Cap":       cb, cf = "d9eaf7", "1565c0"
+        elif cap == "Small Cap":     cb, cf = "fde9d9", "c62828"
+        else:                        cb, cf = "ffffff", "000000"
         if cap:
             reqs += [
-                color_cell_req(ws.id,rn,0,cb,cf),
-                color_cell_req(ws.id,rn,29,cb,cf),
-                color_cell_req(ws.id,rn,30,cb,cf)
+                color_cell_req(ws.id, rn, 0, cb, cf),
+                color_cell_req(ws.id, rn, 33, cb, cf),
+                color_cell_req(ws.id, rn, 34, cb, cf),
             ]
 
-        reqs.append(color_cell_req(ws.id,rn,4,"eaf4fb","1565c0",bold=False))
-        reqs.append(color_cell_req(ws.id,rn,5,"fdf2f2","c62828",bold=False))
+        reqs.append(color_cell_req(ws.id, rn, 5, "eaf4fb", "1565c0", bold=False))
+        reqs.append(color_cell_req(ws.id, rn, 6, "fdf2f2", "c62828", bold=False))
 
         if pct is not None:
-            reqs.append(color_cell_req(ws.id,rn,6,"d9ead3","0b8043") if pct>=-20 else color_cell_req(ws.id,rn,6,"fde9d9","c62828"))
+            reqs.append(color_cell_req(ws.id, rn, 7, "d9ead3", "0b8043") if pct >= -20
+                        else color_cell_req(ws.id, rn, 7, "fde9d9", "c62828"))
 
-        if pe_v and pe_v>0:
-            reqs.append(color_cell_req(ws.id,rn,7,"d9ead3","0b8043") if pe_v<20 else color_cell_req(ws.id,rn,7,"fde9d9","c62828"))
+        if action in ACTION_COLORS:
+            bg_a, fg_a = ACTION_COLORS[action]
+            reqs.append(color_cell_req(ws.id, rn, 22, bg_a, fg_a))
 
-        if eps_v is not None:
-            thresh = 50 if cap=="Large Cap" else (20 if cap=="Mid Cap" else 5)
-            reqs.append(color_cell_req(ws.id,rn,8,"d9ead3","0b8043") if eps_v>=thresh else color_cell_req(ws.id,rn,8,"fde9d9","c62828"))
+        if q_sc is not None:
+            if q_sc >= 30:   reqs.append(color_cell_req(ws.id, rn, 18, "d9ead3", "0b8043"))
+            elif q_sc <= 15: reqs.append(color_cell_req(ws.id, rn, 18, "fde9d9", "c62828"))
 
-        if roe_v is not None:
-            if   roe_v>=15: reqs.append(color_cell_req(ws.id,rn,12,"d9ead3","0b8043"))
-            elif roe_v<10:  reqs.append(color_cell_req(ws.id,rn,12,"fde9d9","c62828"))
+        if v_sc is not None:
+            if v_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 19, "d9ead3", "0b8043"))
+            elif v_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 19, "fde9d9", "c62828"))
 
-        if de_v is not None:
-            if   de_v<0.5:  reqs.append(color_cell_req(ws.id,rn,13,"d9ead3","0b8043"))
-            elif de_v>1.5:  reqs.append(color_cell_req(ws.id,rn,13,"fde9d9","c62828"))
+        if t_sc is not None:
+            if t_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 20, "d9ead3", "0b8043"))
+            elif t_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 20, "fde9d9", "c62828"))
 
-        if rg_v is not None:
-            if   rg_v>=10: reqs.append(color_cell_req(ws.id,rn,14,"d9ead3","0b8043"))
-            elif rg_v<0:   reqs.append(color_cell_req(ws.id,rn,14,"fde9d9","c62828"))
-
-        if   ai=="HOLD":  reqs.append(color_cell_req(ws.id,rn,18,"d9ead3","0b8043"))
-        elif ai=="WATCH": reqs.append(color_cell_req(ws.id,rn,18,"fff2cc","7f4f00"))
-        elif ai=="SELL":  reqs.append(color_cell_req(ws.id,rn,18,"fde9d9","c62828"))
-
-        if xirr_v is not None:
-            reqs.append(color_cell_req(ws.id,rn,20,"d9ead3","0b8043") if xirr_v>=0 else color_cell_req(ws.id,rn,20,"fde9d9","c62828"))
+        if tot_sc is not None:
+            if   tot_sc >= 65: reqs.append(color_cell_req(ws.id, rn, 21, "00c853", "ffffff"))
+            elif tot_sc >= 50: reqs.append(color_cell_req(ws.id, rn, 21, "d9ead3", "0b8043"))
+            elif tot_sc >= 35: reqs.append(color_cell_req(ws.id, rn, 21, "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, 21, "fde9d9", "c62828"))
 
         if rsi_v is not None:
-            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id,rn,24,"d9ead3","0b8043"))
-            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id,rn,24,"fde9d9","c62828"))
-            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id,rn,24,"fff2cc","7f4f00"))
-
-        if vol_v is not None:
-            if vol_v > 2.0: reqs.append(color_cell_req(ws.id,rn,28,"fff2cc","7f4f00"))
-            elif vol_v > 3.0: reqs.append(color_cell_req(ws.id,rn,28,"fde9d9","c62828"))
-
-        if   "SWING BUY"  in swing: reqs.append(color_cell_req(ws.id,rn,17,"d9ead3","0b8043"))
-        elif "SWING SELL" in swing: reqs.append(color_cell_req(ws.id,rn,17,"fde9d9","c62828"))
-        elif "NEUTRAL"    in swing: reqs.append(color_cell_req(ws.id,rn,17,"f1f3f4","444444"))
-        elif "WATCH"      in swing: reqs.append(color_cell_req(ws.id,rn,17,"fff2cc","7f4f00"))
+            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id, rn, 27, "d9ead3", "0b8043"))
+            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id, rn, 27, "fde9d9", "c62828"))
+            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, 27, "fff2cc", "7f4f00"))
 
     batch_update_safe(sh, reqs)
-    log.info("GITHUB DATA tab formatted")
+    log.info("GITHUB DATA tab written and formatted")
     return ws
 
 # ══════════════════════════════════════════════
 # WRITE GROWTH SCREENER TAB
 # ══════════════════════════════════════════════
 def write_growth_screener(sh, all_out):
-    rating_colors = {
-        "STRONG BUY": ("0b8043","d9ead3"),
-        "BUY":        ("1565c0","d9eaf7"),
-        "WATCH":      ("7f4f00","fff2cc"),
-        "NEUTRAL":    ("444444","f1f3f4"),
-        "AVOID":      ("c62828","fde9d9"),
+    ACTION_COLORS = {
+        "STRONG BUY":  ("ffffff", "00c853"),
+        "BUY":         ("ffffff", "0b8043"),
+        "ACCUMULATE":  ("0b8043", "d9ead3"),
+        "HOLD":        ("7f4f00", "fff2cc"),
+        "WATCH":       ("7f4f00", "fce8b2"),
+        "AVOID":       ("c62828", "fde9d9"),
+        "SELL":        ("ffffff", "cc0000"),
     }
     growth = []
 
     for row in all_out:
         if not row or not row[0]: continue
-        sym = row[0].strip()
-        cap = row[8].strip() if len(row)>8 else ""
+        sym    = row[0].strip()
+        action = row[22].strip() if len(row) > 22 else ""
+        cap    = row[34].strip() if len(row) > 34 else ""
 
         def sf(v):
-            try: return float(str(v).replace("%","").replace(",","").replace("₹","").replace(" Cr","").strip())
+            try: return float(str(v).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip())
             except: return None
 
-        f_roe  = sf(row[14] if len(row)>14 else "")
-        f_roce = sf(row[15] if len(row)>15 else "")
-        f_de   = sf(row[16] if len(row)>16 else "")
-        f_rev  = sf(row[17] if len(row)>17 else "")
-        f_pe   = sf(row[9]  if len(row)>9  else "")
-        f_pcthi= sf(row[6]  if len(row)>6  else "")
-        f_div  = sf(row[13] if len(row)>13 else "")
-        f_rsi  = sf(row[27] if len(row)>27 else "")
-        swing  = row[33].strip() if len(row)>33 else ""
+        tot_sc = sf(row[21] if len(row) > 21 else "")
+        q_sc   = sf(row[18] if len(row) > 18 else "")
+        v_sc   = sf(row[19] if len(row) > 19 else "")
+        t_sc   = sf(row[20] if len(row) > 20 else "")
+        rsi    = row[27] if len(row) > 27 else ""
+        trend  = row[32] if len(row) > 32 else ""
 
-        score, notes, flags = 0, [], []
-
-        if f_roe:
-            if   f_roe>=20: score+=3; notes.append(f"Excellent ROE {f_roe:.1f}%")
-            elif f_roe>=15: score+=2; notes.append(f"Good ROE {f_roe:.1f}%")
-            elif f_roe>=10: score+=1
-            else:           flags.append(f"Weak ROE {f_roe:.1f}%")
-        if f_roce:
-            if   f_roce>=20: score+=3; notes.append(f"Strong ROCE {f_roce:.1f}%")
-            elif f_roce>=12: score+=2; notes.append(f"Decent ROCE {f_roce:.1f}%")
-            elif f_roce>=8:  score+=1
-            else:            flags.append(f"Poor ROCE {f_roce:.1f}%")
-        if f_rev is not None:
-            if   f_rev>=20: score+=3; notes.append(f"High rev growth {f_rev:.1f}%")
-            elif f_rev>=10: score+=2; notes.append(f"Rev growth {f_rev:.1f}%")
-            elif f_rev>=0:  score+=1
-            else:           score-=1; flags.append(f"Revenue declining {f_rev:.1f}%")
-        if f_de is not None:
-            if   f_de<0.3:  score+=2; notes.append("Very low debt")
-            elif f_de<1.0:  score+=1; notes.append(f"Manageable debt {f_de:.1f}x")
-            elif f_de<2.0:  score-=1; flags.append(f"High debt {f_de:.1f}x")
-            else:           score-=2; flags.append(f"Dangerous debt {f_de:.1f}x")
-        if f_pe and f_pe>0:
-            if   f_pe<15:  score+=2; notes.append(f"Undervalued PE {f_pe:.1f}")
-            elif f_pe<30:  score+=1; notes.append(f"Fair PE {f_pe:.1f}")
-            elif f_pe>=50: score-=1; flags.append(f"Expensive PE {f_pe:.1f}")
-        if cap=="Large Cap": score+=1
-        elif cap=="Small Cap": score-=1
-        if f_div and f_div>=2:
-            score+=1; notes.append(f"Div yield {f_div:.1f}%")
-        if f_pcthi is not None:
-            if   f_pcthi>=-10: notes.append("Near 52W high")
-            elif f_pcthi<-40:  notes.append(f"Deep correction {f_pcthi:.1f}%")
-
-        # RSI bonus for growth screener
-        if f_rsi is not None:
-            if   f_rsi < 35: score+=1; notes.append(f"Oversold RSI {f_rsi}")
-            elif f_rsi > 70: score-=1; flags.append(f"Overbought RSI {f_rsi}")
-
-        # Swing signal bonus
-        if "SWING BUY" in swing:
-            score+=1; notes.append("Swing buy setup")
-
-        if   score>=10: rating="STRONG BUY"
-        elif score>=7:  rating="BUY"
-        elif score>=4:  rating="WATCH"
-        elif score>=1:  rating="NEUTRAL"
-        else:           rating="AVOID"
-
-        concern   = " | ".join(flags[:2])
-        positives = " | ".join(notes[:3]) if notes else "Insufficient data"
-
-        if   rating in ["STRONG BUY","BUY"]: note = f"✅ {positives}" + (f" ⚠️ {concern}" if concern else "")
-        elif rating=="WATCH":                 note = f"👀 {positives}" + (f" | Risk: {concern}" if concern else "")
-        elif rating=="AVOID":                 note = f"❌ {concern or 'Weak fundamentals'}"
-        else:                                 note = f"➡️ {positives}" + (f" | {concern}" if concern else "")
-
-        pct_raw = f_pcthi
-        pct_display = f"{pct_raw}%" if pct_raw != "" and pct_raw is not None else ""
         growth.append([
             sym, cap,
-            row[9]  if len(row)>9  else "",
-            row[14] if len(row)>14 else "",
-            row[16] if len(row)>16 else "",
-            row[17] if len(row)>17 else "",
-            row[13] if len(row)>13 else "",
-            pct_display,
-            score, rating, note,
-            row[19] if len(row)>19 else "",
-            row[27] if len(row)>27 else "",
-            row[33] if len(row)>33 else ""
+            row[8]  if len(row) > 8  else "",
+            row[13] if len(row) > 13 else "",
+            row[15] if len(row) > 15 else "",
+            row[16] if len(row) > 16 else "",
+            row[12] if len(row) > 12 else "",
+            row[7]  if len(row) > 7  else "",
+            q_sc or "", v_sc or "", t_sc or "", tot_sc or "",
+            action,
+            row[23] if len(row) > 23 else "",
+            row[24] if len(row) > 24 else "",
+            rsi, trend,
         ])
 
-    growth.sort(key=lambda x: x[11] if isinstance(x[11],(int,float)) else 0, reverse=True)
+    growth.sort(key=lambda x: float(x[11]) if x[11] != "" else 0, reverse=True)
 
     try:
         gsw = sh.worksheet("Growth Screener")
@@ -850,63 +1156,77 @@ def write_growth_screener(sh, all_out):
         gsw = sh.add_worksheet("Growth Screener", rows=200, cols=18)
 
     gsw.append_row([
-        "Symbol","Cap Type","PE","ROE%",
-        "Debt/Eq","Rev Growth%","Div Yield%","Buy 20% Less",
-        "Score","Rating","Analyst Note","AI Decision","RSI","Swing Signal"
+        "Symbol", "Cap Type",
+        "PE", "ROE%", "Debt/Eq", "Rev Growth%", "Div Yield%", "Buy 20% Less",
+        "Quality", "Valuation", "Timing", "Total Score",
+        "Final Action",
+        "Strengths", "Weaknesses",
+        "RSI", "Trend"
     ])
     if growth: gsw.append_rows(growth)
 
-    reqs = [{"repeatCell":{
-        "range":{"sheetId":gsw.id,"startRowIndex":0,"endRowIndex":1,"startColumnIndex":0,"endColumnIndex":14},
-        "cell":{"userEnteredFormat":{
-            "backgroundColor":hex_rgb("0d1b2a"),
-            "textFormat":{"foregroundColor":hex_rgb("ffffff"),"bold":True,"fontSize":10},
-            "verticalAlignment":"MIDDLE","wrapStrategy":"WRAP"
+    reqs = [{"repeatCell": {
+        "range": {"sheetId": gsw.id, "startRowIndex": 0, "endRowIndex": 1,
+                  "startColumnIndex": 0, "endColumnIndex": 17},
+        "cell": {"userEnteredFormat": {
+            "backgroundColor": hex_rgb("0d1b2a"),
+            "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
+            "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"
         }},
-        "fields":"userEnteredFormat"
+        "fields": "userEnteredFormat"
     }}]
-    reqs.append({"updateSheetProperties":{
-        "properties":{"sheetId":gsw.id,"gridProperties":{"frozenRowCount":1,"frozenColumnCount":1}},
-        "fields":"gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
+    reqs.append({"updateSheetProperties": {
+        "properties": {"sheetId": gsw.id, "gridProperties": {"frozenRowCount": 1, "frozenColumnCount": 1}},
+        "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
     }})
-    gs_widths = [90,90,60,65,70,90,80,100,55,100,380,100,60,110]
-    reqs += [{"updateDimensionProperties":{
-        "range":{"sheetId":gsw.id,"dimension":"COLUMNS","startIndex":i,"endIndex":i+1},
-        "properties":{"pixelSize":w},"fields":"pixelSize"
-    }} for i,w in enumerate(gs_widths)]
+    gs_widths = [80, 80, 50, 55, 60, 70, 65, 80, 55, 60, 55, 60, 90, 220, 220, 50, 90]
+    reqs += [{"updateDimensionProperties": {
+        "range": {"sheetId": gsw.id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
+        "properties": {"pixelSize": w}, "fields": "pixelSize"
+    }} for i, w in enumerate(gs_widths)]
 
     for i, row in enumerate(growth):
-        rn = i+1
-        alt = "f8f9fa" if i%2==0 else "ffffff"
-        fg_hex, bg_hex = rating_colors.get(row[12], ("000000","ffffff"))
-        reqs.append({"repeatCell":{
-            "range":{"sheetId":gsw.id,"startRowIndex":rn,"endRowIndex":rn+1,"startColumnIndex":0,"endColumnIndex":14},
-            "cell":{"userEnteredFormat":{"backgroundColor":hex_rgb(alt)}},
-            "fields":"userEnteredFormat.backgroundColor"
+        rn  = i + 1
+        alt = "f8f9fa" if i % 2 == 0 else "ffffff"
+        action = str(row[12])
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": gsw.id, "startRowIndex": rn, "endRowIndex": rn + 1,
+                      "startColumnIndex": 0, "endColumnIndex": 17},
+            "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
+            "fields": "userEnteredFormat.backgroundColor"
         }})
-        reqs.append(color_cell_req(gsw.id,rn,9,bg_hex,fg_hex))
-        cap = row[1]
-        if   cap=="Large Cap": reqs.append(color_cell_req(gsw.id,rn,1,"d9ead3","0b8043"))
-        elif cap=="Mid Cap":   reqs.append(color_cell_req(gsw.id,rn,1,"d9eaf7","1565c0"))
-        elif cap=="Small Cap": reqs.append(color_cell_req(gsw.id,rn,1,"fde9d9","c62828"))
-            
-        # RSI color in growth screener
+
+        if action in ACTION_COLORS:
+            fg_a, bg_a = ACTION_COLORS[action]
+            reqs.append(color_cell_req(gsw.id, rn, 12, bg_a, fg_a))
+
+        cap = str(row[1])
+        if   cap == "Large Cap": reqs.append(color_cell_req(gsw.id, rn, 1, "d9ead3", "0b8043"))
+        elif cap == "Mid Cap":   reqs.append(color_cell_req(gsw.id, rn, 1, "d9eaf7", "1565c0"))
+        elif cap == "Small Cap": reqs.append(color_cell_req(gsw.id, rn, 1, "fde9d9", "c62828"))
+
         try:
-            rsi_val = float(str(row[12]).replace("%",""))
-            if   rsi_val<35: reqs.append(color_cell_req(gsw.id,rn,12,"d9ead3","0b8043"))
-            elif rsi_val>70: reqs.append(color_cell_req(gsw.id,rn,12,"fde9d9","c62828"))
+            rsi_val = float(str(row[15]).replace("%", ""))
+            if   rsi_val < 35: reqs.append(color_cell_req(gsw.id, rn, 15, "d9ead3", "0b8043"))
+            elif rsi_val > 70: reqs.append(color_cell_req(gsw.id, rn, 15, "fde9d9", "c62828"))
         except: pass
 
-        sw = str(row[13])
-        if   "SWING BUY"  in sw: reqs.append(color_cell_req(gsw.id,rn,13,"d9ead3","0b8043"))
-        elif "SWING SELL" in sw: reqs.append(color_cell_req(gsw.id,rn,13,"fde9d9","c62828"))
-        elif "NEUTRAL"    in sw: reqs.append(color_cell_req(gsw.id,rn,13,"f1f3f4","444444"))
-            
-    reqs.append({"repeatCell":{
-        "range":{"sheetId":gsw.id,"startRowIndex":1,"endRowIndex":len(growth)+1,"startColumnIndex":10,"endColumnIndex":11},
-        "cell":{"userEnteredFormat":{"wrapStrategy":"WRAP"}},
-        "fields":"userEnteredFormat.wrapStrategy"
-    }})
+        try:
+            tot = float(str(row[11]))
+            if   tot >= 65: reqs.append(color_cell_req(gsw.id, rn, 11, "00c853", "ffffff"))
+            elif tot >= 50: reqs.append(color_cell_req(gsw.id, rn, 11, "d9ead3", "0b8043"))
+            elif tot >= 35: reqs.append(color_cell_req(gsw.id, rn, 11, "fff2cc", "7f4f00"))
+            else:           reqs.append(color_cell_req(gsw.id, rn, 11, "fde9d9", "c62828"))
+        except: pass
+
+    for col_idx in [13, 14]:
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": gsw.id, "startRowIndex": 1, "endRowIndex": len(growth) + 1,
+                      "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
+            "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP"}},
+            "fields": "userEnteredFormat.wrapStrategy"
+        }})
+
     batch_update_safe(sh, reqs)
     log.info(f"Growth Screener: {len(growth)} stocks")
     return growth
@@ -915,10 +1235,10 @@ def write_growth_screener(sh, all_out):
 # MAIN
 # ══════════════════════════════════════════════
 def main():
-    log.info("═"*55)
-    log.info("SIDDEGOWDA PORTFOLIO — Daily Auto-Update")
+    log.info("═" * 55)
+    log.info("SIDDEGOWDA PORTFOLIO — Daily Auto-Update v2.0")
     log.info(f"Run time: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}")
-    log.info("═"*55)
+    log.info("═" * 55)
 
     gc = get_gspread_client()
     sh = gc.open_by_key(SHEET_ID)
@@ -937,10 +1257,9 @@ def main():
     prices = fetch_prices_batch(symbols)
 
     log.info("Fetching fundamentals + technicals...")
-    fund_map   = {}
-    tech_map   = {}
-    rev_map    = {}
-    ind_pe_map = {}
+    fund_map = {}
+    tech_map = {}
+    rev_map  = {}
 
     for sym in symbols:
         f = fetch_fundamentals(sym)
@@ -948,16 +1267,7 @@ def main():
         rev_map[sym]  = fetch_rev_growth(sym)
         log.info(f"  Technicals: {sym}")
         tech_map[sym] = fetch_technicals(sym)
-        ind = f.get("industry","")
-        pe  = f.get("pe")
-        if ind and pe and pe > 0:
-            ind_pe_map.setdefault(ind,[]).append(pe)
         time.sleep(SLEEP_INFO)
-
-    sector_med = {
-        ind: round(statistics.median(v),2)
-        for ind,v in ind_pe_map.items() if v
-    }
 
     holdings             = {}
     portfolio_live_value = 0.0
@@ -968,20 +1278,10 @@ def main():
             holdings[sym]         = (qty, cmp, avg_buy)
             portfolio_live_value += qty * cmp
 
-    owned = set(holdings.keys())
-
     results = []
     failed  = []
-    alerts  = {
-        "sl_breach":  [],
-        "target_hit": [],
-        "sell_signal":[],
-        "swing_buy":  [],
-        "strong_buy": []
-    }
-
-    SL_PCT     = 0.07
-    TARGET_PCT = 0.20
+    alerts  = {"sl_breach": [], "target_hit": [], "strong_buy": [], "sell_watch": []}
+    top_picks = []
 
     for sym in symbols:
         cmp = prices.get(sym)
@@ -996,125 +1296,106 @@ def main():
         high52   = f.get("high52")
         low52    = f.get("low52")
         mcap_cr  = f.get("mcap_cr")
-        pe       = f.get("pe");    eps  = f.get("eps")
-        bv       = f.get("bv");    pb   = f.get("pb")
-        div      = f.get("div");   roe  = f.get("roe")
-        roa      = f.get("roa");   roce = f.get("roce")
-        de       = f.get("debt_eq"); beta= f.get("beta")
-        cr       = f.get("current_ratio")
-        sector   = f.get("sector","")
-        industry = f.get("industry","")
-        is_fin   = f.get("is_financial", False)
+        sector   = f.get("sector", "")
+        industry = f.get("industry", "")
+
+        archetype = get_archetype(sym, sector, industry)
 
         cap_type = ""
         if mcap_cr:
-            if   mcap_cr>=25000: cap_type="Large Cap"
-            elif mcap_cr>=5000:  cap_type="Mid Cap"
-            else:                cap_type="Small Cap"
+            if   mcap_cr >= 25000: cap_type = "Large Cap"
+            elif mcap_cr >= 5000:  cap_type = "Mid Cap"
+            else:                   cap_type = "Small Cap"
 
-        pct_high = round((cmp-high52)/high52*100,2) if high52 else ""
+        pct_high         = round((cmp - high52) / high52 * 100, 2) if high52 else ""
         pct_high_display = f"{pct_high}%" if pct_high != "" else ""
-        mcap_fmt = indian_cr(mcap_cr) if mcap_cr else ""
-        xirr_val = get_xirr(sym, trades, cmp)
+        mcap_fmt         = indian_cr(mcap_cr) if mcap_cr else ""
+        xirr_val         = get_xirr(sym, trades, cmp)
 
-        ret_pct = None
-        for t in trades:
-            if t[0].strip().upper()==sym and t[2].strip().upper()=="BUY":
-                try: ret_pct=(cmp-float(t[4]))/float(t[4])*100
-                except: pass
+        rsi       = tech.get("rsi", "")
+        sma50     = tech.get("sma50", "")
+        sma200    = tech.get("sma200", "")
+        ema20     = tech.get("ema20", "")
+        vol_spike = tech.get("vol_spike", "")
+        trend     = tech.get("trend", "")
+        cross     = tech.get("cross", "")
 
-        decision, reason = ai_decision(
-            sym, pe, roe, roa, roce, de, rev_gr, div,
-            ret_pct, is_fin, cr, pb, beta
+        metrics = {
+            "roe":        f.get("roe"),
+            "roa":        f.get("roa"),
+            "roce":       f.get("roce"),
+            "rev_growth": rev_gr,
+            "debt_eq":    f.get("debt_eq"),
+            "pe":         f.get("pe"),
+            "pb":         f.get("pb"),
+            "div":        f.get("div"),
+            "rsi":        rsi if rsi != "" else None,
+            "sma200":     sma200 if sma200 != "" else None,
+            "cmp":        cmp,
+            "vol_spike":  vol_spike if vol_spike != "" else None,
+            "cross":      cross,
+        }
+
+        q_sc, v_sc, t_sc, tot_sc, final_action, strengths, weaknesses = compute_unified_score(
+            sym, archetype, metrics
         )
 
+        strengths_str  = " | ".join(strengths)
+        weaknesses_str = " | ".join(weaknesses)
+
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
-        tgt_progress = round(((cmp-avg_buy)/avg_buy)*100,2) if avg_buy and qty>0 else ""
-        med_pe       = sector_med.get(industry,"")
-        port_weight  = round((qty*cmp/portfolio_live_value)*100,2) if sym in owned and portfolio_live_value>0 else ""
-
-        swing_rot = ""
-        if sym not in owned and pct_high!="" and pct_high<=-25 and decision in ("HOLD","WATCH"):
-            swing_rot = "🎯 BUY ZONE (VALUE)"
-
-        de_display = de if not is_fin else ""
-
-        rsi         = tech.get("rsi","")
-        sma50       = tech.get("sma50","")
-        sma200      = tech.get("sma200","")
-        ema20       = tech.get("ema20","")
-        vol_spike   = tech.get("vol_spike","")
-        trend       = tech.get("trend","")
-        swing_sig   = tech.get("swing_signal","")
-        swing_rsn   = tech.get("swing_reason","")
-
         if avg_buy and qty > 0:
             sl_price  = avg_buy * (1 - SL_PCT)
             tgt_price = avg_buy * (1 + TARGET_PCT)
             if cmp <= sl_price:
-                alerts["sl_breach"].append({"sym": sym, "cmp": cmp, "sl": round(sl_price,2)})
+                alerts["sl_breach"].append({"sym": sym, "cmp": cmp, "sl": round(sl_price, 2)})
             if cmp >= tgt_price:
-                alerts["target_hit"].append({"sym": sym, "cmp": cmp, "tgt": round(tgt_price,2)})
+                alerts["target_hit"].append({"sym": sym, "cmp": cmp, "tgt": round(tgt_price, 2)})
 
-        if decision == "SELL":
-            alerts["sell_signal"].append({"sym": sym, "reason": reason})
-
-        if swing_sig == "SWING BUY":
-            alerts["swing_buy"].append({"sym": sym, "rsi": rsi, "reason": swing_rsn})
+        if final_action in ("STRONG BUY", "BUY"):
+            alerts["strong_buy"].append({"sym": sym, "score": tot_sc, "action": final_action})
+            top_picks.append({"sym": sym, "total": tot_sc, "action": final_action})
+        elif final_action in ("AVOID", "SELL"):
+            alerts["sell_watch"].append({"sym": sym, "score": tot_sc, "action": final_action})
 
         results.append([
-            sym, sector, industry, cmp,
+            sym, sector, industry, archetype, cmp,
             high52 or "", low52 or "", pct_high_display,
-            pe or "", eps or "", bv or "", pb or "",
-            div or "", roe or "", de_display,
-            rev_gr or "", beta or "",
-            trend,
-            f"{swing_sig} — {swing_rsn}" if swing_sig and swing_rsn else swing_sig,
-            decision, reason,
+            f.get("pe") or "", f.get("eps") or "", f.get("bv") or "", f.get("pb") or "",
+            f.get("div") or "", f.get("roe") or "", f.get("roa") or "", f.get("debt_eq") or "",
+            rev_gr or "", f.get("beta") or "",
+            q_sc, v_sc, t_sc, tot_sc,
+            final_action,
+            strengths_str, weaknesses_str,
             xirr_val if xirr_val else "",
             datetime.now().strftime("%d-%b-%Y %H:%M"),
-            med_pe, swing_rot,
-            rsi, sma50, sma200, ema20, vol_spike,
+            rsi, sma50, sma200, ema20, vol_spike, trend,
             mcap_fmt, cap_type
         ])
 
-        fin_tag = " [FIN]" if is_fin else ""
-        log.info(f"  OK  {sym:12} ₹{cmp:>8} | {cap_type:10} | RSI:{rsi} | {swing_sig:12} | {decision}{fin_tag}")
+        log.info(f"  {sym:12} | {archetype:25} | Q:{q_sc:2} V:{v_sc:2} T:{t_sc:2} = {tot_sc:3} | {final_action}")
 
-    ws      = write_colab_data(sh, results)
+    top_picks.sort(key=lambda x: x["total"], reverse=True)
+
+    ws      = write_github_data(sh, results)
     all_out = ws.get_all_values()[1:]
-    growth  = write_growth_screener(sh, all_out)
+    write_growth_screener(sh, all_out)
 
-    for r in growth:
-        if r[9] in ("STRONG BUY","BUY"):
-            alerts["strong_buy"].append({
-                "sym":    r[0],
-                "score":  r[8],
-                "reason": r[10][:60]
-            })
-
-    msg = build_alert_message(alerts, portfolio_live_value, growth)
+    msg = build_alert_message(alerts, portfolio_live_value, top_picks)
     if len(msg) > 4000:
-        msg = msg[:4000] + "\n\n<i>...truncated. See Google Sheet for full details.</i>"
+        msg = msg[:4000] + "\n\n<i>...truncated</i>"
     send_telegram(msg)
-    log.info(f"Telegram token length: {len(TELEGRAM_TOKEN)}")
-    log.info(f"Telegram chat ID: {TELEGRAM_CHAT_ID}")
-    log.info(f"Message length: {len(msg)}")
 
-    swing_buys = [r[0] for r in results if "SWING BUY" in str(r[33])]
-    exit_ready = [r[0] for r in results if isinstance(r[23],(int,float)) and r[23]>=20]
-
-    log.info("═"*55)
+    log.info("═" * 55)
     log.info(f"✅ {len(results)} stocks updated | ❌ Failed: {failed or 'None'}")
     log.info(f"💰 Portfolio: ₹{portfolio_live_value:,.0f}")
     log.info(f"🔴 SL Breach: {[a['sym'] for a in alerts['sl_breach']] or 'None'}")
     log.info(f"🎯 Target Hit: {[a['sym'] for a in alerts['target_hit']] or 'None'}")
-    log.info(f"📈 Swing Buy: {swing_buys or 'None'}")
-    log.info(f"🚀 Exit Ready: {exit_ready or 'None'}")
-    log.info(f"Top 5 growth picks:")
-    for r in growth[:5]:
-        log.info(f"   {r[0]:<12} Score:{r[8]:>3}  {r[9]:<12} RSI:{r[12]}")
-    log.info("═"*55)
+    log.info(f"✅ Strong Buy: {[a['sym'] for a in alerts['strong_buy'][:5]]}")
+    log.info(f"Top 5 picks:")
+    for r in top_picks[:5]:
+        log.info(f"   {r['sym']:<12} Score:{r['total']:>3}  {r['action']}")
+    log.info("═" * 55)
 
 
 if __name__ == "__main__":
