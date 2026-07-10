@@ -46,26 +46,30 @@ SL_PCT      = 0.07
 TARGET_PCT  = 0.20
 
 # ══════════════════════════════════════════════
-# FUTURE BUY WATCHLIST
-# Stocks being monitored for future entry.
-# No quantity/buy price — market data only.
+# WATCHLISTS
+# Symbol-only categories: no qty/buy-price/date.
+# Displayed as market-data-only tabs (reuse GITHUB DATA
+# tab logic). Add new watchlist categories here instead
+# of hardcoding values elsewhere.
 # ══════════════════════════════════════════════
-FUTURE_BUY_SYMBOLS = [
-    "ZYDUSLIFE", "LUPIN", "SUNPHARMA", "ADANIENT", "ADANIPORTS",
-    "OFSS", "AUBANK", "AUROPHARMA", "GLAND", "DRREDDY",
-    "DIVISLAB", "BIOCON", "AJANTPHARM", "MARICO", "BHARATFORG",
-    "ICICIBANK", "POLYCAB", "AXISBANK", "CGPOWER", "HONAUT",
-    "GLENMARK", "CUMMINSIND", "LT", "SIEMENS", "EICHERMOT",
-    "BEL", "NHPC", "FORTIS", "BHARTIARTL", "CIPLA",
-    "COALINDIA", "HAL", "ADANIPOWER", "MOTILALOFS", "BRITANNIA",
-    "NTPC", "BSE", "MRF", "DMART", "OIL",
-    "ONGC", "NATIONALUM", "HINDPETRO", "BPCL", "BLUESTARCO",
-    "DABUR", "MAZDOCK", "ABBOTINDIA", "TECHM", "MPHASIS",
-    "MUTHOOTFIN", "COFORGE", "HINDZINC", "HAVELLS", "COCHINSHIP",
-    "GLAXO", "JWL", "HINDCOPPER", "HCLTECH", "KPITTECH",
-    "MEDPLUS", "ALKYLAMINE", "LAURUSLABS", "TTKPRESTIG", "JYOTHYLAB",
-    "JKPAPER", "MASTEK", "WOCKPHARMA", "DATAPATTNS",
-]
+WATCHLISTS = {
+    "Future Buy": [
+        "ZYDUSLIFE", "LUPIN", "SUNPHARMA", "ADANIENT", "ADANIPORTS",
+        "OFSS", "AUBANK", "AUROPHARMA", "GLAND", "DRREDDY",
+        "DIVISLAB", "BIOCON", "AJANTPHARM", "MARICO", "BHARATFORG",
+        "ICICIBANK", "POLYCAB", "AXISBANK", "CGPOWER", "HONAUT",
+        "GLENMARK", "CUMMINSIND", "LT", "SIEMENS", "EICHERMOT",
+        "BEL", "NHPC", "FORTIS", "BHARTIARTL", "CIPLA",
+        "COALINDIA", "HAL", "ADANIPOWER", "MOTILALOFS", "BRITANNIA",
+        "NTPC", "BSE", "MRF", "DMART", "OIL",
+        "ONGC", "NATIONALUM", "HINDPETRO", "BPCL", "BLUESTARCO",
+        "DABUR", "MAZDOCK", "ABBOTINDIA", "TECHM", "MPHASIS",
+        "MUTHOOTFIN", "COFORGE", "HINDZINC", "HAVELLS", "COCHINSHIP",
+        "GLAXO", "JWL", "HINDCOPPER", "HCLTECH", "KPITTECH",
+        "MEDPLUS", "ALKYLAMINE", "LAURUSLABS", "TTKPRESTIG", "JYOTHYLAB",
+        "JKPAPER", "MASTEK", "WOCKPHARMA", "DATAPATTNS",
+    ],
+}
 
 # ══════════════════════════════════════════════
 # SECTOR ARCHETYPE MAP
@@ -414,11 +418,6 @@ def get_archetype(sym, sector, industry):
 # UNIFIED SCORING ENGINE
 # ══════════════════════════════════════════════
 def score_metric(value, thresholds):
-    """
-    Thresholds: list of (cutoff, points) tuples, descending order.
-    For debt_eq: lower is better (inverted logic flagged by negative cutoffs).
-    Returns points for the metric.
-    """
     if value is None:
         return 0
     for cutoff, pts in thresholds:
@@ -429,7 +428,6 @@ def score_metric(value, thresholds):
     return 0
 
 def score_debt(value, thresholds):
-    """Debt scoring: lower value = better score (inverted)."""
     if value is None:
         return 0
     for cutoff, pts in thresholds:
@@ -440,16 +438,6 @@ def score_debt(value, thresholds):
     return 0
 
 def compute_unified_score(sym, archetype, metrics):
-    """
-    Returns:
-        quality_score (0-40)
-        valuation_score (0-30)
-        timing_score (0-30)
-        total_score (0-100)
-        final_action (str)
-        strengths (list)
-        weaknesses (list)
-    """
     rules      = SECTOR_RULES.get(archetype, SECTOR_RULES["DEFAULT"])
     ignore     = rules.get("ignore", [])
     q_rules    = rules.get("quality", {})
@@ -460,16 +448,6 @@ def compute_unified_score(sym, archetype, metrics):
     strengths        = []
     weaknesses       = []
 
-    roe        = metrics.get("roe")
-    roa        = metrics.get("roa")
-    roce       = metrics.get("roce")
-    rev_growth = metrics.get("rev_growth")
-    debt_eq    = metrics.get("debt_eq")
-    pe         = metrics.get("pe")
-    pb         = metrics.get("pb")
-    div        = metrics.get("div")
-
-    # ── QUALITY SCORING ──────────────────────
     for metric, thresholds in q_rules.items():
         if metric in ignore:
             continue
@@ -497,7 +475,6 @@ def compute_unified_score(sym, archetype, metrics):
 
     quality_score = min(quality_score, 40)
 
-    # ── VALUATION SCORING ────────────────────
     for metric, thresholds in v_rules.items():
         if metric in ignore:
             continue
@@ -507,8 +484,6 @@ def compute_unified_score(sym, archetype, metrics):
         if metric == "pe":
             if val <= 0:
                 continue
-            pts = score_metric(val, [(t[0], t[1]) if t[0] is None else (9999 - t[0], t[1]) for t in thresholds])
-            # pe: lower = better, invert
             pts = 0
             for cutoff, p in thresholds:
                 if cutoff is None:
@@ -551,7 +526,6 @@ def compute_unified_score(sym, archetype, metrics):
 
     valuation_score = min(valuation_score, 30)
 
-    # ── TIMING SCORE ─────────────────────────
     rsi      = metrics.get("rsi")
     sma200   = metrics.get("sma200")
     cmp      = metrics.get("cmp")
@@ -588,7 +562,6 @@ def compute_unified_score(sym, archetype, metrics):
 
     total_score = quality_score + valuation_score + timing_score
 
-    # ── FINAL ACTION ─────────────────────────
     if   total_score >= 80: final_action = "STRONG BUY"
     elif total_score >= 65: final_action = "BUY"
     elif total_score >= 50: final_action = "ACCUMULATE"
@@ -966,27 +939,92 @@ def batch_update_safe(sh, requests, chunk=100):
         sh.batch_update({"requests": requests[i:i + chunk]})
         time.sleep(0.2)
 
-def sanitize_row(row):
-    """Replace inf/nan float values — gspread JSON rejects them."""
-    import math
-    clean = []
-    for v in row:
-        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-            clean.append("")
-        else:
-            clean.append(v)
-    return clean
+# ══════════════════════════════════════════════
+# BUILD A SINGLE RESULT ROW
+# Shared by the Portfolio (GITHUB DATA) pipeline and any
+# watchlist-only tab (e.g. Future Buy). Keeps row layout,
+# scoring, and formatting identical everywhere.
+# xirr_val is left as "" for watchlist symbols (no holdings).
+# ══════════════════════════════════════════════
+def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
+    sector   = f.get("sector", "")
+    industry = f.get("industry", "")
+    high52   = f.get("high52")
+    low52    = f.get("low52")
+    mcap_cr  = f.get("mcap_cr")
+
+    archetype = get_archetype(sym, sector, industry)
+
+    cap_type = ""
+    if mcap_cr:
+        if   mcap_cr >= 25000: cap_type = "Large Cap"
+        elif mcap_cr >= 5000:  cap_type = "Mid Cap"
+        else:                   cap_type = "Small Cap"
+
+    pct_high         = round((cmp - high52) / high52 * 100, 2) if high52 else ""
+    pct_high_display = f"{pct_high}%" if pct_high != "" else ""
+    mcap_fmt         = indian_cr(mcap_cr) if mcap_cr else ""
+
+    rsi       = tech.get("rsi", "")
+    sma50     = tech.get("sma50", "")
+    sma200    = tech.get("sma200", "")
+    ema20     = tech.get("ema20", "")
+    vol_spike = tech.get("vol_spike", "")
+    trend     = tech.get("trend", "")
+    cross     = tech.get("cross", "")
+
+    metrics = {
+        "roe":        f.get("roe"),
+        "roa":        f.get("roa"),
+        "roce":       f.get("roce"),
+        "rev_growth": rev_gr,
+        "debt_eq":    f.get("debt_eq"),
+        "pe":         f.get("pe"),
+        "pb":         f.get("pb"),
+        "div":        f.get("div"),
+        "rsi":        rsi if rsi != "" else None,
+        "sma200":     sma200 if sma200 != "" else None,
+        "cmp":        cmp,
+        "vol_spike":  vol_spike if vol_spike != "" else None,
+        "cross":      cross,
+    }
+
+    q_sc, v_sc, t_sc, tot_sc, final_action, strengths, weaknesses = compute_unified_score(
+        sym, archetype, metrics
+    )
+
+    strengths_str  = " | ".join(strengths)
+    weaknesses_str = " | ".join(weaknesses)
+
+    row = [
+        sym, sector, industry, archetype, cmp,
+        high52 or "", low52 or "", pct_high_display,
+        f.get("pe") or "", f.get("eps") or "", f.get("bv") or "", f.get("pb") or "",
+        f.get("div") or "", f.get("roe") or "", f.get("roa") or "", f.get("debt_eq") or "",
+        rev_gr or "", f.get("beta") or "",
+        q_sc, v_sc, t_sc, tot_sc,
+        final_action,
+        strengths_str, weaknesses_str,
+        xirr_val if xirr_val else "",
+        datetime.now().strftime("%d-%b-%Y %H:%M"),
+        rsi, sma50, sma200, ema20, vol_spike, trend,
+        mcap_fmt, cap_type
+    ]
+    return row, archetype, tot_sc, final_action
 
 # ══════════════════════════════════════════════
-# WRITE GITHUB DATA TAB
-# New unified column layout
+# WRITE A GITHUB-DATA-STYLE TAB
+# Generic writer reused for "GITHUB DATA" and any
+# watchlist tab (e.g. "Future Buy") — identical layout,
+# sorting-ready columns, search/filter-friendly headers,
+# styling, and coloring rules.
 # ══════════════════════════════════════════════
-def write_github_data(sh, rows):
+def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     try:
-        ws = sh.worksheet("GITHUB DATA")
+        ws = sh.worksheet(tab_name)
         ws.clear()
     except:
-        ws = sh.add_worksheet("GITHUB DATA", rows=300, cols=35)
+        ws = sh.add_worksheet(tab_name, rows=300, cols=35)
 
     headers = [
         "Symbol","Sector","Industry","Archetype","CMP",
@@ -1003,7 +1041,7 @@ def write_github_data(sh, rows):
     ]
     ws.append_row(headers)
     if rows:
-        ws.append_rows([sanitize_row(r) for r in rows])
+        ws.append_rows(rows)
 
     sh.batch_update({"requests": [{"repeatCell": {
         "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
@@ -1067,20 +1105,16 @@ def write_github_data(sh, rows):
             "fields": "userEnteredFormat.backgroundColor"
         }})
 
-       def sf(idx):
+        def sf(idx):
             try:
-                import math
-                v = str(row[idx]).replace("%","").replace(",","").replace("₹","").replace(" Cr","").strip()
-                if not v: return None
-                f = float(v)
-                return None if (math.isnan(f) or math.isinf(f)) else f
-            except: return None
+                v = str(row[idx]).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip()
+                return float(v) if len(row) > idx and v else None
+            except:
+                return None
 
         cap    = row[34].strip() if len(row) > 34 else ""
         action = row[22].strip() if len(row) > 22 else ""
         pct    = sf(7)
-        pe_v   = sf(8)
-        roe_v  = sf(13)
         rsi_v  = sf(27)
         q_sc   = sf(18)
         v_sc   = sf(19)
@@ -1133,7 +1167,7 @@ def write_github_data(sh, rows):
             elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, 27, "fff2cc", "7f4f00"))
 
     batch_update_safe(sh, reqs)
-    log.info("GITHUB DATA tab written and formatted")
+    log.info(f"{tab_name} tab written and formatted")
     return ws
 
 # ══════════════════════════════════════════════
@@ -1268,285 +1302,46 @@ def write_growth_screener(sh, all_out):
     return growth
 
 # ══════════════════════════════════════════════
-# BUILD SCORED ROW  (shared by portfolio + Future Buy)
+# WATCHLIST PROCESSING (Future Buy, and any future
+# watchlist added to WATCHLISTS). Market-data only —
+# no qty, no buy price, no purchase date, no XIRR/SL/
+# target alerts. Duplicate symbols vs Portfolio/GITHUB
+# DATA are independent here and never touch holdings
+# or portfolio-value calculations.
 # ══════════════════════════════════════════════
-def build_scored_row(sym, cmp, f, tech, rev_gr):
-    """
-    Given fetched fundamentals, technicals and revenue growth,
-    compute scores and return a complete row list matching
-    the GITHUB DATA / Future Buy column layout.
-    """
-    sector   = f.get("sector", "")
-    industry = f.get("industry", "")
-    mcap_cr  = f.get("mcap_cr")
+def process_watchlist_tab(sh, tab_name, symbols):
+    if not symbols:
+        log.warning(f"{tab_name}: no symbols configured, skipping")
+        return []
 
-    archetype = get_archetype(sym, sector, industry)
-
-    cap_type = ""
-    if mcap_cr:
-        if   mcap_cr >= 25000: cap_type = "Large Cap"
-        elif mcap_cr >= 5000:  cap_type = "Mid Cap"
-        else:                   cap_type = "Small Cap"
-
-    high52           = f.get("high52")
-    low52            = f.get("low52")
-    pct_high         = round((cmp - high52) / high52 * 100, 2) if high52 else ""
-    pct_high_display = f"{pct_high}%" if pct_high != "" else ""
-    mcap_fmt         = indian_cr(mcap_cr) if mcap_cr else ""
-
-    rsi       = tech.get("rsi", "")
-    sma50     = tech.get("sma50", "")
-    sma200    = tech.get("sma200", "")
-    ema20     = tech.get("ema20", "")
-    vol_spike = tech.get("vol_spike", "")
-    trend     = tech.get("trend", "")
-    cross     = tech.get("cross", "")
-
-    metrics = {
-        "roe":        f.get("roe"),
-        "roa":        f.get("roa"),
-        "roce":       f.get("roce"),
-        "rev_growth": rev_gr,
-        "debt_eq":    f.get("debt_eq"),
-        "pe":         f.get("pe"),
-        "pb":         f.get("pb"),
-        "div":        f.get("div"),
-        "rsi":        rsi       if rsi       != "" else None,
-        "sma200":     sma200    if sma200    != "" else None,
-        "cmp":        cmp,
-        "vol_spike":  vol_spike if vol_spike != "" else None,
-        "cross":      cross,
-    }
-
-    q_sc, v_sc, t_sc, tot_sc, final_action, strengths, weaknesses = compute_unified_score(
-        sym, archetype, metrics
-    )
-
-    raw = [
-        sym, sector, industry, archetype, cmp,
-        high52 or "", low52 or "", pct_high_display,
-        f.get("pe") or "", f.get("eps") or "", f.get("bv") or "", f.get("pb") or "",
-        f.get("div") or "", f.get("roe") or "", f.get("roa") or "", f.get("debt_eq") or "",
-        rev_gr or "", f.get("beta") or "",
-        q_sc, v_sc, t_sc, tot_sc,
-        final_action,
-        " | ".join(strengths),
-        " | ".join(weaknesses),
-        "",  # XIRR — not applicable for watchlist
-        datetime.now().strftime("%d-%b-%Y %H:%M"),
-        rsi, sma50, sma200, ema20, vol_spike, trend,
-        mcap_fmt, cap_type,
-    ]
-    return sanitize_row(raw)
-
-
-# ══════════════════════════════════════════════
-# WRITE FUTURE BUY TAB
-# Same layout as GITHUB DATA, watchlist stocks only.
-# Sorted by Total Score descending.
-# ══════════════════════════════════════════════
-def write_future_buy(sh):
-    """
-    Fetch data for FUTURE_BUY_SYMBOLS, score each stock using
-    the same unified scoring engine as the portfolio, and write
-    results to the 'Future Buy' tab with identical styling.
-    """
-    log.info(f"Future Buy: fetching {len(FUTURE_BUY_SYMBOLS)} watchlist stocks...")
-
-    # ── Deduplicate preserving order ─────────
-    symbols = list(dict.fromkeys(FUTURE_BUY_SYMBOLS))
-
-    # ── Batch price fetch ─────────────────────
+    log.info(f"{tab_name}: fetching prices for {len(symbols)} symbols...")
     prices = fetch_prices_batch(symbols)
 
-    # ── Fundamentals + technicals ─────────────
-    fund_map = {}
-    tech_map = {}
-    rev_map  = {}
-    for sym in symbols:
-        fund_map[sym] = fetch_fundamentals(sym)
-        rev_map[sym]  = fetch_rev_growth(sym)
-        tech_map[sym] = fetch_technicals(sym)
-        log.info(f"  Future Buy — {sym}")
-        time.sleep(SLEEP_INFO)
-
-    # ── Build scored rows ─────────────────────
-    rows   = []
-    failed = []
+    rows = []
     for sym in symbols:
         cmp = prices.get(sym)
         if not cmp:
-            failed.append(sym)
-            log.warning(f"  Future Buy SKIP {sym} — no price")
+            log.warning(f"  SKIP {sym} ({tab_name}) — no price")
             continue
-        row = build_scored_row(sym, cmp, fund_map.get(sym, {}),
-                               tech_map.get(sym, {}), rev_map.get(sym))
+
+        f      = fetch_fundamentals(sym)
+        rev_gr = fetch_rev_growth(sym)
+        tech   = fetch_technicals(sym)
+        time.sleep(SLEEP_INFO)
+
+        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="")
         rows.append(row)
+        log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}")
 
-    # Sort by Total Score (col index 21) descending
-    rows.sort(key=lambda r: float(r[21]) if r[21] != "" else 0, reverse=True)
-
-    # ── Write sheet ───────────────────────────
-    try:
-        ws = sh.worksheet("Future Buy")
-        ws.clear()
-    except:
-        ws = sh.add_worksheet("Future Buy", rows=200, cols=36)
-
-    headers = [
-        "Symbol", "Sector", "Industry", "Archetype", "CMP",
-        "52W High", "52W Low", "Buy 20% Less",
-        "PE", "EPS", "Book Value", "P/B",
-        "Div Yield%", "ROE%", "ROA%", "Debt/Equity",
-        "Rev Growth%", "Beta",
-        "Quality Score", "Valuation Score", "Timing Score", "Total Score",
-        "Final Action",
-        "Strengths", "Weaknesses",
-        "XIRR%", "Updated",
-        "RSI", "SMA 50", "SMA 200", "EMA 20", "Vol Spike", "Trend",
-        "Mkt Cap Cr", "Cap Type",
-    ]
-    ws.append_row(headers)
-    if rows:
-        ws.append_rows([sanitize_row(r) for r in rows])
-
-    # ── Header styling (identical to GITHUB DATA) ──
-    sh.batch_update({"requests": [{"repeatCell": {
-        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
-                  "startColumnIndex": 0, "endColumnIndex": len(headers)},
-        "cell": {"userEnteredFormat": {
-            "backgroundColor": hex_rgb("1b2a4f"),   # distinct header colour for watchlist
-            "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
-            "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP",
-        }},
-        "fields": "userEnteredFormat",
-    }}]})
-
-    sh.batch_update({"requests": [{"updateSheetProperties": {
-        "properties": {"sheetId": ws.id,
-                       "gridProperties": {"frozenRowCount": 1, "frozenColumnCount": 1}},
-        "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount",
-    }}]})
-
-    sh.batch_update({"requests": [{"updateDimensionProperties": {
-        "range": {"sheetId": ws.id, "dimension": "ROWS",
-                  "startIndex": 0, "endIndex": 1},
-        "properties": {"pixelSize": 50}, "fields": "pixelSize",
-    }}]})
-
-    widths = [
-        70, 75, 90, 80, 55,
-        55, 55, 65,
-        45, 45, 55, 45,
-        50, 50, 50, 55,
-        55, 45,
-        55, 60, 55, 55,
-        90,
-        200, 200,
-        55, 90,
-        45, 55, 55, 55, 55, 90,
-        65, 65,
-    ]
-    sh.batch_update({"requests": [{"updateDimensionProperties": {
-        "range": {"sheetId": ws.id, "dimension": "COLUMNS",
-                  "startIndex": i, "endIndex": i + 1},
-        "properties": {"pixelSize": w}, "fields": "pixelSize",
-    }} for i, w in enumerate(widths)]})
-
-    # ── Cell colours (same logic as GITHUB DATA) ──
-    ACTION_COLORS = {
-        "STRONG BUY": ("00c853", "ffffff"),
-        "BUY":        ("0b8043", "ffffff"),
-        "ACCUMULATE": ("d9ead3", "0b8043"),
-        "HOLD":       ("fff2cc", "7f4f00"),
-        "WATCH":      ("fce8b2", "7f4f00"),
-        "AVOID":      ("fde9d9", "c62828"),
-        "SELL":       ("cc0000", "ffffff"),
-    }
-
-    all_out = ws.get_all_values()[1:]
-    reqs    = []
-
-    for i, row in enumerate(all_out):
-        rn  = i + 1
-        alt = "f0f4ff" if i % 2 == 0 else "ffffff"   # light-blue tint for watchlist rows
-        reqs.append({"repeatCell": {
-            "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn + 1,
-                      "startColumnIndex": 0, "endColumnIndex": len(headers)},
-            "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
-            "fields": "userEnteredFormat.backgroundColor",
-        }})
-
-        def sf(idx):
-            try:
-                v = str(row[idx]).replace("%","").replace(",","").replace("₹","").replace(" Cr","").strip()
-                return float(v) if len(row) > idx and v else None
-            except: return None
-
-        cap    = row[34].strip() if len(row) > 34 else ""
-        action = row[22].strip() if len(row) > 22 else ""
-        pct    = sf(7)
-        rsi_v  = sf(27)
-        tot_sc = sf(21)
-        q_sc   = sf(18)
-        v_sc   = sf(19)
-        t_sc   = sf(20)
-
-        # Cap type colour on symbol + mcap cols
-        if   cap == "Large Cap": cb, cf = "d9ead3", "0b8043"
-        elif cap == "Mid Cap":   cb, cf = "d9eaf7", "1565c0"
-        elif cap == "Small Cap": cb, cf = "fde9d9", "c62828"
-        else:                    cb, cf = "ffffff", "000000"
-        if cap:
-            reqs += [
-                color_cell_req(ws.id, rn, 0,  cb, cf),
-                color_cell_req(ws.id, rn, 33, cb, cf),
-                color_cell_req(ws.id, rn, 34, cb, cf),
-            ]
-
-        # 52W High / Low
-        reqs.append(color_cell_req(ws.id, rn, 5, "eaf4fb", "1565c0", bold=False))
-        reqs.append(color_cell_req(ws.id, rn, 6, "fdf2f2", "c62828", bold=False))
-
-        # Buy 20% Less
-        if pct is not None:
-            reqs.append(color_cell_req(ws.id, rn, 7, "d9ead3", "0b8043") if pct >= -20
-                        else color_cell_req(ws.id, rn, 7, "fde9d9", "c62828"))
-
-        # Final Action
-        if action in ACTION_COLORS:
-            bg_a, fg_a = ACTION_COLORS[action]
-            reqs.append(color_cell_req(ws.id, rn, 22, bg_a, fg_a))
-
-        # Score columns
-        if q_sc is not None:
-            if q_sc >= 30:   reqs.append(color_cell_req(ws.id, rn, 18, "d9ead3", "0b8043"))
-            elif q_sc <= 15: reqs.append(color_cell_req(ws.id, rn, 18, "fde9d9", "c62828"))
-
-        if v_sc is not None:
-            if v_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 19, "d9ead3", "0b8043"))
-            elif v_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 19, "fde9d9", "c62828"))
-
-        if t_sc is not None:
-            if t_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 20, "d9ead3", "0b8043"))
-            elif t_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 20, "fde9d9", "c62828"))
-
-        if tot_sc is not None:
-            if   tot_sc >= 65: reqs.append(color_cell_req(ws.id, rn, 21, "00c853", "ffffff"))
-            elif tot_sc >= 50: reqs.append(color_cell_req(ws.id, rn, 21, "d9ead3", "0b8043"))
-            elif tot_sc >= 35: reqs.append(color_cell_req(ws.id, rn, 21, "fff2cc", "7f4f00"))
-            else:              reqs.append(color_cell_req(ws.id, rn, 21, "fde9d9", "c62828"))
-
-        # RSI
-        if rsi_v is not None:
-            if   rsi_v < 35: reqs.append(color_cell_req(ws.id, rn, 27, "d9ead3", "0b8043"))
-            elif rsi_v > 70: reqs.append(color_cell_req(ws.id, rn, 27, "fde9d9", "c62828"))
-            elif rsi_v > 60: reqs.append(color_cell_req(ws.id, rn, 27, "fff2cc", "7f4f00"))
-
-    batch_update_safe(sh, reqs)
-    log.info(f"Future Buy tab written: {len(rows)} stocks | Failed: {failed or 'None'}")
+    write_github_data(sh, rows, tab_name=tab_name)
     return rows
 
+def process_all_watchlists(sh):
+    for tab_name, symbols in WATCHLISTS.items():
+        try:
+            process_watchlist_tab(sh, tab_name, symbols)
+        except Exception as e:
+            log.error(f"Watchlist '{tab_name}' failed (existing tabs unaffected): {e}")
 
 # ══════════════════════════════════════════════
 # MAIN
@@ -1607,29 +1402,15 @@ def main():
             log.warning(f"  SKIP {sym} — no price")
             continue
 
-        f        = fund_map.get(sym, {})
-        tech     = tech_map.get(sym, {})
-        rev_gr   = rev_map.get(sym)
-        high52   = f.get("high52")
-        low52    = f.get("low52")
-        mcap_cr  = f.get("mcap_cr")
-        sector   = f.get("sector", "")
-        industry = f.get("industry", "")
-
-        xirr_val = get_xirr(sym, trades, cmp)
-import math
-    # Scrub inf/nan from all fetched fundamentals
-    for k, v in list(f.items()):
-        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
-            f[k] = None
-        row = build_scored_row(sym, cmp, f, tech, rev_gr)
-        # Overwrite XIRR (index 25) with actual portfolio XIRR
-        row[25] = xirr_val if xirr_val else ""
-
-        # Extract scores and action for alert logic
-        q_sc, v_sc, t_sc, tot_sc, final_action = row[18], row[19], row[20], row[21], row[22]
+        f      = fund_map.get(sym, {})
+        tech   = tech_map.get(sym, {})
+        rev_gr = rev_map.get(sym)
 
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
+        xirr_val     = get_xirr(sym, trades, cmp)
+
+        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val)
+
         if avg_buy and qty > 0:
             sl_price  = avg_buy * (1 - SL_PCT)
             tgt_price = avg_buy * (1 + TARGET_PCT)
@@ -1646,17 +1427,18 @@ import math
 
         results.append(row)
 
-        archetype = row[3]
+        q_sc, v_sc, t_sc = row[18], row[19], row[20]
         log.info(f"  {sym:12} | {archetype:25} | Q:{q_sc:2} V:{v_sc:2} T:{t_sc:2} = {tot_sc:3} | {final_action}")
 
     top_picks.sort(key=lambda x: x["total"], reverse=True)
 
-    ws      = write_github_data(sh, results)
+    ws      = write_github_data(sh, results, tab_name="GITHUB DATA")
     all_out = ws.get_all_values()[1:]
     write_growth_screener(sh, all_out)
 
-    log.info("Processing Future Buy watchlist...")
-    write_future_buy(sh)
+    # Watchlist tabs (e.g. Future Buy) — isolated, does not
+    # touch Portfolio/GITHUB DATA/holdings calculations above.
+    process_all_watchlists(sh)
 
     msg = build_alert_message(alerts, portfolio_live_value, top_picks)
     if len(msg) > 4000:
