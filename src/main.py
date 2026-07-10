@@ -1067,10 +1067,13 @@ def write_github_data(sh, rows):
             "fields": "userEnteredFormat.backgroundColor"
         }})
 
-        def sf(idx):
+       def sf(idx):
             try:
-                v = str(row[idx]).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip()
-                return float(v) if len(row) > idx and v else None
+                import math
+                v = str(row[idx]).replace("%","").replace(",","").replace("₹","").replace(" Cr","").strip()
+                if not v: return None
+                f = float(v)
+                return None if (math.isnan(f) or math.isinf(f)) else f
             except: return None
 
         cap    = row[34].strip() if len(row) > 34 else ""
@@ -1614,7 +1617,11 @@ def main():
         industry = f.get("industry", "")
 
         xirr_val = get_xirr(sym, trades, cmp)
-
+import math
+    # Scrub inf/nan from all fetched fundamentals
+    for k, v in list(f.items()):
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            f[k] = None
         row = build_scored_row(sym, cmp, f, tech, rev_gr)
         # Overwrite XIRR (index 25) with actual portfolio XIRR
         row[25] = xirr_val if xirr_val else ""
