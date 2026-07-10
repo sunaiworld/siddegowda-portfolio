@@ -11,6 +11,7 @@ import time
 import logging
 import statistics
 import requests
+import math
 from datetime import datetime, date
 
 import numpy as np
@@ -1011,7 +1012,8 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
         mcap_fmt, cap_type
     ]
     return row, archetype, tot_sc, final_action
-
+def clean_row(row):
+    return [("" if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v) for v in row]
 # ══════════════════════════════════════════════
 # WRITE A GITHUB-DATA-STYLE TAB
 # Generic writer reused for "GITHUB DATA" and any
@@ -1041,6 +1043,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     ]
     ws.append_row(headers)
     if rows:
+        rows = [clean_row(r) for r in rows]
         ws.append_rows(rows)
 
     sh.batch_update({"requests": [{"repeatCell": {
