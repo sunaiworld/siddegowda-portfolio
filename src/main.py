@@ -966,6 +966,17 @@ def batch_update_safe(sh, requests, chunk=100):
         sh.batch_update({"requests": requests[i:i + chunk]})
         time.sleep(0.2)
 
+def sanitize_row(row):
+    """Replace inf/nan float values — gspread JSON rejects them."""
+    import math
+    clean = []
+    for v in row:
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            clean.append("")
+        else:
+            clean.append(v)
+    return clean
+
 # ══════════════════════════════════════════════
 # WRITE GITHUB DATA TAB
 # New unified column layout
@@ -992,7 +1003,7 @@ def write_github_data(sh, rows):
     ]
     ws.append_row(headers)
     if rows:
-        ws.append_rows(rows)
+        ws.append_rows([sanitize_row(r) for r in rows])
 
     sh.batch_update({"requests": [{"repeatCell": {
         "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
@@ -1308,7 +1319,7 @@ def build_scored_row(sym, cmp, f, tech, rev_gr):
         sym, archetype, metrics
     )
 
-    return [
+    raw = [
         sym, sector, industry, archetype, cmp,
         high52 or "", low52 or "", pct_high_display,
         f.get("pe") or "", f.get("eps") or "", f.get("bv") or "", f.get("pb") or "",
@@ -1323,6 +1334,7 @@ def build_scored_row(sym, cmp, f, tech, rev_gr):
         rsi, sma50, sma200, ema20, vol_spike, trend,
         mcap_fmt, cap_type,
     ]
+    return sanitize_row(raw)
 
 
 # ══════════════════════════════════════════════
@@ -1393,7 +1405,7 @@ def write_future_buy(sh):
     ]
     ws.append_row(headers)
     if rows:
-        ws.append_rows(rows)
+        ws.append_rows([sanitize_row(r) for r in rows])
 
     # ── Header styling (identical to GITHUB DATA) ──
     sh.batch_update({"requests": [{"repeatCell": {
