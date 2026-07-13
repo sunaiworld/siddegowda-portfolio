@@ -1401,17 +1401,7 @@ def process_all_watchlists(sh):
 # ══════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════
-def main():
-    log.info("═" * 55)
-    log.info("SIDDEGOWDA PORTFOLIO — Daily Auto-Update v2.0")
-    log.info(f"Run time: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}")
-    log.info("═" * 55)
-
-    gc = get_gspread_client()
-    sh = gc.open_by_key(SHEET_ID)
-    log.info("Connected to Google Sheets")
-
-    def run_portfolio_update(sh):
+def run_portfolio_update(sh):
     """
     Runs the full daily pipeline: fetch prices/fundamentals/technicals,
     score every symbol, write GITHUB DATA + Growth Screener + all
@@ -1523,26 +1513,6 @@ def main():
     log.info(f"✅ Strong Buy: {[a['sym'] for a in out['alerts']['strong_buy'][:5]]}")
     log.info("Top 5 picks:")
     for r in out["top_picks"][:5]:
-        log.info(f"   {r['sym']:<12} Score:{r['total']:>3}  {r['action']}")
-    log.info("═" * 55)
-
-    # Watchlist tabs (e.g. Future Buy) — isolated, does not
-    # touch Portfolio/GITHUB DATA/holdings calculations above.
-    process_all_watchlists(sh)
-
-    msg = build_alert_message(alerts, portfolio_live_value, top_picks)
-    if len(msg) > 4000:
-        msg = msg[:4000] + "\n\n<i>...truncated</i>"
-    send_telegram(msg)
-
-    log.info("═" * 55)
-    log.info(f"✅ {len(results)} stocks updated | ❌ Failed: {failed or 'None'}")
-    log.info(f"💰 Portfolio: ₹{portfolio_live_value:,.0f}")
-    log.info(f"🔴 SL Breach: {[a['sym'] for a in alerts['sl_breach']] or 'None'}")
-    log.info(f"🎯 Target Hit: {[a['sym'] for a in alerts['target_hit']] or 'None'}")
-    log.info(f"✅ Strong Buy: {[a['sym'] for a in alerts['strong_buy'][:5]]}")
-    log.info(f"Top 5 picks:")
-    for r in top_picks[:5]:
         log.info(f"   {r['sym']:<12} Score:{r['total']:>3}  {r['action']}")
     log.info("═" * 55)
 
