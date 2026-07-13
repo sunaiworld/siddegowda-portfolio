@@ -946,6 +946,24 @@ def batch_update_safe(sh, requests, chunk=100):
         time.sleep(0.2)
 
 # ══════════════════════════════════════════════
+# ROW COLUMN MAP — mirrors the list built in build_result_row().
+# Exported so telegram_bot / services read cached sheet rows
+# without re-deriving indices.
+# ══════════════════════════════════════════════
+GITHUB_DATA_COLS = {
+    "symbol": 0, "sector": 1, "industry": 2, "archetype": 3, "cmp": 4,
+    "high52": 5, "low52": 6, "pct_high": 7,
+    "pe": 8, "eps": 9, "bv": 10, "pb": 11,
+    "div": 12, "roe": 13, "roa": 14, "debt_eq": 15,
+    "rev_growth": 16, "beta": 17,
+    "quality": 18, "valuation": 19, "timing": 20, "total": 21,
+    "action": 22, "strengths": 23, "weaknesses": 24,
+    "xirr": 25, "updated": 26,
+    "rsi": 27, "sma50": 28, "sma200": 29, "ema20": 30, "vol_spike": 31, "trend": 32,
+    "mcap": 33, "cap_type": 34,
+}
+
+# ══════════════════════════════════════════════
 # BUILD A SINGLE RESULT ROW
 # Shared by the Portfolio (GITHUB DATA) pipeline and any
 # watchlist-only tab (e.g. Future Buy). Keeps row layout,
@@ -1393,11 +1411,18 @@ def main():
     sh = gc.open_by_key(SHEET_ID)
     log.info("Connected to Google Sheets")
 
+    def run_portfolio_update(sh):
+    """
+    Runs the full daily pipeline: fetch prices/fundamentals/technicals,
+    score every symbol, write GITHUB DATA + Growth Screener + all
+    WATCHLISTS tabs. Returns everything the caller needs (GitHub Actions
+    cron AND the /refresh bot command both call this — single source
+    of truth, no duplicated pipeline logic).
+    """
     symbols = read_symbols(sh)
     if not symbols:
-        log.error("No symbols found. Exiting.")
-        send_telegram("❌ Portfolio update FAILED — no symbols found in Portfolio tab col B")
-        return
+        log.error("No symbols found.")
+        return None
 
     trades = read_trades(sh)
     log.info(f"Found {len(symbols)} symbols")
@@ -1406,10 +1431,7 @@ def main():
     prices = fetch_prices_batch(symbols)
 
     log.info("Fetching fundamentals + technicals...")
-    fund_map = {}
-    tech_map = {}
-    rev_map  = {}
-
+    fund_map, tech_map, rev_map = {}, {}, {}
     for sym in symbols:
         f = fetch_fundamentals(sym)
         fund_map[sym] = f
@@ -1418,18 +1440,16 @@ def main():
         tech_map[sym] = fetch_technicals(sym)
         time.sleep(SLEEP_INFO)
 
-    holdings             = {}
-    portfolio_live_value = 0.0
+    holdings, portfolio_live_value = {}, 0.0
     for sym in symbols:
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         cmp = prices.get(sym)
         if qty > 0 and cmp and cmp > 0:
-            holdings[sym]         = (qty, cmp, avg_buy)
+            holdings[sym] = (qty, cmp, avg_buy)
             portfolio_live_value += qty * cmp
 
-    results = []
-    failed  = []
-    alerts  = {"sl_breach": [], "target_hit": [], "strong_buy": [], "sell_watch": []}
+    results, failed = [], []
+    alerts = {"sl_breach": [], "target_hit": [], "strong_buy": [], "sell_watch": []}
     top_picks = []
 
     for sym in symbols:
@@ -1439,18 +1459,14 @@ def main():
             log.warning(f"  SKIP {sym} — no price")
             continue
 
-        f      = fund_map.get(sym, {})
-        tech   = tech_map.get(sym, {})
-        rev_gr = rev_map.get(sym)
-
+        f, tech, rev_gr = fund_map.get(sym, {}), tech_map.get(sym, {}), rev_map.get(sym)
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
-        xirr_val     = get_xirr(sym, trades, cmp)
+        xirr_val = get_xirr(sym, trades, cmp)
 
         row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val)
 
         if avg_buy and qty > 0:
-            sl_price  = avg_buy * (1 - SL_PCT)
-            tgt_price = avg_buy * (1 + TARGET_PCT)
+            sl_price, tgt_price = avg_buy * (1 - SL_PCT), avg_buy * (1 + TARGET_PCT)
             if cmp <= sl_price:
                 alerts["sl_breach"].append({"sym": sym, "cmp": cmp, "sl": round(sl_price, 2)})
             if cmp >= tgt_price:
@@ -1463,15 +1479,52 @@ def main():
             alerts["sell_watch"].append({"sym": sym, "score": tot_sc, "action": final_action})
 
         results.append(row)
-
-        q_sc, v_sc, t_sc = row[18], row[19], row[20]
-        log.info(f"  {sym:12} | {archetype:25} | Q:{q_sc:2} V:{v_sc:2} T:{t_sc:2} = {tot_sc:3} | {final_action}")
+        log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}")
 
     top_picks.sort(key=lambda x: x["total"], reverse=True)
 
-    ws      = write_github_data(sh, results, tab_name="GITHUB DATA")
+    ws = write_github_data(sh, results, tab_name="GITHUB DATA")
     all_out = ws.get_all_values()[1:]
     write_growth_screener(sh, all_out)
+    process_all_watchlists(sh)
+
+    return {
+        "results": results, "alerts": alerts,
+        "portfolio_live_value": portfolio_live_value,
+        "top_picks": top_picks, "failed": failed,
+    }
+
+
+def main():
+    log.info("═" * 55)
+    log.info("SIDDEGOWDA PORTFOLIO — Daily Auto-Update v2.0")
+    log.info(f"Run time: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}")
+    log.info("═" * 55)
+
+    gc = get_gspread_client()
+    sh = gc.open_by_key(SHEET_ID)
+    log.info("Connected to Google Sheets")
+
+    out = run_portfolio_update(sh)
+    if out is None:
+        send_telegram("❌ Portfolio update FAILED — no symbols found in Portfolio tab col B")
+        return
+
+    msg = build_alert_message(out["alerts"], out["portfolio_live_value"], out["top_picks"])
+    if len(msg) > 4000:
+        msg = msg[:4000] + "\n\n<i>...truncated</i>"
+    send_telegram(msg)
+
+    log.info("═" * 55)
+    log.info(f"✅ {len(out['results'])} stocks updated | ❌ Failed: {out['failed'] or 'None'}")
+    log.info(f"💰 Portfolio: ₹{out['portfolio_live_value']:,.0f}")
+    log.info(f"🔴 SL Breach: {[a['sym'] for a in out['alerts']['sl_breach']] or 'None'}")
+    log.info(f"🎯 Target Hit: {[a['sym'] for a in out['alerts']['target_hit']] or 'None'}")
+    log.info(f"✅ Strong Buy: {[a['sym'] for a in out['alerts']['strong_buy'][:5]]}")
+    log.info("Top 5 picks:")
+    for r in out["top_picks"][:5]:
+        log.info(f"   {r['sym']:<12} Score:{r['total']:>3}  {r['action']}")
+    log.info("═" * 55)
 
     # Watchlist tabs (e.g. Future Buy) — isolated, does not
     # touch Portfolio/GITHUB DATA/holdings calculations above.
