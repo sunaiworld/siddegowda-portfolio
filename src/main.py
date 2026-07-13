@@ -1145,6 +1145,33 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         reqs.append(color_cell_req(ws.id, rn, 5, "eaf4fb", "1565c0", bold=False))
         reqs.append(color_cell_req(ws.id, rn, 6, "fdf2f2", "c62828", bold=False))
 
+        # Day Chg% — solid green/red background matching Portfolio tab exactly
+        if day_chg is not None:
+            if day_chg > 0:
+                reqs.append({
+                    "repeatCell": {
+                        "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn+1,
+                                  "startColumnIndex": 7, "endColumnIndex": 8},
+                        "cell": {"userEnteredFormat": {
+                            "backgroundColor": hex_rgb("d9ead3"),
+                            "textFormat": {"foregroundColor": hex_rgb("0b8043"), "bold": True}
+                        }},
+                        "fields": "userEnteredFormat(backgroundColor,textFormat)"
+                    }
+                })
+            elif day_chg < 0:
+                reqs.append({
+                    "repeatCell": {
+                        "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn+1,
+                                  "startColumnIndex": 7, "endColumnIndex": 8},
+                        "cell": {"userEnteredFormat": {
+                            "backgroundColor": hex_rgb("fde9d9"),
+                            "textFormat": {"foregroundColor": hex_rgb("c62828"), "bold": True}
+                        }},
+                        "fields": "userEnteredFormat(backgroundColor,textFormat)"
+                    }
+                })
+
         if pct is not None:
             reqs.append(color_cell_req(ws.id, rn, 8, "d9ead3", "0b8043") if pct >= -20
                         else color_cell_req(ws.id, rn, 8, "fde9d9", "c62828"))
