@@ -798,11 +798,16 @@ def fetch_technicals(sym):
             elif sma50 < sma200 and prev_sma50 >= prev_sma200:
                 cross = "Death Cross"
 
+        # Day change %
+        prev_close = round(float(close.iloc[-2]), 2) if len(close) >= 2 else None
+        day_chg_pct = round((cmp - prev_close) / prev_close * 100, 2) if prev_close else ""
+
         return {
             "rsi": rsi, "sma50": sma50,
             "sma200": sma200 or "", "ema20": ema20,
             "vol_spike": vol_spike, "trend": trend,
             "cross": cross, "cmp_tech": cmp,
+            "day_chg_pct": day_chg_pct,
         }
     except Exception as e:
         log.warning(f"  technicals failed {sym}: {e}")
@@ -966,13 +971,14 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
     pct_high_display = f"{pct_high}%" if pct_high != "" else ""
     mcap_fmt         = indian_cr(mcap_cr) if mcap_cr else ""
 
-    rsi       = tech.get("rsi", "")
-    sma50     = tech.get("sma50", "")
-    sma200    = tech.get("sma200", "")
-    ema20     = tech.get("ema20", "")
-    vol_spike = tech.get("vol_spike", "")
-    trend     = tech.get("trend", "")
-    cross     = tech.get("cross", "")
+    rsi         = tech.get("rsi", "")
+    sma50       = tech.get("sma50", "")
+    sma200      = tech.get("sma200", "")
+    ema20       = tech.get("ema20", "")
+    vol_spike   = tech.get("vol_spike", "")
+    trend       = tech.get("trend", "")
+    cross       = tech.get("cross", "")
+    day_chg_pct = tech.get("day_chg_pct", "")
 
     metrics = {
         "roe":        f.get("roe"),
@@ -999,7 +1005,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
 
     row = [
         sym, sector, industry, archetype, cmp,
-        high52 or "", low52 or "", pct_high_display,
+        high52 or "", low52 or "", day_chg_pct, pct_high_display,
         f.get("pe") or "", f.get("eps") or "", f.get("bv") or "", f.get("pb") or "",
         f.get("div") or "", f.get("roe") or "", f.get("roa") or "", f.get("debt_eq") or "",
         rev_gr or "", f.get("beta") or "",
@@ -1030,7 +1036,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 
     headers = [
         "Symbol","Sector","Industry","Archetype","CMP",
-        "52W High","52W Low","Buy 20% Less",
+        "52W High", "52W Low", "Day Chg%", "Buy 20% Less",
         "PE","EPS","Book Value","P/B",
         "Div Yield%","ROE%","ROA%","Debt/Equity",
         "Rev Growth%","Beta",
@@ -1069,7 +1075,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 
     widths = [
         70, 75, 90, 80, 55,
-        55, 55, 65,
+        55, 55, 55, 65,
         45, 45, 55, 45,
         50, 50, 50, 55,
         55, 45,
@@ -1117,7 +1123,8 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 
         cap    = row[34].strip() if len(row) > 34 else ""
         action = row[22].strip() if len(row) > 22 else ""
-        pct    = sf(7)
+        pct      = sf(8)   # Buy 20% Less shifted by 1
+        day_chg  = sf(7)   # Day Chg% now at index 7
         rsi_v  = sf(27)
         q_sc   = sf(18)
         v_sc   = sf(19)
@@ -1139,8 +1146,8 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         reqs.append(color_cell_req(ws.id, rn, 6, "fdf2f2", "c62828", bold=False))
 
         if pct is not None:
-            reqs.append(color_cell_req(ws.id, rn, 7, "d9ead3", "0b8043") if pct >= -20
-                        else color_cell_req(ws.id, rn, 7, "fde9d9", "c62828"))
+            reqs.append(color_cell_req(ws.id, rn, 8, "d9ead3", "0b8043") if pct >= -20
+                        else color_cell_req(ws.id, rn, 8, "fde9d9", "c62828"))
 
         if action in ACTION_COLORS:
             bg_a, fg_a = ACTION_COLORS[action]
