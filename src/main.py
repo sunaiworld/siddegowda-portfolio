@@ -1139,15 +1139,15 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             except:
                 return None
 
-        cap    = row[34].strip() if len(row) > 34 else ""
-        action = row[22].strip() if len(row) > 22 else ""
-        pct      = sf(8)   # Buy 20% Less shifted by 1
-        day_chg  = sf(7)   # Day Chg% now at index 7
-        rsi_v  = sf(27)
-        q_sc   = sf(18)
-        v_sc   = sf(19)
-        t_sc   = sf(20)
-        tot_sc = sf(21)
+        cap    = row[35].strip() if len(row) > 35 else ""
+        action = row[23].strip() if len(row) > 23 else ""
+        pct      = sf(8)
+        day_chg  = sf(7)
+        rsi_v  = sf(28)
+        tot_sc = sf(22)
+        q_sc   = sf(19)
+        v_sc   = sf(20)
+        t_sc   = sf(21)
 
         if cap == "Large Cap":       cb, cf = "d9ead3", "0b8043"
         elif cap == "Mid Cap":       cb, cf = "d9eaf7", "1565c0"
@@ -1155,9 +1155,9 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         else:                        cb, cf = "ffffff", "000000"
         if cap:
             reqs += [
-                color_cell_req(ws.id, rn, 0, cb, cf),
-                color_cell_req(ws.id, rn, 33, cb, cf),
+                color_cell_req(ws.id, rn, 0,  cb, cf),
                 color_cell_req(ws.id, rn, 34, cb, cf),
+                color_cell_req(ws.id, rn, 35, cb, cf),
             ]
 
         reqs.append(color_cell_req(ws.id, rn, 5, "eaf4fb", "1565c0", bold=False))
@@ -1196,30 +1196,30 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 
         if action in ACTION_COLORS:
             bg_a, fg_a = ACTION_COLORS[action]
-            reqs.append(color_cell_req(ws.id, rn, 22, bg_a, fg_a))
+            reqs.append(color_cell_req(ws.id, rn, 23, bg_a, fg_a))
 
         if q_sc is not None:
-            if q_sc >= 30:   reqs.append(color_cell_req(ws.id, rn, 18, "d9ead3", "0b8043"))
-            elif q_sc <= 15: reqs.append(color_cell_req(ws.id, rn, 18, "fde9d9", "c62828"))
+            if q_sc >= 30:   reqs.append(color_cell_req(ws.id, rn, 19, "d9ead3", "0b8043"))
+            elif q_sc <= 15: reqs.append(color_cell_req(ws.id, rn, 19, "fde9d9", "c62828"))
 
         if v_sc is not None:
-            if v_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 19, "d9ead3", "0b8043"))
-            elif v_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 19, "fde9d9", "c62828"))
+            if v_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 20, "d9ead3", "0b8043"))
+            elif v_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 20, "fde9d9", "c62828"))
 
         if t_sc is not None:
-            if t_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 20, "d9ead3", "0b8043"))
-            elif t_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 20, "fde9d9", "c62828"))
+            if t_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 21, "d9ead3", "0b8043"))
+            elif t_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 21, "fde9d9", "c62828"))
 
         if tot_sc is not None:
-            if   tot_sc >= 65: reqs.append(color_cell_req(ws.id, rn, 21, "00c853", "ffffff"))
-            elif tot_sc >= 50: reqs.append(color_cell_req(ws.id, rn, 21, "d9ead3", "0b8043"))
-            elif tot_sc >= 35: reqs.append(color_cell_req(ws.id, rn, 21, "fff2cc", "7f4f00"))
-            else:              reqs.append(color_cell_req(ws.id, rn, 21, "fde9d9", "c62828"))
+            if   tot_sc >= 65: reqs.append(color_cell_req(ws.id, rn, 22, "00c853", "ffffff"))
+            elif tot_sc >= 50: reqs.append(color_cell_req(ws.id, rn, 22, "d9ead3", "0b8043"))
+            elif tot_sc >= 35: reqs.append(color_cell_req(ws.id, rn, 22, "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, 22, "fde9d9", "c62828"))
 
         if rsi_v is not None:
-            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id, rn, 27, "d9ead3", "0b8043"))
-            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id, rn, 27, "fde9d9", "c62828"))
-            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, 27, "fff2cc", "7f4f00"))
+            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id, rn, 28, "d9ead3", "0b8043"))
+            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id, rn, 28, "fde9d9", "c62828"))
+            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, 28, "fff2cc", "7f4f00"))
 
     batch_update_safe(sh, reqs)
     log.info(f"{tab_name} tab written and formatted")
