@@ -21,6 +21,8 @@ import gspread
 from google.oauth2.service_account import Credentials
 import fund_cache
 import history_tracker
+import portfolio_analytics
+import ai_notes
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -1024,6 +1026,8 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
 
     strengths_str  = " | ".join(strengths)
     weaknesses_str = " | ".join(weaknesses)
+    strengths_short  = f"{len(strengths)} ✓" if strengths else ""
+    weaknesses_short = f"{len(weaknesses)} ✗" if weaknesses else ""
 
     row = [
         sym, sector, industry, archetype, cmp,
@@ -1033,13 +1037,13 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
         rev_gr or "", f.get("beta") or "",
         q_sc, v_sc, t_sc, tot_sc,
         final_action,
-        strengths_str, weaknesses_str,
+        strengths_short, weaknesses_short,
         xirr_val if xirr_val else "",
         datetime.now().strftime("%d-%b-%Y %H:%M"),
         rsi, sma50, sma200, ema20, vol_spike, trend,
         mcap_fmt, cap_type
     ]
-    return row, archetype, tot_sc, final_action
+    return row, archetype, tot_sc, final_action, strengths_str, weaknesses_str
 def clean_row(row):
     return [("" if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v) for v in row]
 # ══════════════════════════════════════════════
@@ -1486,6 +1490,9 @@ def run_portfolio_update(sh):
     write_growth_screener(sh, all_out)
     process_all_watchlists(sh)
     history_tracker.append_history_snapshot(sh, results, portfolio_live_value)
+    
+    dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
+    portfolio_analytics.write_dashboard_tab(sh, dash)
 
     return {
         "results": results, "alerts": alerts,
