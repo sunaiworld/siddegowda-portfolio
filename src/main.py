@@ -19,6 +19,7 @@ import pandas as pd
 import yfinance as yf
 import gspread
 from google.oauth2.service_account import Credentials
+import fund_cache
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -45,6 +46,8 @@ SLEEP_BATCH = 8
 SLEEP_INFO  = 3
 SL_PCT      = 0.07
 TARGET_PCT  = 0.20
+FUNDAMENTALS_CACHE_DAYS = 7
+
 
 # ══════════════════════════════════════════════
 # WATCHLISTS
@@ -1371,6 +1374,7 @@ def process_watchlist_tab(sh, tab_name, symbols):
 
     log.info(f"{tab_name}: fetching prices for {len(symbols)} symbols...")
     prices = fetch_prices_batch(symbols)
+    wl_cache = fund_cache.load_cache(sh)
 
     rows = []
     for sym in symbols:
@@ -1379,7 +1383,7 @@ def process_watchlist_tab(sh, tab_name, symbols):
             log.warning(f"  SKIP {sym} ({tab_name}) — no price")
             continue
 
-        f      = fetch_fundamentals(sym)
+        f      = fund_cache.get_or_fetch_fundamentals(sym, wl_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
         rev_gr = fetch_rev_growth(sym)
         tech   = fetch_technicals(sym)
         time.sleep(SLEEP_INFO)
@@ -1387,6 +1391,7 @@ def process_watchlist_tab(sh, tab_name, symbols):
         row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="")
         rows.append(row)
         log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}")
+        fund_cache.save_cache(sh, wl_cache)
 
     write_github_data(sh, rows, tab_name=tab_name)
     return rows
@@ -1422,13 +1427,15 @@ def run_portfolio_update(sh):
 
     log.info("Fetching fundamentals + technicals...")
     fund_map, tech_map, rev_map = {}, {}, {}
+    fc_cache = fund_cache.load_cache(sh)
     for sym in symbols:
-        f = fetch_fundamentals(sym)
+        f = fund_cache.get_or_fetch_fundamentals(sym, fc_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
         fund_map[sym] = f
         rev_map[sym]  = fetch_rev_growth(sym)
         log.info(f"  Technicals: {sym}")
         tech_map[sym] = fetch_technicals(sym)
         time.sleep(SLEEP_INFO)
+    fund_cache.save_cache(sh, fc_cache)
 
     holdings, portfolio_live_value = {}, 0.0
     for sym in symbols:
