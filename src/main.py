@@ -20,6 +20,7 @@ import yfinance as yf
 import gspread
 from google.oauth2.service_account import Credentials
 import fund_cache
+import history_tracker
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -1484,6 +1485,7 @@ def run_portfolio_update(sh):
     all_out = ws.get_all_values()[1:]
     write_growth_screener(sh, all_out)
     process_all_watchlists(sh)
+    history_tracker.append_history_snapshot(sh, results, portfolio_live_value)
 
     return {
         "results": results, "alerts": alerts,
