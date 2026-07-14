@@ -1443,7 +1443,8 @@ def run_portfolio_update(sh):
     fund_cache.save_cache(sh, fc_cache)
 
     holdings, portfolio_live_value = {}, 0.0
-    for sym in symbols:
+    notes_batch = []
+    for sym in symbols:    
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         cmp = prices.get(sym)
         if qty > 0 and cmp and cmp > 0:
