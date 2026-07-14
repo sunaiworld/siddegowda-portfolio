@@ -1465,7 +1465,8 @@ def run_portfolio_update(sh):
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         xirr_val = get_xirr(sym, trades, cmp)
 
-        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val)
+        row, archetype, tot_sc, final_action, strengths_str, weaknesses_str = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val)
+        notes_batch.append([sym, strengths_str, weaknesses_str])
 
         if avg_buy and qty > 0:
             sl_price, tgt_price = avg_buy * (1 - SL_PCT), avg_buy * (1 + TARGET_PCT)
@@ -1490,6 +1491,7 @@ def run_portfolio_update(sh):
     write_growth_screener(sh, all_out)
     process_all_watchlists(sh)
     history_tracker.append_history_snapshot(sh, results, portfolio_live_value)
+    ai_notes.append_notes(sh, notes_batch)
     
     dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
     portfolio_analytics.write_dashboard_tab(sh, dash)
