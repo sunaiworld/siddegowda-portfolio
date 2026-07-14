@@ -958,15 +958,15 @@ def batch_update_safe(sh, requests, chunk=100):
 # ══════════════════════════════════════════════
 GITHUB_DATA_COLS = {
     "symbol": 0, "sector": 1, "industry": 2, "archetype": 3, "cmp": 4,
-    "high52": 5, "low52": 6, "pct_high": 7,
-    "pe": 8, "eps": 9, "bv": 10, "pb": 11,
-    "div": 12, "roe": 13, "roa": 14, "debt_eq": 15,
-    "rev_growth": 16, "beta": 17,
-    "quality": 18, "valuation": 19, "timing": 20, "total": 21,
-    "action": 22, "strengths": 23, "weaknesses": 24,
-    "xirr": 25, "updated": 26,
-    "rsi": 27, "sma50": 28, "sma200": 29, "ema20": 30, "vol_spike": 31, "trend": 32,
-    "mcap": 33, "cap_type": 34,
+    "high52": 5, "low52": 6, "day_chg_pct": 7, "pct_high": 8,
+    "pe": 9, "eps": 10, "bv": 11, "pb": 12,
+    "div": 13, "roe": 14, "roa": 15, "debt_eq": 16,
+    "rev_growth": 17, "beta": 18,
+    "quality": 19, "valuation": 20, "timing": 21, "total": 22,
+    "action": 23, "strengths": 24, "weaknesses": 25,
+    "xirr": 26, "updated": 27,
+    "rsi": 28, "sma50": 29, "sma200": 30, "ema20": 31, "vol_spike": 32, "trend": 33,
+    "mcap": 34, "cap_type": 35,
 }
 
 # ══════════════════════════════════════════════
@@ -1251,32 +1251,32 @@ def write_growth_screener(sh, all_out):
     for row in all_out:
         if not row or not row[0]: continue
         sym    = row[0].strip()
-        action = row[22].strip() if len(row) > 22 else ""
-        cap    = row[34].strip() if len(row) > 34 else ""
+        action = row[23].strip() if len(row) > 23 else ""
+        cap    = row[35].strip() if len(row) > 35 else ""
 
         def sf(v):
             try: return float(str(v).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip())
             except: return None
 
-        tot_sc = sf(row[21] if len(row) > 21 else "")
-        q_sc   = sf(row[18] if len(row) > 18 else "")
-        v_sc   = sf(row[19] if len(row) > 19 else "")
-        t_sc   = sf(row[20] if len(row) > 20 else "")
-        rsi    = row[27] if len(row) > 27 else ""
-        trend  = row[32] if len(row) > 32 else ""
+        tot_sc = sf(row[22] if len(row) > 22 else "")
+        q_sc   = sf(row[19] if len(row) > 19 else "")
+        v_sc   = sf(row[20] if len(row) > 20 else "")
+        t_sc   = sf(row[21] if len(row) > 21 else "")
+        rsi    = row[28] if len(row) > 28 else ""
+        trend  = row[33] if len(row) > 33 else ""
 
         growth.append([
             sym, cap,
-            row[8]  if len(row) > 8  else "",
-            row[13] if len(row) > 13 else "",
-            row[15] if len(row) > 15 else "",
-            row[16] if len(row) > 16 else "",
-            row[12] if len(row) > 12 else "",
-            row[7]  if len(row) > 7  else "",
+            row[9]  if len(row) > 9  else "",   # PE
+            row[14] if len(row) > 14 else "",   # ROE%
+            row[16] if len(row) > 16 else "",   # Debt/Eq
+            row[17] if len(row) > 17 else "",   # Rev Growth%
+            row[13] if len(row) > 13 else "",   # Div Yield%
+            row[8]  if len(row) > 8  else "",   # Buy 20% Less
             q_sc or "", v_sc or "", t_sc or "", tot_sc or "",
             action,
-            row[23] if len(row) > 23 else "",
-            row[24] if len(row) > 24 else "",
+            row[24] if len(row) > 24 else "",   # Strengths
+            row[25] if len(row) > 25 else "",   # Weaknesses
             rsi, trend,
         ])
 
@@ -1382,6 +1382,7 @@ def process_watchlist_tab(sh, tab_name, symbols):
     wl_cache = fund_cache.load_cache(sh)
 
     rows = []
+    notes_batch = []
     for sym in symbols:
         cmp = prices.get(sym)
         if not cmp:
@@ -1393,11 +1394,13 @@ def process_watchlist_tab(sh, tab_name, symbols):
         tech   = fetch_technicals(sym)
         time.sleep(SLEEP_INFO)
 
-        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="")
+        row, archetype, tot_sc, final_action, strengths_str, weaknesses_str = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="")
         rows.append(row)
+        notes_batch.append([sym, strengths_str, weaknesses_str])
         log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}")
-        fund_cache.save_cache(sh, wl_cache)
 
+    fund_cache.save_cache(sh, wl_cache)
+    ai_notes.append_notes(sh, notes_batch)
     write_github_data(sh, rows, tab_name=tab_name)
     return rows
 
