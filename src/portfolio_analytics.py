@@ -107,12 +107,17 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
     }
 
 
-def write_dashboard_tab(sh, dash):
+def write_dashboard_tab(sh, dash, changes=None):
+    """
+    changes: optional dict from history_tracker.compute_todays_changes().
+    Rendered right after the headline metrics — the "what changed"
+    screen — ahead of Sector Allocation.
+    """
     try:
         ws = sh.worksheet(DASHBOARD_TAB)
         ws.clear()
     except Exception:
-        ws = sh.add_worksheet(DASHBOARD_TAB, rows=200, cols=4)
+        ws = sh.add_worksheet(DASHBOARD_TAB, rows=300, cols=4)
 
     rows = [
         ["SiddeGowda Portfolio — Dashboard", "", "", ""],
@@ -123,9 +128,39 @@ def write_dashboard_tab(sh, dash):
         ["Portfolio Beta", dash["portfolio_beta"] if dash["portfolio_beta"] is not None else "N/A", "", ""],
         ["Expected Div Income (annual)", f"₹{dash['div_income']:,.0f}", "", ""],
         ["", "", "", ""],
-        ["Sector Allocation", "", "", ""],
-        ["Sector", "Value (₹)", "% of Portfolio", ""],
     ]
+
+    if changes and changes.get("prev_date"):
+        rows.append([f"Today's Changes (vs {changes['prev_date']})", "", "", ""])
+        rows.append(["", "", "", ""])
+        rows.append(["Top Improvements", "", "", "Priority"])
+        for i, c in enumerate(changes["top_improvements"], 1):
+            rows.append([f"{i}. {c['symbol']}", f"+{c['score_delta']}",
+                         f"{c['prev_action']} → {c['today_action']}", c["priority"]])
+            rows.append(["", f"Reason: {c['reason']}", "", ""])
+            rows.append(["", f"Why: {c['why']}", "", ""])
+        if not changes["top_improvements"]:
+            rows.append(["(none)", "", "", ""])
+
+        rows.append(["", "", "", ""])
+        rows.append(["Top Deteriorations", "", "", "Priority"])
+        for i, c in enumerate(changes["top_deteriorations"], 1):
+            rows.append([f"{i}. {c['symbol']}", f"{c['score_delta']}",
+                         f"{c['prev_action']} → {c['today_action']}", c["priority"]])
+            rows.append(["", f"Reason: {c['reason']}", "", ""])
+            rows.append(["", f"Why: {c['why']}", "", ""])
+        if not changes["top_deteriorations"]:
+            rows.append(["(none)", "", "", ""])
+
+        rows.append(["", "", "", ""])
+        rows.append([f"Unchanged Holdings: {changes['unchanged_count']}", "", "", ""])
+        rows.append(["", "", "", ""])
+    elif changes is not None:
+        rows.append(["Today's Changes", "No prior trading day in History yet — check back tomorrow", "", ""])
+        rows.append(["", "", "", ""])
+
+    rows.append(["Sector Allocation", "", "", ""])
+    rows.append(["Sector", "Value (₹)", "% of Portfolio", ""])
     for sector, val, pct in dash["sector_alloc"]:
         rows.append([sector, val, f"{pct}%", ""])
 
