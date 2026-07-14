@@ -1494,16 +1494,18 @@ def run_portfolio_update(sh):
     all_out = ws.get_all_values()[1:]
     write_growth_screener(sh, all_out)
     process_all_watchlists(sh)
+    changes = history_tracker.compute_todays_changes(sh, results)
     history_tracker.append_history_snapshot(sh, results, portfolio_live_value)
     ai_notes.append_notes(sh, notes_batch)
-    
+
     dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
-    portfolio_analytics.write_dashboard_tab(sh, dash)
+    portfolio_analytics.write_dashboard_tab(sh, dash, changes)
 
     return {
         "results": results, "alerts": alerts,
         "portfolio_live_value": portfolio_live_value,
         "top_picks": top_picks, "failed": failed,
+        "changes": changes,
     }
 
 
@@ -1523,6 +1525,9 @@ def main():
         return
 
     msg = build_alert_message(out["alerts"], out["portfolio_live_value"], out["top_picks"])
+    digest = history_tracker.format_telegram_digest(out.get("changes"))
+    if digest:
+        msg = msg + "\n\n" + digest
     if len(msg) > 4000:
         msg = msg[:4000] + "\n\n<i>...truncated</i>"
     send_telegram(msg)
