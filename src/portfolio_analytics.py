@@ -1,11 +1,12 @@
 """
-Portfolio-level dashboard.
+Portfolio-level dashboard + Portfolio Health Score.
 
 Everything main.py currently reports is stock-centric (one row per
 symbol). This module aggregates data run_portfolio_update() already
-computed — holdings, fund_map, trades, portfolio_live_value — into
-sector allocation, position concentration, portfolio beta, portfolio
-XIRR, and expected dividend income. No new yfinance/API calls.
+computed — holdings, fund_map, trades, portfolio_live_value, results —
+into sector allocation, position concentration, portfolio beta,
+portfolio XIRR, expected dividend income, and a deterministic
+Portfolio Health Score. No new yfinance/API calls anywhere in this file.
 """
 import logging
 from datetime import datetime, date
@@ -14,6 +15,57 @@ log = logging.getLogger(__name__)
 
 DASHBOARD_TAB = "Dashboard"
 CONCENTRATION_THRESHOLD_PCT = 5  # matches the 5%-weight-rule concept from the Apps Script build
+
+# ── Portfolio Health Score weights ───────────
+# Growth deliberately excluded — Rev Growth% already feeds the
+# stock-level Quality Score via SECTOR_RULES; a separate Growth
+# component here would double-count the same input.
+HEALTH_WEIGHTS = {
+    "quality": 0.30,
+    "valuation": 0.25,
+    "risk": 0.20,
+    "diversification": 0.15,
+    "momentum": 0.10,
+}
+HEALTH_COMPONENT_KEYS = {
+    "Business Quality": "quality",
+    "Valuation": "valuation",
+    "Risk": "risk",
+    "Diversification": "diversification",
+    "Momentum": "momentum",
+}
+HEALTH_GRADE_TABLE = [(95, "A+"), (90, "A"), (85, "A-"), (80, "B+"), (75, "B"), (70, "C")]
+HEALTH_TREND_THRESHOLD = 2  # |delta| >= this = Improving/Weakening, else Stable
+
+
+def _clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
+
+def _to_f(v):
+    try:
+        return float(str(v).replace("%", "").replace(",", "").strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def _health_grade(score):
+    for threshold, grade in HEALTH_GRADE_TABLE:
+        if score >= threshold:
+            return grade
+    return "Needs Attention"
+
+
+def compute_health_trend(overall, prev_score):
+    """Returns (label, delta). delta is None if no prior trading day exists."""
+    if prev_score is None:
+        return "—", None
+    delta = round(overall - prev_score, 1)
+    if delta >= HEALTH_TREND_THRESHOLD:
+        return "📈 Improving", delta
+    if delta <= -HEALTH_TREND_THRESHOLD:
+        return "📉 Weakening", delta
+    return "➡️ Stable", delta
 
 
 def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value):
@@ -107,22 +159,121 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
     }
 
 
-def write_dashboard_tab(sh, dash, changes=None):
+def compute_portfolio_health(results, holdings, fund_map, dash):
     """
-    changes: optional dict from history_tracker.compute_todays_changes().
-    Rendered right after the headline metrics — the "what changed"
-    screen — ahead of Sector Allocation.
+    Deterministic Portfolio Health Score (0-100), five value-weighted
+    components. Reuses:
+    - Quality/Valuation/Timing scores already in `results`
+    - debt_eq already in `fund_map`
+    - portfolio_beta, sector_alloc, positions already in `dash`
+      (from compute_portfolio_dashboard() — not recomputed here)
+    No new fetches, no new pass over raw data beyond what's given.
+    """
+    from main import GITHUB_DATA_COLS  # lazy import — avoids circular import with main.py
+
+    row_by_sym = {}
+    for row in results:
+        try:
+            row_by_sym[row[GITHUB_DATA_COLS["symbol"]]] = row
+        except (IndexError, KeyError):
+            continue
+
+    q_sum = v_sum = t_sum = w_sum = 0.0
+    debt_sum, debt_w = 0.0, 0.0
+    for sym, (qty, cmp, avg_buy) in holdings.items():
+        row = row_by_sym.get(sym)
+        if row is None:
+            continue
+        value = qty * cmp
+
+        q = _to_f(row[GITHUB_DATA_COLS["quality"]])
+        v = _to_f(row[GITHUB_DATA_COLS["valuation"]])
+        t = _to_f(row[GITHUB_DATA_COLS["timing"]])
+        if q is not None:
+            q_sum += q * value
+        if v is not None:
+            v_sum += v * value
+        if t is not None:
+            t_sum += t * value
+        w_sum += value
+
+        debt = fund_map.get(sym, {}).get("debt_eq")
+        if debt is not None:
+            debt_sum += debt * value
+            debt_w += value
+
+    quality_component   = _clamp((q_sum / w_sum) / 40 * 100, 0, 100) if w_sum else 0
+    valuation_component = _clamp((v_sum / w_sum) / 30 * 100, 0, 100) if w_sum else 0
+    momentum_component  = _clamp((t_sum / w_sum) / 30 * 100, 0, 100) if w_sum else 0
+    avg_debt_eq = (debt_sum / debt_w) if debt_w else 0
+
+    # ── Risk: beta + debt + concentration penalties ──
+    portfolio_beta = dash.get("portfolio_beta") or 0.8
+    beta_penalty = _clamp((portfolio_beta - 0.8) * 40, 0, 40)
+    debt_penalty = _clamp(avg_debt_eq * 15, 0, 30)
+    overweight_count = sum(1 for pos in dash.get("positions", []) if len(pos) > 3 and pos[3])
+    concentration_penalty = 5 * overweight_count
+    risk_component = _clamp(100 - beta_penalty - debt_penalty - concentration_penalty, 0, 100)
+
+    # ── Diversification: HHI across sectors ──
+    hhi = sum((pos[2] or 0) ** 2 for pos in dash.get("sector_alloc", []) if len(pos) > 2)
+    diversification_component = _clamp(100 - hhi / 100, 0, 100)
+
+    components = {
+        "Business Quality": round(quality_component, 1),
+        "Valuation": round(valuation_component, 1),
+        "Risk": round(risk_component, 1),
+        "Diversification": round(diversification_component, 1),
+        "Momentum": round(momentum_component, 1),
+    }
+
+    overall = sum(HEALTH_WEIGHTS[HEALTH_COMPONENT_KEYS[name]] * score for name, score in components.items())
+    overall = round(overall, 1)
+
+    return {
+        "overall": overall,
+        "grade": _health_grade(overall),
+        "components": components,
+        "weights": HEALTH_WEIGHTS,
+    }
+
+
+def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
+    """
+    health: dict from compute_portfolio_health(), rendered as the
+    first section of the Dashboard.
+    health_trend: (label, delta) tuple from compute_health_trend().
+    changes: dict from history_tracker.compute_todays_changes().
     """
     try:
         ws = sh.worksheet(DASHBOARD_TAB)
         ws.clear()
     except Exception:
-        ws = sh.add_worksheet(DASHBOARD_TAB, rows=300, cols=4)
+        ws = sh.add_worksheet(DASHBOARD_TAB, rows=400, cols=4)
 
     rows = [
         ["SiddeGowda Portfolio — Dashboard", "", "", ""],
         ["Updated", datetime.now().strftime("%d-%b-%Y %H:%M"), "", ""],
         ["", "", "", ""],
+    ]
+
+    if health:
+        trend_label, delta = health_trend if health_trend else ("—", None)
+        delta_str = ""
+        if delta is not None:
+            sign = "+" if delta > 0 else ""
+            delta_str = f" ({sign}{delta} vs prior trading day)"
+        rows.append(["Portfolio Health Score", f"{health['overall']} / 100", health["grade"],
+                     f"{trend_label}{delta_str}"])
+        rows.append(["", "", "", ""])
+        for name, score in health["components"].items():
+            weight_pct = int(health["weights"][HEALTH_COMPONENT_KEYS[name]] * 100)
+            filled = int(round(score / 10))
+            bar = "█" * filled + "░" * (10 - filled)
+            rows.append([f"{name} ({weight_pct}%)", score, bar, ""])
+        rows.append(["", "", "", ""])
+
+    rows += [
         ["Portfolio Value", f"₹{dash['portfolio_value']:,.0f}", "", ""],
         ["Portfolio XIRR%", dash["portfolio_xirr"] if dash["portfolio_xirr"] is not None else "N/A", "", ""],
         ["Portfolio Beta", dash["portfolio_beta"] if dash["portfolio_beta"] is not None else "N/A", "", ""],
