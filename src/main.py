@@ -956,16 +956,17 @@ def batch_update_safe(sh, requests, chunk=100):
 # without re-deriving indices.
 # ══════════════════════════════════════════════
 GITHUB_DATA_COLS = {
-    "symbol": 0, "sector": 1, "industry": 2, "archetype": 3, "cmp": 4,
-    "high52": 5, "low52": 6, "day_chg_pct": 7, "pct_high": 8,
-    "pe": 9, "eps": 10, "bv": 11, "pb": 12,
-    "div": 13, "roe": 14, "roa": 15, "debt_eq": 16,
+    "symbol": 0, "sector": 1, "industry": 2, "archetype": 3,
+    "low52": 4, "high52": 5, "day_chg_pct": 6, "pct_high": 7,
+    "pe": 8, "eps": 9, "bv": 10, "pb": 11,
+    "div": 12,
+    "rsi": 13, "roe": 14, "roa": 15, "debt_eq": 16,
     "rev_growth": 17, "beta": 18,
     "quality": 19, "valuation": 20, "timing": 21, "total": 22,
-    "action": 23, "strengths": 24, "weaknesses": 25,
-    "xirr": 26, "updated": 27,
-    "rsi": 28, "sma50": 29, "sma200": 30, "ema20": 31, "vol_spike": 32, "trend": 33,
-    "mcap": 34, "cap_type": 35,
+    "action": 23,
+    "strengths": 24, "trend": 25, "weaknesses": 26,
+    "vol_spike": 27,
+    "mcap": 28, "cap_type": 29,
 }
 
 # ══════════════════════════════════════════════
@@ -995,9 +996,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
     mcap_fmt         = indian_cr(mcap_cr) if mcap_cr else ""
 
     rsi         = tech.get("rsi", "")
-    sma50       = tech.get("sma50", "")
-    sma200      = tech.get("sma200", "")
-    ema20       = tech.get("ema20", "")
+    sma200      = tech.get("sma200", "")   # still needed for scoring, not stored in row anymore
     vol_spike   = tech.get("vol_spike", "")
     trend       = tech.get("trend", "")
     cross       = tech.get("cross", "")
@@ -1027,17 +1026,16 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
     weaknesses_str = " | ".join(weaknesses)
 
     row = [
-        sym, sector, industry, archetype, cmp,
-        high52 or "", low52 or "", day_chg_pct, pct_high_display,
+        sym, sector, industry, archetype,
+        low52 or "", high52 or "", day_chg_pct, pct_high_display,
         f.get("pe") or "", f.get("eps") or "", f.get("bv") or "", f.get("pb") or "",
-        f.get("div") or "", f.get("roe") or "", f.get("roa") or "", f.get("debt_eq") or "",
+        f.get("div") or "",
+        rsi, f.get("roe") or "", f.get("roa") or "", f.get("debt_eq") or "",
         rev_gr or "", f.get("beta") or "",
         q_sc, v_sc, t_sc, tot_sc,
         final_action,
-        strengths_str, weaknesses_str,
-        xirr_val if xirr_val else "",
-        datetime.now().strftime("%d-%b-%Y %H:%M"),
-        rsi, sma50, sma200, ema20, vol_spike, trend,
+        strengths_str, trend, weaknesses_str,
+        vol_spike,
         mcap_fmt, cap_type
     ]
     return row, archetype, tot_sc, final_action
@@ -1055,21 +1053,23 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         ws = sh.worksheet(tab_name)
         ws.clear()
     except:
-        ws = sh.add_worksheet(tab_name, rows=300, cols=35)
+        ws = sh.add_worksheet(tab_name, rows=300, cols=30)
 
     headers = [
-        "Symbol","Sector","Industry","Archetype","CMP",
-        "52W High", "52W Low", "Day Chg%", "Buy 20% Less",
-        "PE","EPS","Book Value","P/B",
-        "Div Yield%","ROE%","ROA%","Debt/Equity",
-        "Rev Growth%","Beta",
-        "Quality Score","Valuation Score","Timing Score","Total Score",
+        "Symbol", "Sector", "Industry", "Archetype",
+        "52W Low", "52W High", "Day Chg%", "Buy 20% Less",
+        "PE", "EPS", "Book Value", "P/B",
+        "Div Yield%",
+        "RSI", "ROE%", "ROA%", "Debt/Equity",
+        "Rev Growth%", "Beta",
+        "Quality Score", "Valuation Score", "Timing Score", "Total Score",
         "Final Action",
-        "Strengths","Weaknesses",
-        "XIRR%","Updated",
-        "RSI","SMA 50","SMA 200","EMA 20","Vol Spike","Trend",
-        "Mkt Cap Cr","Cap Type"
+        "Strengths", "Trend", "Weaknesses",
+        "Vol Spike",
+        "Mkt Cap Cr", "Cap Type"
     ]
+    assert len(headers) == 30, "headers/row column count mismatch"
+
     ws.append_row(headers)
     if rows:
         rows = [clean_row(r) for r in rows]
@@ -1097,16 +1097,16 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     }}]})
 
     widths = [
-        70, 75, 90, 80, 55,
-        55, 55, 55, 65,
+        70, 75, 90, 80,
+        55, 55, 60, 65,
         45, 45, 55, 45,
-        50, 50, 50, 55,
+        50,
+        45, 50, 50, 55,
         55, 45,
         55, 60, 55, 55,
         90,
-        200, 200,
-        55, 90,
-        45, 55, 55, 55, 55, 90,
+        200, 90, 200,
+        55,
         65, 65
     ]
     sh.batch_update({"requests": [{"updateDimensionProperties": {
@@ -1144,15 +1144,14 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             except:
                 return None
 
-        cap    = row[35].strip() if len(row) > 35 else ""
+        cap    = row[29].strip() if len(row) > 29 else ""
         action = row[23].strip() if len(row) > 23 else ""
-        pct      = sf(8)
-        day_chg  = sf(7)
-        rsi_v  = sf(28)
-        tot_sc = sf(22)
+        pct    = sf(7)
+        rsi_v  = sf(13)
         q_sc   = sf(19)
         v_sc   = sf(20)
         t_sc   = sf(21)
+        tot_sc = sf(22)
 
         if cap == "Large Cap":       cb, cf = "d9ead3", "0b8043"
         elif cap == "Mid Cap":       cb, cf = "d9eaf7", "1565c0"
@@ -1160,44 +1159,17 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         else:                        cb, cf = "ffffff", "000000"
         if cap:
             reqs += [
-                color_cell_req(ws.id, rn, 0,  cb, cf),
-                color_cell_req(ws.id, rn, 34, cb, cf),
-                color_cell_req(ws.id, rn, 35, cb, cf),
+                color_cell_req(ws.id, rn, 0, cb, cf),
+                color_cell_req(ws.id, rn, 28, cb, cf),
+                color_cell_req(ws.id, rn, 29, cb, cf),
             ]
 
-        reqs.append(color_cell_req(ws.id, rn, 5, "eaf4fb", "1565c0", bold=False))
-        reqs.append(color_cell_req(ws.id, rn, 6, "fdf2f2", "c62828", bold=False))
-
-        # Day Chg% — solid green/red background matching Portfolio tab exactly
-        if day_chg is not None:
-            if day_chg > 0:
-                reqs.append({
-                    "repeatCell": {
-                        "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn+1,
-                                  "startColumnIndex": 7, "endColumnIndex": 8},
-                        "cell": {"userEnteredFormat": {
-                            "backgroundColor": hex_rgb("d9ead3"),
-                            "textFormat": {"foregroundColor": hex_rgb("0b8043"), "bold": True}
-                        }},
-                        "fields": "userEnteredFormat(backgroundColor,textFormat)"
-                    }
-                })
-            elif day_chg < 0:
-                reqs.append({
-                    "repeatCell": {
-                        "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn+1,
-                                  "startColumnIndex": 7, "endColumnIndex": 8},
-                        "cell": {"userEnteredFormat": {
-                            "backgroundColor": hex_rgb("fde9d9"),
-                            "textFormat": {"foregroundColor": hex_rgb("c62828"), "bold": True}
-                        }},
-                        "fields": "userEnteredFormat(backgroundColor,textFormat)"
-                    }
-                })
+        reqs.append(color_cell_req(ws.id, rn, 5, "eaf4fb", "1565c0", bold=False))  # 52W High
+        reqs.append(color_cell_req(ws.id, rn, 4, "fdf2f2", "c62828", bold=False))  # 52W Low
 
         if pct is not None:
-            reqs.append(color_cell_req(ws.id, rn, 8, "d9ead3", "0b8043") if pct >= -20
-                        else color_cell_req(ws.id, rn, 8, "fde9d9", "c62828"))
+            reqs.append(color_cell_req(ws.id, rn, 7, "d9ead3", "0b8043") if pct >= -20
+                        else color_cell_req(ws.id, rn, 7, "fde9d9", "c62828"))
 
         if action in ACTION_COLORS:
             bg_a, fg_a = ACTION_COLORS[action]
@@ -1222,9 +1194,9 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             else:              reqs.append(color_cell_req(ws.id, rn, 22, "fde9d9", "c62828"))
 
         if rsi_v is not None:
-            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id, rn, 28, "d9ead3", "0b8043"))
-            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id, rn, 28, "fde9d9", "c62828"))
-            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, 28, "fff2cc", "7f4f00"))
+            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id, rn, 13, "d9ead3", "0b8043"))
+            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id, rn, 13, "fde9d9", "c62828"))
+            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, 13, "fff2cc", "7f4f00"))
 
     batch_update_safe(sh, reqs)
     log.info(f"{tab_name} tab written and formatted")
@@ -1482,9 +1454,7 @@ def run_portfolio_update(sh):
 
     top_picks.sort(key=lambda x: x["total"], reverse=True)
 
-    ws = write_github_data(sh, results, tab_name="GITHUB DATA")
-    all_out = ws.get_all_values()[1:]
-    write_growth_screener(sh, all_out)
+    write_github_data(sh, results, tab_name="GITHUB DATA")
     process_all_watchlists(sh)
     # ── TEMP DEBUG LOGGING — remove after root cause confirmed ──
     log.info(f"[DEBUG] len(symbols)={len(symbols)} len(results)={len(results)} "
@@ -1502,7 +1472,7 @@ def run_portfolio_update(sh):
     health = portfolio_analytics.compute_portfolio_health(results, holdings, fund_map, dash)
     health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
 
-    history_tracker.append_history_snapshot(sh, results, portfolio_live_value, health_score=health["overall"])
+    history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
 
     portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
 
