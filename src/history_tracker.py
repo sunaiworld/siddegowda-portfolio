@@ -1,18 +1,17 @@
 """
-Historical snapshot tracker + Today's Changes comparison.
+Historical snapshot tracker + Today's Changes comparison + formatting.
 
 GITHUB DATA and Future Buy tabs are ws.clear()'d and rewritten every
 run — yesterday's score/PE/RSI is gone by the next run. This module
 appends (never clears) one row per symbol per run to a "History" tab,
 and one summary row per run to a "Portfolio History" tab.
 
-It also compares today's in-memory results against the most recent
-PRIOR TRADING DAY's History snapshot (not the previous run — multiple
-cron/refresh runs on the same day collapse to that day's last row per
-symbol) to produce deterministic, rule-based "Today's Changes" for
-the Dashboard and a short Telegram digest. No new API calls — one
-Sheets read of History, plus data already sitting in `results` from
-run_portfolio_update().
+Formatting is presentation-only: bold header, frozen row, filter,
+alternating rows, number/date formats, a green-yellow-red gradient on
+absolute Total Score / Health Score, and Final Action color coding.
+No row-to-row comparison, no deltas — Today's Changes and the
+Dashboard's health trend already own that analysis; duplicating it
+here was explicitly ruled out.
 """
 import logging
 from datetime import datetime
@@ -22,12 +21,9 @@ log = logging.getLogger(__name__)
 HISTORY_TAB = "History"
 PORTFOLIO_HISTORY_TAB = "Portfolio History"
 
-# Quality/Valuation/Timing are stored because Total Score alone can't
-# be decomposed back into them (different mixes sum to the same
-# total). Everything else needed for Today's Changes (RSI, PE) was
-# already being stored for other reasons — no columns added for those.
 HISTORY_HEADERS = ["Date", "Symbol", "CMP", "PE", "RSI", "Total Score",
                     "Final Action", "Quality", "Valuation", "Timing"]
+PORTFOLIO_HISTORY_HEADERS = ["Date", "Portfolio Value", "Health Score"]
 _H = {name: i for i, name in enumerate(HISTORY_HEADERS)}
 
 BUY_TIER  = {"STRONG BUY", "BUY"}
@@ -35,13 +31,15 @@ SELL_TIER = {"AVOID", "SELL"}
 
 MATERIAL_SCORE_DELTA = 5  # |delta| >= this, OR action changed, = material
 
-def _ensure_header_width(ws, headers):
-    """If an existing tab's header row is narrower than `headers`
-    (e.g. Portfolio History predates the Health Score column), widen
-    just the header row. Never touches data rows."""
-    current = ws.row_values(1)
-    if len(current) < len(headers):
-        ws.update('A1', [headers])
+ACTION_COLORS = {
+    "STRONG BUY":  ("00c853", "ffffff"),
+    "BUY":         ("0b8043", "ffffff"),
+    "ACCUMULATE":  ("d9ead3", "0b8043"),
+    "HOLD":        ("fff2cc", "7f4f00"),
+    "WATCH":       ("fce8b2", "7f4f00"),
+    "AVOID":       ("fde9d9", "c62828"),
+    "SELL":        ("cc0000", "ffffff"),
+}
 
 
 def _get_or_create(sh, tab_name, headers):
@@ -51,6 +49,15 @@ def _get_or_create(sh, tab_name, headers):
         ws = sh.add_worksheet(tab_name, rows=5000, cols=len(headers))
         ws.append_row(headers)
     return ws
+
+
+def _ensure_header_width(ws, headers):
+    """If an existing tab's header row is narrower than `headers`
+    (e.g. Portfolio History predates the Health Score column), widen
+    just the header row. Never touches data rows."""
+    current = ws.row_values(1)
+    if len(current) < len(headers):
+        ws.update('A1', [headers])
 
 
 def _to_float(v):
@@ -63,31 +70,165 @@ def _to_float(v):
     except (ValueError, TypeError):
         return None
 
-def get_previous_health_score(sh):
+
+def _clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
+
+def _gradient_color(score, lo=0, hi=100):
+    """Green (high) -> Yellow (mid) -> Red (low), linear interpolation.
+    Presentation only — not a new calculation, just a color mapping
+    of the already-stored score."""
+    score = _clamp(score, lo, hi)
+    mid = (lo + hi) / 2
+    if score >= mid:
+        t = (score - mid) / (hi - mid) if hi != mid else 1
+        r = int(255 * (1 - t))
+        g = int(255 * (1 - t) + 200 * t)
+        b = 0
+    else:
+        t = (score - lo) / (mid - lo) if mid != lo else 0
+        r = int(200 * (1 - t) + 255 * t)
+        g = int(255 * t)
+        b = 0
+    return f"{r:02x}{g:02x}{b:02x}"
+
+
+def _format_data_tab(sh, ws, headers, num_data_rows, total_score_col=None, action_col=None):
     """
-    Returns (prev_date, prev_health_score) for the most recent PRIOR
-    TRADING DAY in Portfolio History. (None, None) if no prior day
-    exists yet, or that day predates the Health Score column.
+    Shared presentation-only formatter reused for both History and
+    Portfolio History. Reuses main.py's hex_rgb / color_cell_req /
+    batch_update_safe (already used by write_github_data /
+    write_growth_screener) instead of duplicating color-formatting
+    logic — lazy import, same pattern fund_cache.py and
+    portfolio_analytics.py already use to avoid circular imports.
     """
-    try:
-        ws = sh.worksheet(PORTFOLIO_HISTORY_TAB)
-    except Exception:
-        return None, None
+    from main import hex_rgb, color_cell_req, batch_update_safe  # lazy import
 
-    rows = ws.get_all_values()[1:]
-    if not rows:
-        return None, None
+    total_rows = num_data_rows + 1  # + header
+    reqs = []
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    prior_rows = [r for r in rows if r and r[0] < today_str]
-    if not prior_rows:
-        return None, None
+    # Bold colored header
+    reqs.append({"repeatCell": {
+        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
+                  "startColumnIndex": 0, "endColumnIndex": len(headers)},
+        "cell": {"userEnteredFormat": {
+            "backgroundColor": hex_rgb("0d1b2a"),
+            "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 10},
+            "verticalAlignment": "MIDDLE"
+        }},
+        "fields": "userEnteredFormat"
+    }})
 
-    prev_date = max(r[0] for r in prior_rows)
-    same_day_rows = [r for r in prior_rows if r[0] == prev_date]
-    last_row = same_day_rows[-1]  # last write wins if multiple runs that day
-    health = _to_float(last_row[2]) if len(last_row) > 2 else None
-    return prev_date, health
+    # Freeze header row
+    reqs.append({"updateSheetProperties": {
+        "properties": {"sheetId": ws.id, "gridProperties": {"frozenRowCount": 1}},
+        "fields": "gridProperties.frozenRowCount"
+    }})
+
+    # Enable filter over the full data range
+    if num_data_rows > 0:
+        reqs.append({"setBasicFilter": {"filter": {
+            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": total_rows,
+                      "startColumnIndex": 0, "endColumnIndex": len(headers)}
+        }}})
+
+    # Date formatting — column 0 in both tabs
+    if num_data_rows > 0:
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": total_rows,
+                      "startColumnIndex": 0, "endColumnIndex": 1},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "DATE", "pattern": "dd-mmm-yyyy"}}},
+            "fields": "userEnteredFormat.numberFormat"
+        }})
+
+    # Alternating row colors + per-row score gradient / action color
+    if num_data_rows > 0 and (total_score_col is not None or action_col is not None):
+        try:
+            all_values = ws.get_all_values()[1:]
+        except Exception:
+            all_values = []
+
+        for i, row in enumerate(all_values):
+            rn = i + 1
+            alt = "f8f9fa" if i % 2 == 0 else "ffffff"
+            reqs.append({"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn + 1,
+                          "startColumnIndex": 0, "endColumnIndex": len(headers)},
+                "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
+                "fields": "userEnteredFormat.backgroundColor"
+            }})
+
+            if total_score_col is not None and len(row) > total_score_col:
+                score = _to_float(row[total_score_col])
+                if score is not None:
+                    color = _gradient_color(score)
+                    reqs.append(color_cell_req(ws.id, rn, total_score_col, color, "1a1a1a", bold=True))
+
+            if action_col is not None and len(row) > action_col:
+                action = row[action_col].strip()
+                if action in ACTION_COLORS:
+                    bg, fg = ACTION_COLORS[action]
+                    reqs.append(color_cell_req(ws.id, rn, action_col, bg, fg))
+
+    # Auto-resize columns
+    reqs.append({"autoResizeDimensions": {
+        "dimensions": {"sheetId": ws.id, "dimension": "COLUMNS", "startIndex": 0, "endIndex": len(headers)}
+    }})
+
+    batch_update_safe(sh, reqs)
+
+
+def _format_history_tab(sh, ws, num_data_rows):
+    from main import hex_rgb, batch_update_safe  # lazy import
+
+    reqs = []
+    if num_data_rows > 0:
+        # CMP — currency
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": num_data_rows + 1,
+                      "startColumnIndex": _H["CMP"], "endColumnIndex": _H["CMP"] + 1},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "CURRENCY", "pattern": '"₹"#,##0.00'}}},
+            "fields": "userEnteredFormat.numberFormat"
+        }})
+        # PE / RSI / Quality / Valuation / Timing — plain numbers
+        for col, pattern in [(_H["PE"], "0.00"), (_H["RSI"], "0.0"),
+                              (_H["Quality"], "0"), (_H["Valuation"], "0"), (_H["Timing"], "0")]:
+            reqs.append({"repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": num_data_rows + 1,
+                          "startColumnIndex": col, "endColumnIndex": col + 1},
+                "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": pattern}}},
+                "fields": "userEnteredFormat.numberFormat"
+            }})
+    if reqs:
+        batch_update_safe(sh, reqs)
+
+    _format_data_tab(sh, ws, HISTORY_HEADERS, num_data_rows,
+                      total_score_col=_H["Total Score"], action_col=_H["Final Action"])
+
+
+def _format_portfolio_history_tab(sh, ws, num_data_rows):
+    from main import batch_update_safe  # lazy import
+
+    reqs = []
+    if num_data_rows > 0:
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": num_data_rows + 1,
+                      "startColumnIndex": 1, "endColumnIndex": 2},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "CURRENCY", "pattern": '"₹"#,##0'}}},
+            "fields": "userEnteredFormat.numberFormat"
+        }})
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": num_data_rows + 1,
+                      "startColumnIndex": 2, "endColumnIndex": 3},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.0"}}},
+            "fields": "userEnteredFormat.numberFormat"
+        }})
+    if reqs:
+        batch_update_safe(sh, reqs)
+
+    # Health Score gets the same gradient as Total Score (col index 2)
+    _format_data_tab(sh, ws, PORTFOLIO_HISTORY_HEADERS, num_data_rows, total_score_col=2, action_col=None)
 
 
 def append_history_snapshot(sh, results, portfolio_live_value, health_score=None):
@@ -95,8 +236,7 @@ def append_history_snapshot(sh, results, portfolio_live_value, health_score=None
     results: the same row-lists build_result_row()/write_github_data()
     already use, indexed via main.GITHUB_DATA_COLS so this stays
     correct if the row layout shifts again. Call once per run, AFTER
-    compute_todays_changes() has already read History for comparison
-    — so "previous" never includes this run's own row.
+    compute_todays_changes() has already read History for comparison.
     """
     from main import GITHUB_DATA_COLS  # lazy import — avoids circular import with main.py
 
@@ -123,21 +263,24 @@ def append_history_snapshot(sh, results, portfolio_live_value, health_score=None
         ws.append_rows(snap_rows)
     log.info(f"History: {len(snap_rows)} symbol snapshots appended for {today}")
 
-    ph_headers = ["Date", "Portfolio Value", "Health Score"]
+    total_history_rows = len(ws.get_all_values()) - 1
+    _format_history_tab(sh, ws, total_history_rows)
+
+    ph_headers = PORTFOLIO_HISTORY_HEADERS
     pws = _get_or_create(sh, PORTFOLIO_HISTORY_TAB, ph_headers)
     _ensure_header_width(pws, ph_headers)
     pws.append_row([today, round(portfolio_live_value, 2),
                      health_score if health_score is not None else ""])
     log.info(f"Portfolio History: value + health snapshot appended for {today}")
 
+    total_ph_rows = len(pws.get_all_values()) - 1
+    _format_portfolio_history_tab(sh, pws, total_ph_rows)
+
 
 def _load_previous_trading_day_snapshot(sh):
     """
     Reads History once. Returns (prev_date_str, {symbol: row_dict})
-    for the most recent date strictly before today. Multiple rows for
-    the same symbol on that date collapse to the last one (append-only
-    chronological order, so last-write-wins per symbol per date is
-    correct). Returns (None, {}) if no prior trading day exists yet.
+    for the most recent date strictly before today.
     """
     try:
         ws = sh.worksheet(HISTORY_TAB)
@@ -173,9 +316,34 @@ def _load_previous_trading_day_snapshot(sh):
     return prev_date, snapshot
 
 
+def get_previous_health_score(sh):
+    """
+    Returns (prev_date, prev_health_score) for the most recent PRIOR
+    TRADING DAY in Portfolio History. (None, None) if no prior day
+    exists yet, or that day predates the Health Score column.
+    """
+    try:
+        ws = sh.worksheet(PORTFOLIO_HISTORY_TAB)
+    except Exception:
+        return None, None
+
+    rows = ws.get_all_values()[1:]
+    if not rows:
+        return None, None
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    prior_rows = [r for r in rows if r and r[0] < today_str]
+    if not prior_rows:
+        return None, None
+
+    prev_date = max(r[0] for r in prior_rows)
+    same_day_rows = [r for r in prior_rows if r[0] == prev_date]
+    last_row = same_day_rows[-1]
+    health = _to_float(last_row[2]) if len(last_row) > 2 else None
+    return prev_date, health
+
+
 def _dominant_component(dq, dv, dt):
-    """Whichever of Quality/Valuation/Timing moved the most, or
-    (None, 0) if nothing moved by at least 2 points."""
     candidates = [c for c in [("Quality", dq), ("Valuation", dv), ("Timing", dt)] if c[1] is not None]
     if not candidates:
         return None, 0
@@ -241,18 +409,7 @@ def compute_todays_changes(sh, results):
     """
     Compares today's in-memory `results` against the most recent
     PRIOR TRADING DAY's History snapshot. Call BEFORE
-    append_history_snapshot() in the same run, so the comparison
-    never includes this run's own data.
-
-    Returns:
-        {
-            "prev_date": "2026-07-11" or None,
-            "top_improvements": [ {...}, ... up to 5 ],
-            "top_deteriorations": [ {...}, ... up to 5 ],
-            "unchanged_count": int,
-            "digest": {improved, weakened, entered_strong_buy,
-                       best_symbol, worst_symbol} or None,
-        }
+    append_history_snapshot() in the same run.
     """
     from main import GITHUB_DATA_COLS  # lazy import — avoids circular import with main.py
 
@@ -280,7 +437,7 @@ def compute_todays_changes(sh, results):
 
         prev = snapshot.get(sym)
         if prev is None or today_total is None or prev["total"] is None:
-            continue  # no baseline — skip, per spec
+            continue
 
         score_delta = today_total - prev["total"]
         action_changed = today_action != prev["action"]
