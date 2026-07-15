@@ -1495,11 +1495,16 @@ def run_portfolio_update(sh):
     write_growth_screener(sh, all_out)
     process_all_watchlists(sh)
     changes = history_tracker.compute_todays_changes(sh, results)
-    history_tracker.append_history_snapshot(sh, results, portfolio_live_value)
-    ai_notes.append_notes(sh, notes_batch)
+    prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
 
     dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
-    portfolio_analytics.write_dashboard_tab(sh, dash, changes)
+    health = portfolio_analytics.compute_portfolio_health(results, holdings, fund_map, dash)
+    health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
+
+    history_tracker.append_history_snapshot(sh, results, portfolio_live_value, health_score=health["overall"])
+    ai_notes.append_notes(sh, notes_batch)
+
+    portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
 
     return {
         "results": results, "alerts": alerts,
