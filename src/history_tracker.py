@@ -231,12 +231,16 @@ def _format_portfolio_history_tab(sh, ws, num_data_rows):
     _format_data_tab(sh, ws, PORTFOLIO_HISTORY_HEADERS, num_data_rows, total_score_col=2, action_col=None)
 
 
-def append_history_snapshot(sh, results, portfolio_live_value, health_score=None):
+def append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=None):
     """
     results: the same row-lists build_result_row()/write_github_data()
     already use, indexed via main.GITHUB_DATA_COLS so this stays
     correct if the row layout shifts again. Call once per run, AFTER
     compute_todays_changes() has already read History for comparison.
+    prices: {symbol: cmp} — CMP is no longer stored in GITHUB DATA rows
+    (removed for readability), but History still tracks price over
+    time, so it's read from the same `prices` dict run_portfolio_update()
+    already built — no new fetch.
     """
     from main import GITHUB_DATA_COLS  # lazy import — avoids circular import with main.py
 
@@ -247,7 +251,6 @@ def append_history_snapshot(sh, results, portfolio_live_value, health_score=None
     for row in results:
         try:
             sym       = row[GITHUB_DATA_COLS["symbol"]]
-            cmp_      = row[GITHUB_DATA_COLS["cmp"]]
             pe        = row[GITHUB_DATA_COLS["pe"]]
             rsi       = row[GITHUB_DATA_COLS["rsi"]]
             total     = row[GITHUB_DATA_COLS["total"]]
@@ -257,6 +260,7 @@ def append_history_snapshot(sh, results, portfolio_live_value, health_score=None
             timing    = row[GITHUB_DATA_COLS["timing"]]
         except (IndexError, KeyError):
             continue
+        cmp_ = prices.get(sym, "")
         snap_rows.append([today, sym, cmp_, pe, rsi, total, action, quality, valuation, timing])
 
     if snap_rows:
