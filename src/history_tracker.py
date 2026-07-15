@@ -35,6 +35,14 @@ SELL_TIER = {"AVOID", "SELL"}
 
 MATERIAL_SCORE_DELTA = 5  # |delta| >= this, OR action changed, = material
 
+def _ensure_header_width(ws, headers):
+    """If an existing tab's header row is narrower than `headers`
+    (e.g. Portfolio History predates the Health Score column), widen
+    just the header row. Never touches data rows."""
+    current = ws.row_values(1)
+    if len(current) < len(headers):
+        ws.update('A1', [headers])
+
 
 def _get_or_create(sh, tab_name, headers):
     try:
@@ -55,8 +63,34 @@ def _to_float(v):
     except (ValueError, TypeError):
         return None
 
+def get_previous_health_score(sh):
+    """
+    Returns (prev_date, prev_health_score) for the most recent PRIOR
+    TRADING DAY in Portfolio History. (None, None) if no prior day
+    exists yet, or that day predates the Health Score column.
+    """
+    try:
+        ws = sh.worksheet(PORTFOLIO_HISTORY_TAB)
+    except Exception:
+        return None, None
 
-def append_history_snapshot(sh, results, portfolio_live_value):
+    rows = ws.get_all_values()[1:]
+    if not rows:
+        return None, None
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    prior_rows = [r for r in rows if r and r[0] < today_str]
+    if not prior_rows:
+        return None, None
+
+    prev_date = max(r[0] for r in prior_rows)
+    same_day_rows = [r for r in prior_rows if r[0] == prev_date]
+    last_row = same_day_rows[-1]  # last write wins if multiple runs that day
+    health = _to_float(last_row[2]) if len(last_row) > 2 else None
+    return prev_date, health
+
+
+def append_history_snapshot(sh, results, portfolio_live_value, health_score=None):
     """
     results: the same row-lists build_result_row()/write_github_data()
     already use, indexed via main.GITHUB_DATA_COLS so this stays
@@ -89,9 +123,12 @@ def append_history_snapshot(sh, results, portfolio_live_value):
         ws.append_rows(snap_rows)
     log.info(f"History: {len(snap_rows)} symbol snapshots appended for {today}")
 
-    pws = _get_or_create(sh, PORTFOLIO_HISTORY_TAB, ["Date", "Portfolio Value"])
-    pws.append_row([today, round(portfolio_live_value, 2)])
-    log.info(f"Portfolio History: value snapshot appended for {today}")
+    ph_headers = ["Date", "Portfolio Value", "Health Score"]
+    pws = _get_or_create(sh, PORTFOLIO_HISTORY_TAB, ph_headers)
+    _ensure_header_width(pws, ph_headers)
+    pws.append_row([today, round(portfolio_live_value, 2),
+                     health_score if health_score is not None else ""])
+    log.info(f"Portfolio History: value + health snapshot appended for {today}")
 
 
 def _load_previous_trading_day_snapshot(sh):
