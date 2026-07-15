@@ -1023,7 +1023,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
         sym, archetype, metrics
     )
 
-   strengths_str  = " | ".join(strengths)
+    strengths_str  = " | ".join(strengths)
     weaknesses_str = " | ".join(weaknesses)
 
     row = [
