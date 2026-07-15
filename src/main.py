@@ -1494,6 +1494,15 @@ def run_portfolio_update(sh):
     all_out = ws.get_all_values()[1:]
     write_growth_screener(sh, all_out)
     process_all_watchlists(sh)
+    # ── TEMP DEBUG LOGGING — remove after root cause confirmed ──
+    log.info(f"[DEBUG] len(symbols)={len(symbols)} len(results)={len(results)} "
+              f"len(holdings)={len(holdings)} len(fund_map)={len(fund_map)} len(prices)={len(prices)}")
+    log.info(f"[DEBUG] holdings keys (first 5): {list(holdings.keys())[:5]}")
+    log.info(f"[DEBUG] results symbols (first 5): {[r[GITHUB_DATA_COLS['symbol']] for r in results[:5]]}")
+    log.info(f"[DEBUG] fund_map keys (first 5): {list(fund_map.keys())[:5]}")
+    log.info(f"[DEBUG] trades row count: {len(trades)}, first trade row: {trades[0] if trades else 'EMPTY'}")
+    # ── END TEMP DEBUG LOGGING ──
+
     changes = history_tracker.compute_todays_changes(sh, results)
     prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
 
