@@ -22,7 +22,6 @@ from google.oauth2.service_account import Credentials
 import fund_cache
 import history_tracker
 import portfolio_analytics
-import ai_notes
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -1024,10 +1023,8 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
         sym, archetype, metrics
     )
 
-    strengths_str  = " | ".join(strengths)
+   strengths_str  = " | ".join(strengths)
     weaknesses_str = " | ".join(weaknesses)
-    strengths_short  = f"{len(strengths)} ✓" if strengths else ""
-    weaknesses_short = f"{len(weaknesses)} ✗" if weaknesses else ""
 
     row = [
         sym, sector, industry, archetype, cmp,
@@ -1037,13 +1034,13 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
         rev_gr or "", f.get("beta") or "",
         q_sc, v_sc, t_sc, tot_sc,
         final_action,
-        strengths_short, weaknesses_short,
+        strengths_str, weaknesses_str,
         xirr_val if xirr_val else "",
         datetime.now().strftime("%d-%b-%Y %H:%M"),
         rsi, sma50, sma200, ema20, vol_spike, trend,
         mcap_fmt, cap_type
     ]
-    return row, archetype, tot_sc, final_action, strengths_str, weaknesses_str
+    return row, archetype, tot_sc, final_action
 def clean_row(row):
     return [("" if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v) for v in row]
 # ══════════════════════════════════════════════
@@ -1382,7 +1379,6 @@ def process_watchlist_tab(sh, tab_name, symbols):
     wl_cache = fund_cache.load_cache(sh)
 
     rows = []
-    notes_batch = []
     for sym in symbols:
         cmp = prices.get(sym)
         if not cmp:
@@ -1394,13 +1390,11 @@ def process_watchlist_tab(sh, tab_name, symbols):
         tech   = fetch_technicals(sym)
         time.sleep(SLEEP_INFO)
 
-        row, archetype, tot_sc, final_action, strengths_str, weaknesses_str = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="")
+        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="")
         rows.append(row)
-        notes_batch.append([sym, strengths_str, weaknesses_str])
         log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}")
 
     fund_cache.save_cache(sh, wl_cache)
-    ai_notes.append_notes(sh, notes_batch)
     write_github_data(sh, rows, tab_name=tab_name)
     return rows
 
@@ -1446,8 +1440,7 @@ def run_portfolio_update(sh):
     fund_cache.save_cache(sh, fc_cache)
 
     holdings, portfolio_live_value = {}, 0.0
-    notes_batch = []
-    for sym in symbols:    
+    for sym in symbols:   
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         cmp = prices.get(sym)
         if qty > 0 and cmp and cmp > 0:
@@ -1469,8 +1462,7 @@ def run_portfolio_update(sh):
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         xirr_val = get_xirr(sym, trades, cmp)
 
-        row, archetype, tot_sc, final_action, strengths_str, weaknesses_str = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val)
-        notes_batch.append([sym, strengths_str, weaknesses_str])
+        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val)
 
         if avg_buy and qty > 0:
             sl_price, tgt_price = avg_buy * (1 - SL_PCT), avg_buy * (1 + TARGET_PCT)
@@ -1511,7 +1503,6 @@ def run_portfolio_update(sh):
     health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
 
     history_tracker.append_history_snapshot(sh, results, portfolio_live_value, health_score=health["overall"])
-    ai_notes.append_notes(sh, notes_batch)
 
     portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
 
