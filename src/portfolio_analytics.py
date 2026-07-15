@@ -77,6 +77,8 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
     """
     from main import compute_xirr  # lazy import — avoids circular import with main.py
 
+    log.info(f"[DEBUG] compute_portfolio_dashboard: holdings received = {len(holdings)}")
+
     # ── Sector allocation ────────────────────
     sector_value = {}
     for sym, (qty, cmp, avg_buy) in holdings.items():
@@ -149,6 +151,9 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
         r = compute_xirr(cash_sorted, dates_sorted)
         portfolio_xirr = round(r * 100, 2) if r else None
 
+    log.info(f"[DEBUG] compute_portfolio_dashboard: portfolio_value={round(portfolio_live_value, 2)} "
+              f"positions_generated={len(positions)} sectors_generated={len(sector_alloc)}")
+
     return {
         "sector_alloc": sector_alloc,
         "positions": positions,
@@ -201,6 +206,10 @@ def compute_portfolio_health(results, holdings, fund_map, dash):
         if debt is not None:
             debt_sum += debt * value
             debt_w += value
+
+    log.info(f"[DEBUG] compute_portfolio_health: holdings_count={len(holdings)} w_sum={w_sum} "
+              f"quality_sum={q_sum} valuation_sum={v_sum} timing_sum={t_sum} "
+              f"debt_sum={debt_sum} debt_w={debt_w} portfolio_beta_from_dash={dash.get('portfolio_beta')}")
 
     quality_component   = _clamp((q_sum / w_sum) / 40 * 100, 0, 100) if w_sum else 0
     valuation_component = _clamp((v_sum / w_sum) / 30 * 100, 0, 100) if w_sum else 0
