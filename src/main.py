@@ -817,6 +817,58 @@ def fetch_technicals(sym):
     except Exception as e:
         log.warning(f"  technicals failed {sym}: {e}")
         return {}
+# ══════════════════════════════════════════════
+# TECHNICAL SETUP CLASSIFICATION
+# Informational only — reuses fields already returned by
+# fetch_technicals(). Does not read metrics{}, does not touch
+# compute_unified_score(), Total Score, or Final Action anywhere.
+# No new fetch, no new API call.
+# ══════════════════════════════════════════════
+def classify_technical_setup(tech, cmp):
+    sma50  = tech.get("sma50")
+    sma200 = tech.get("sma200")
+    ema20  = tech.get("ema20")
+    rsi    = tech.get("rsi")
+    vol_spike   = tech.get("vol_spike")
+    trend       = tech.get("trend", "")
+    day_chg_pct = tech.get("day_chg_pct")
+
+    if not sma50 or not ema20 or rsi is None or not cmp:
+        return "⚪ Unknown"
+
+    dist_ema20 = (cmp - ema20) / ema20 * 100 if ema20 else 0
+    dist_sma50 = (cmp - sma50) / sma50 * 100 if sma50 else 0
+    above_sma200 = (sma200 is not None and sma200 != "" and cmp > sma200)
+
+    day_chg_val = day_chg_pct if isinstance(day_chg_pct, (int, float)) else None
+    vol_val     = vol_spike if isinstance(vol_spike, (int, float)) else None
+
+    # Priority 2: Breakout — checked before the generic Volatile
+    # trigger so a genuine high-volume breakout isn't swallowed by
+    # the broader volatility check that shares the same vol_spike
+    # threshold.
+    if (trend == "Strong Uptrend" and vol_val is not None and vol_val >= 2.0
+            and rsi is not None and 55 <= rsi <= 70 and cmp > sma50):
+        return "🟣 Breakout"
+
+    if (vol_val is not None and vol_val >= 2.0) or (day_chg_val is not None and abs(day_chg_val) >= 4):
+        return "🟠 Volatile"
+
+    if trend in ("Strong Uptrend", "Uptrend") and rsi is not None and rsi >= 70 and dist_ema20 >= 8:
+        return "🔴 Extended"
+
+    if above_sma200 and cmp < sma50 and rsi is not None and 35 <= rsi <= 55:
+        return "🔵 Pullback"
+
+    if (abs(dist_ema20) <= 3 and abs(dist_sma50) <= 3
+            and rsi is not None and 45 <= rsi <= 55
+            and vol_val is not None and vol_val < 1.5):
+        return "🟢 Tight Base"
+
+    if trend == "Sideways" or (abs(dist_sma50) <= 6 and rsi is not None and 40 <= rsi <= 60):
+        return "🟡 Consolidating"
+
+    return "🟡 Consolidating"
 
 # ══════════════════════════════════════════════
 # FETCH FUNDAMENTALS
@@ -966,7 +1018,7 @@ GITHUB_DATA_COLS = {
     "action": 23,
     "strengths": 24, "trend": 25, "weaknesses": 26,
     "vol_spike": 27,
-    "mcap": 28, "cap_type": 29,
+    "mcap": 28, "cap_type": 29, "technical_setup": 30,
 }
 
 # ══════════════════════════════════════════════
@@ -1024,6 +1076,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
 
     strengths_str  = " | ".join(strengths)
     weaknesses_str = " | ".join(weaknesses)
+    technical_setup = classify_technical_setup(tech, cmp)
 
     row = [
         sym, sector, industry, archetype,
@@ -1036,7 +1089,8 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
         final_action,
         strengths_str, trend, weaknesses_str,
         vol_spike,
-        mcap_fmt, cap_type
+        mcap_fmt, cap_type,
+        technical_setup
     ]
     return row, archetype, tot_sc, final_action
 def clean_row(row):
@@ -1053,7 +1107,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         ws = sh.worksheet(tab_name)
         ws.clear()
     except:
-        ws = sh.add_worksheet(tab_name, rows=300, cols=30)
+        ws = sh.add_worksheet(tab_name, rows=300, cols=31)
 
     headers = [
         "Symbol", "Sector", "Industry", "Archetype",
@@ -1066,9 +1120,10 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         "Final Action",
         "Strengths", "Trend", "Weaknesses",
         "Vol Spike",
-        "Mkt Cap Cr", "Cap Type"
+        "Mkt Cap Cr", "Cap Type",
+        "Technical Setup"
     ]
-    assert len(headers) == 30, "headers/row column count mismatch"
+    assert len(headers) == 31, "headers/row column count mismatch"
 
     ws.append_row(headers)
     if rows:
@@ -1107,7 +1162,8 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         90,
         200, 90, 200,
         55,
-        65, 65
+        65, 65,
+        110
     ]
     sh.batch_update({"requests": [{"updateDimensionProperties": {
         "range": {"sheetId": ws.id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
