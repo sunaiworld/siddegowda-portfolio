@@ -869,7 +869,36 @@ def classify_technical_setup(tech, cmp):
         return "🟡 Consolidating"
 
     return "🟡 Consolidating"
+    
+# ══════════════════════════════════════════════
+# DECISION DETAIL CLASSIFICATION
+# Informational only — reuses final_action, q_sc, v_sc, rsi already
+# computed by compute_unified_score() / fetch_technicals(). Does not
+# modify compute_unified_score(), Final Action, or Total Score.
+# ══════════════════════════════════════════════
+def classify_decision_detail(final_action, q_sc, v_sc, rsi):
+    rsi_val = rsi if isinstance(rsi, (int, float)) else None
 
+    if final_action == "STRONG BUY":
+        if q_sc >= 30 and rsi_val is not None and rsi_val < 40:
+            return "High Conviction Buy"
+        return "Strong Buy"
+    if final_action == "BUY":
+        if rsi_val is not None and rsi_val < 45:
+            return "Buy on Dip"
+        return "Buy"
+    if final_action == "ACCUMULATE":
+        return "Fully Valued — Accumulate on Dips" if v_sc < 15 else "Accumulate Slowly"
+    if final_action == "HOLD":
+        return "Fully Valued" if v_sc < 10 else "Hold"
+    if final_action == "WATCH":
+        return "Monitor Closely"
+    if final_action == "AVOID":
+        return "Reduce Exposure"
+    if final_action == "SELL":
+        return "Exit Candidate"
+    return final_action
+    
 # ══════════════════════════════════════════════
 # FETCH FUNDAMENTALS
 # ══════════════════════════════════════════════
@@ -1012,13 +1041,13 @@ GITHUB_DATA_COLS = {
     "low52": 4, "high52": 5, "day_chg_pct": 6, "pct_high": 7,
     "pe": 8, "eps": 9, "bv": 10, "pb": 11,
     "div": 12,
-    "rsi": 13, "roe": 14, "roa": 15, "debt_eq": 16,
-    "rev_growth": 17, "beta": 18,
-    "quality": 19, "valuation": 20, "timing": 21, "total": 22,
-    "action": 23,
-    "strengths": 24, "trend": 25, "weaknesses": 26,
-    "vol_spike": 27,
-    "mcap": 28, "cap_type": 29, "technical_setup": 30,
+    "roe": 13, "roa": 14, "debt_eq": 15,
+    "rev_growth": 16, "beta": 17,
+    "quality": 18, "valuation": 19, "timing": 20,
+    "mcap": 21, "cap_type": 22,
+    "strengths": 23, "weaknesses": 24, "technical_setup": 25, "decision_detail": 26,
+    "action": 27, "total": 28,
+    "vol_spike": 29, "trend": 30, "rsi": 31,
 }
 
 # ══════════════════════════════════════════════
@@ -1048,7 +1077,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
     mcap_fmt         = indian_cr(mcap_cr) if mcap_cr else ""
 
     rsi         = tech.get("rsi", "")
-    sma200      = tech.get("sma200", "")   # still needed for scoring, not stored in row anymore
+    sma200      = tech.get("sma200", "")
     vol_spike   = tech.get("vol_spike", "")
     trend       = tech.get("trend", "")
     cross       = tech.get("cross", "")
@@ -1074,23 +1103,23 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
         sym, archetype, metrics
     )
 
-    strengths_str  = " | ".join(strengths)
-    weaknesses_str = " | ".join(weaknesses)
+    strengths_str   = " | ".join(strengths)
+    weaknesses_str  = " | ".join(weaknesses)
     technical_setup = classify_technical_setup(tech, cmp)
+    decision_detail = classify_decision_detail(final_action, q_sc, v_sc, rsi if rsi != "" else None)
 
     row = [
         sym, sector, industry, archetype,
         low52 or "", high52 or "", day_chg_pct, pct_high_display,
         f.get("pe") or "", f.get("eps") or "", f.get("bv") or "", f.get("pb") or "",
         f.get("div") or "",
-        rsi, f.get("roe") or "", f.get("roa") or "", f.get("debt_eq") or "",
+        f.get("roe") or "", f.get("roa") or "", f.get("debt_eq") or "",
         rev_gr or "", f.get("beta") or "",
-        q_sc, v_sc, t_sc, tot_sc,
-        final_action,
-        strengths_str, trend, weaknesses_str,
-        vol_spike,
+        q_sc, v_sc, t_sc,
         mcap_fmt, cap_type,
-        technical_setup
+        strengths_str, weaknesses_str, technical_setup, decision_detail,
+        final_action, tot_sc,
+        vol_spike, trend, rsi
     ]
     return row, archetype, tot_sc, final_action
 def clean_row(row):
@@ -1107,23 +1136,22 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         ws = sh.worksheet(tab_name)
         ws.clear()
     except:
-        ws = sh.add_worksheet(tab_name, rows=300, cols=31)
+        ws = sh.add_worksheet(tab_name, rows=300, cols=32)
 
     headers = [
         "Symbol", "Sector", "Industry", "Archetype",
         "52W Low", "52W High", "Day Chg%", "Buy 20% Less",
         "PE", "EPS", "Book Value", "P/B",
         "Div Yield%",
-        "RSI", "ROE%", "ROA%", "Debt/Equity",
+        "ROE%", "ROA%", "Debt/Equity",
         "Rev Growth%", "Beta",
-        "Quality Score", "Valuation Score", "Timing Score", "Total Score",
-        "Final Action",
-        "Strengths", "Trend", "Weaknesses",
-        "Vol Spike",
+        "Quality Score", "Valuation Score", "Timing Score",
         "Mkt Cap Cr", "Cap Type",
-        "Technical Setup"
+        "Strengths", "Weaknesses", "Technical Setup", "Decision Detail",
+        "Final Action", "Total Score",
+        "Vol Spike", "Trend", "RSI"
     ]
-    assert len(headers) == 31, "headers/row column count mismatch"
+    assert len(headers) == 32, "headers/row column count mismatch"
 
     ws.append_row(headers)
     if rows:
@@ -1156,15 +1184,15 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         55, 55, 60, 65,
         45, 45, 55, 45,
         50,
-        45, 50, 50, 55,
+        50, 50, 55,
         55, 45,
-        55, 60, 55, 55,
-        90,
-        200, 90, 200,
-        55,
+        55, 60, 55,
         65, 65,
-        110
+        200, 200, 110, 150,
+        90, 55,
+        55, 90, 45
     ]
+    assert len(widths) == 32, "widths/header column count mismatch"
     sh.batch_update({"requests": [{"updateDimensionProperties": {
         "range": {"sheetId": ws.id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
         "properties": {"pixelSize": w}, "fields": "pixelSize"
@@ -1200,14 +1228,14 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             except:
                 return None
 
-        cap    = row[29].strip() if len(row) > 29 else ""
-        action = row[23].strip() if len(row) > 23 else ""
+        cap    = row[22].strip() if len(row) > 22 else ""
+        action = row[27].strip() if len(row) > 27 else ""
         pct    = sf(7)
-        rsi_v  = sf(13)
-        q_sc   = sf(19)
-        v_sc   = sf(20)
-        t_sc   = sf(21)
-        tot_sc = sf(22)
+        rsi_v  = sf(31)
+        q_sc   = sf(18)
+        v_sc   = sf(19)
+        t_sc   = sf(20)
+        tot_sc = sf(28)
 
         if cap == "Large Cap":       cb, cf = "d9ead3", "0b8043"
         elif cap == "Mid Cap":       cb, cf = "d9eaf7", "1565c0"
@@ -1216,8 +1244,8 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         if cap:
             reqs += [
                 color_cell_req(ws.id, rn, 0, cb, cf),
-                color_cell_req(ws.id, rn, 28, cb, cf),
-                color_cell_req(ws.id, rn, 29, cb, cf),
+                color_cell_req(ws.id, rn, 21, cb, cf),
+                color_cell_req(ws.id, rn, 22, cb, cf),
             ]
 
         reqs.append(color_cell_req(ws.id, rn, 5, "eaf4fb", "1565c0", bold=False))  # 52W High
@@ -1229,30 +1257,30 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 
         if action in ACTION_COLORS:
             bg_a, fg_a = ACTION_COLORS[action]
-            reqs.append(color_cell_req(ws.id, rn, 23, bg_a, fg_a))
+            reqs.append(color_cell_req(ws.id, rn, 27, bg_a, fg_a))
 
         if q_sc is not None:
-            if q_sc >= 30:   reqs.append(color_cell_req(ws.id, rn, 19, "d9ead3", "0b8043"))
-            elif q_sc <= 15: reqs.append(color_cell_req(ws.id, rn, 19, "fde9d9", "c62828"))
+            if q_sc >= 30:   reqs.append(color_cell_req(ws.id, rn, 18, "d9ead3", "0b8043"))
+            elif q_sc <= 15: reqs.append(color_cell_req(ws.id, rn, 18, "fde9d9", "c62828"))
 
         if v_sc is not None:
-            if v_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 20, "d9ead3", "0b8043"))
-            elif v_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 20, "fde9d9", "c62828"))
+            if v_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 19, "d9ead3", "0b8043"))
+            elif v_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 19, "fde9d9", "c62828"))
 
         if t_sc is not None:
-            if t_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 21, "d9ead3", "0b8043"))
-            elif t_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 21, "fde9d9", "c62828"))
+            if t_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 20, "d9ead3", "0b8043"))
+            elif t_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 20, "fde9d9", "c62828"))
 
         if tot_sc is not None:
-            if   tot_sc >= 65: reqs.append(color_cell_req(ws.id, rn, 22, "00c853", "ffffff"))
-            elif tot_sc >= 50: reqs.append(color_cell_req(ws.id, rn, 22, "d9ead3", "0b8043"))
-            elif tot_sc >= 35: reqs.append(color_cell_req(ws.id, rn, 22, "fff2cc", "7f4f00"))
-            else:              reqs.append(color_cell_req(ws.id, rn, 22, "fde9d9", "c62828"))
+            if   tot_sc >= 65: reqs.append(color_cell_req(ws.id, rn, 28, "00c853", "ffffff"))
+            elif tot_sc >= 50: reqs.append(color_cell_req(ws.id, rn, 28, "d9ead3", "0b8043"))
+            elif tot_sc >= 35: reqs.append(color_cell_req(ws.id, rn, 28, "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, 28, "fde9d9", "c62828"))
 
         if rsi_v is not None:
-            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id, rn, 13, "d9ead3", "0b8043"))
-            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id, rn, 13, "fde9d9", "c62828"))
-            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, 13, "fff2cc", "7f4f00"))
+            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id, rn, 31, "d9ead3", "0b8043"))
+            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id, rn, 31, "fde9d9", "c62828"))
+            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, 31, "fff2cc", "7f4f00"))
 
     batch_update_safe(sh, reqs)
     log.info(f"{tab_name} tab written and formatted")
