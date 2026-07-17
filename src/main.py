@@ -1041,13 +1041,50 @@ GITHUB_DATA_COLS = {
     "low52": 4, "high52": 5, "day_chg_pct": 6, "pct_high": 7,
     "pe": 8, "eps": 9, "bv": 10, "pb": 11,
     "div": 12,
-    "roe": 13, "roa": 14, "debt_eq": 15,
-    "rev_growth": 16, "beta": 17,
-    "quality": 18, "valuation": 19, "timing": 20,
-    "mcap": 21, "cap_type": 22,
-    "strengths": 23, "weaknesses": 24, "technical_setup": 25, "decision_detail": 26,
-    "action": 27, "total": 28,
-    "vol_spike": 29, "trend": 30, "rsi": 31,
+    "rsi": 13,
+    "roe": 14, "roa": 15, "debt_eq": 16,
+    "rev_growth": 17, "beta": 18,
+    "strengths": 19, "weaknesses": 20, "technical_setup": 21, "decision_detail": 22,
+    "action": 23,
+    "quality": 24, "valuation": 25, "timing": 26, "total": 27,
+    "vol_spike": 28, "trend": 29,
+    "mcap": 30, "cap_type": 31,
+}
+
+# Header text per column key — headers[] is built FROM this dict via
+# GITHUB_DATA_COLS's own indices in write_github_data(), so header
+# position can never drift out of sync with the row layout again.
+GITHUB_DATA_HEADER_NAMES = {
+    "symbol": "Symbol", "sector": "Sector", "industry": "Industry", "archetype": "Archetype",
+    "low52": "52W Low", "high52": "52W High", "day_chg_pct": "Day Chg%", "pct_high": "Buy 20% Less",
+    "pe": "PE", "eps": "EPS", "bv": "Book Value", "pb": "P/B",
+    "div": "Div Yield%",
+    "rsi": "RSI",
+    "roe": "ROE%", "roa": "ROA%", "debt_eq": "Debt/Equity",
+    "rev_growth": "Rev Growth%", "beta": "Beta",
+    "strengths": "Strengths", "weaknesses": "Weaknesses",
+    "technical_setup": "Technical Setup", "decision_detail": "Decision Detail",
+    "action": "Final Action",
+    "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
+    "vol_spike": "Vol Spike", "trend": "Trend",
+    "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
+}
+
+# Column pixel width per key — same self-syncing pattern as headers.
+GITHUB_DATA_COL_WIDTHS = {
+    "symbol": 70, "sector": 75, "industry": 90, "archetype": 80,
+    "low52": 55, "high52": 55, "day_chg_pct": 60, "pct_high": 65,
+    "pe": 45, "eps": 45, "bv": 55, "pb": 45,
+    "div": 50,
+    "rsi": 45,
+    "roe": 50, "roa": 50, "debt_eq": 55,
+    "rev_growth": 55, "beta": 45,
+    "strengths": 200, "weaknesses": 200,
+    "technical_setup": 110, "decision_detail": 150,
+    "action": 90,
+    "quality": 55, "valuation": 60, "timing": 55, "total": 55,
+    "vol_spike": 55, "trend": 90,
+    "mcap": 65, "cap_type": 65,
 }
 
 # ══════════════════════════════════════════════
@@ -1108,19 +1145,44 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
     technical_setup = classify_technical_setup(tech, cmp)
     decision_detail = classify_decision_detail(final_action, q_sc, v_sc, rsi if rsi != "" else None)
 
-    row = [
-        sym, sector, industry, archetype,
-        low52 or "", high52 or "", day_chg_pct, pct_high_display,
-        f.get("pe") or "", f.get("eps") or "", f.get("bv") or "", f.get("pb") or "",
-        f.get("div") or "",
-        f.get("roe") or "", f.get("roa") or "", f.get("debt_eq") or "",
-        rev_gr or "", f.get("beta") or "",
-        q_sc, v_sc, t_sc,
-        mcap_fmt, cap_type,
-        strengths_str, weaknesses_str, technical_setup, decision_detail,
-        final_action, tot_sc,
-        vol_spike, trend, rsi
-    ]
+    # Row is built BY KEY via GITHUB_DATA_COLS, not by position in a
+    # literal list — reordering the columns is now a one-line change
+    # to GITHUB_DATA_COLS, nothing here needs to change to match.
+    C = GITHUB_DATA_COLS
+    row = [""] * len(C)
+    row[C["symbol"]]          = sym
+    row[C["sector"]]          = sector
+    row[C["industry"]]        = industry
+    row[C["archetype"]]       = archetype
+    row[C["low52"]]           = low52 or ""
+    row[C["high52"]]          = high52 or ""
+    row[C["day_chg_pct"]]     = day_chg_pct
+    row[C["pct_high"]]        = pct_high_display
+    row[C["pe"]]              = f.get("pe") or ""
+    row[C["eps"]]             = f.get("eps") or ""
+    row[C["bv"]]              = f.get("bv") or ""
+    row[C["pb"]]              = f.get("pb") or ""
+    row[C["div"]]             = f.get("div") or ""
+    row[C["rsi"]]             = rsi
+    row[C["roe"]]             = f.get("roe") or ""
+    row[C["roa"]]             = f.get("roa") or ""
+    row[C["debt_eq"]]         = f.get("debt_eq") or ""
+    row[C["rev_growth"]]      = rev_gr or ""
+    row[C["beta"]]            = f.get("beta") or ""
+    row[C["strengths"]]       = strengths_str
+    row[C["weaknesses"]]      = weaknesses_str
+    row[C["technical_setup"]] = technical_setup
+    row[C["decision_detail"]] = decision_detail
+    row[C["action"]]          = final_action
+    row[C["quality"]]         = q_sc
+    row[C["valuation"]]       = v_sc
+    row[C["timing"]]          = t_sc
+    row[C["total"]]           = tot_sc
+    row[C["vol_spike"]]       = vol_spike
+    row[C["trend"]]           = trend
+    row[C["mcap"]]            = mcap_fmt
+    row[C["cap_type"]]        = cap_type
+
     return row, archetype, tot_sc, final_action
 def clean_row(row):
     return [("" if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v) for v in row]
@@ -1131,27 +1193,56 @@ def clean_row(row):
 # sorting-ready columns, search/filter-friendly headers,
 # styling, and coloring rules.
 # ══════════════════════════════════════════════
+DECISION_DETAIL_COLORS = {
+    "High Conviction Buy": ("00c853", "ffffff"),
+    "Strong Buy":          ("00c853", "ffffff"),
+    "Buy on Dip":          ("0b8043", "ffffff"),
+    "Buy":                 ("0b8043", "ffffff"),
+    "Accumulate Slowly":   ("d9ead3", "0b8043"),
+    "Fully Valued — Accumulate on Dips": ("fff2cc", "7f4f00"),
+    "Fully Valued":        ("fff2cc", "7f4f00"),
+    "Hold":                ("fff2cc", "7f4f00"),
+    "Monitor Closely":     ("fce8b2", "7f4f00"),
+    "Reduce Exposure":     ("fde9d9", "c62828"),
+    "Exit Candidate":      ("cc0000", "ffffff"),
+}
+
+TECHNICAL_SETUP_COLORS = {
+    "🟣 Breakout":      ("e1d5f7", "6a1b9a"),
+    "🟢 Tight Base":    ("d9ead3", "0b8043"),
+    "🔵 Pullback":      ("d9eaf7", "1565c0"),
+    "🔴 Extended":      ("fde9d9", "c62828"),
+    "🟡 Consolidating": ("fff2cc", "7f4f00"),
+    "🟠 Volatile":      ("fce8b2", "7f4f00"),
+    "⚪ Unknown":       ("f1f1f1", "666666"),
+}
+
+TREND_COLORS = {
+    "Strong Uptrend":   ("00c853", "ffffff"),
+    "Uptrend":          ("d9ead3", "0b8043"),
+    "Sideways":         ("fff2cc", "7f4f00"),
+    "Downtrend":        ("fde9d9", "c62828"),
+    "Strong Downtrend": ("cc0000", "ffffff"),
+}
+
+
 def write_github_data(sh, rows, tab_name="GITHUB DATA"):
+    C = GITHUB_DATA_COLS
+    num_cols = len(C)
+
     try:
         ws = sh.worksheet(tab_name)
         ws.clear()
     except:
-        ws = sh.add_worksheet(tab_name, rows=300, cols=32)
+        ws = sh.add_worksheet(tab_name, rows=300, cols=num_cols)
 
-    headers = [
-        "Symbol", "Sector", "Industry", "Archetype",
-        "52W Low", "52W High", "Day Chg%", "Buy 20% Less",
-        "PE", "EPS", "Book Value", "P/B",
-        "Div Yield%",
-        "ROE%", "ROA%", "Debt/Equity",
-        "Rev Growth%", "Beta",
-        "Quality Score", "Valuation Score", "Timing Score",
-        "Mkt Cap Cr", "Cap Type",
-        "Strengths", "Weaknesses", "Technical Setup", "Decision Detail",
-        "Final Action", "Total Score",
-        "Vol Spike", "Trend", "RSI"
-    ]
-    assert len(headers) == 32, "headers/row column count mismatch"
+    # Headers and widths assembled BY KEY from GITHUB_DATA_COLS — the
+    # only place column order is ever defined. Nothing else can drift.
+    headers = [""] * num_cols
+    widths  = [70] * num_cols
+    for key, idx in C.items():
+        headers[idx] = GITHUB_DATA_HEADER_NAMES.get(key, key)
+        widths[idx]  = GITHUB_DATA_COL_WIDTHS.get(key, 70)
 
     ws.append_row(headers)
     if rows:
@@ -1160,7 +1251,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 
     sh.batch_update({"requests": [{"repeatCell": {
         "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
-                  "startColumnIndex": 0, "endColumnIndex": len(headers)},
+                  "startColumnIndex": 0, "endColumnIndex": num_cols},
         "cell": {"userEnteredFormat": {
             "backgroundColor": hex_rgb("0d1b2a"),
             "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
@@ -1179,20 +1270,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         "properties": {"pixelSize": 50}, "fields": "pixelSize"
     }}]})
 
-    widths = [
-        70, 75, 90, 80,
-        55, 55, 60, 65,
-        45, 45, 55, 45,
-        50,
-        50, 50, 55,
-        55, 45,
-        55, 60, 55,
-        65, 65,
-        200, 200, 110, 150,
-        90, 55,
-        55, 90, 45
-    ]
-    assert len(widths) == 32, "widths/header column count mismatch"
     sh.batch_update({"requests": [{"updateDimensionProperties": {
         "range": {"sheetId": ws.id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
         "properties": {"pixelSize": w}, "fields": "pixelSize"
@@ -1211,76 +1288,161 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         "SELL":        ("cc0000", "ffffff"),
     }
 
+    def sf(row, key):
+        idx = C[key]
+        try:
+            v = str(row[idx]).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip()
+            return float(v) if len(row) > idx and v else None
+        except:
+            return None
+
     for i, row in enumerate(all_out):
         rn  = i + 1
         alt = "f8f9fa" if i % 2 == 0 else "ffffff"
         reqs.append({"repeatCell": {
             "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn + 1,
-                      "startColumnIndex": 0, "endColumnIndex": len(headers)},
+                      "startColumnIndex": 0, "endColumnIndex": num_cols},
             "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
             "fields": "userEnteredFormat.backgroundColor"
         }})
 
-        def sf(idx):
-            try:
-                v = str(row[idx]).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip()
-                return float(v) if len(row) > idx and v else None
-            except:
-                return None
+        cap       = row[C["cap_type"]].strip() if len(row) > C["cap_type"] else ""
+        action    = row[C["action"]].strip() if len(row) > C["action"] else ""
+        tech_set  = row[C["technical_setup"]].strip() if len(row) > C["technical_setup"] else ""
+        dec_det   = row[C["decision_detail"]].strip() if len(row) > C["decision_detail"] else ""
+        trend_val = row[C["trend"]].strip() if len(row) > C["trend"] else ""
 
-        cap    = row[22].strip() if len(row) > 22 else ""
-        action = row[27].strip() if len(row) > 27 else ""
-        pct    = sf(7)
-        rsi_v  = sf(31)
-        q_sc   = sf(18)
-        v_sc   = sf(19)
-        t_sc   = sf(20)
-        tot_sc = sf(28)
+        pct    = sf(row, "pct_high")
+        day_chg = sf(row, "day_chg_pct")
+        rsi_v  = sf(row, "rsi")
+        pe_v   = sf(row, "pe")
+        eps_v  = sf(row, "eps")
+        pb_v   = sf(row, "pb")
+        div_v  = sf(row, "div")
+        roe_v  = sf(row, "roe")
+        roa_v  = sf(row, "roa")
+        debt_v = sf(row, "debt_eq")
+        growth_v = sf(row, "rev_growth")
+        beta_v = sf(row, "beta")
+        vol_v  = sf(row, "vol_spike")
+        q_sc   = sf(row, "quality")
+        v_sc   = sf(row, "valuation")
+        t_sc   = sf(row, "timing")
+        tot_sc = sf(row, "total")
 
+        # ── Cap Type family: Symbol, Mkt Cap Cr, Cap Type ──
         if cap == "Large Cap":       cb, cf = "d9ead3", "0b8043"
         elif cap == "Mid Cap":       cb, cf = "d9eaf7", "1565c0"
         elif cap == "Small Cap":     cb, cf = "fde9d9", "c62828"
-        else:                        cb, cf = "ffffff", "000000"
-        if cap:
-            reqs += [
-                color_cell_req(ws.id, rn, 0, cb, cf),
-                color_cell_req(ws.id, rn, 21, cb, cf),
-                color_cell_req(ws.id, rn, 22, cb, cf),
-            ]
+        else:                        cb, cf = None, None
+        if cb:
+            for key in ("symbol", "mcap", "cap_type"):
+                reqs.append(color_cell_req(ws.id, rn, C[key], cb, cf))
 
-        reqs.append(color_cell_req(ws.id, rn, 5, "eaf4fb", "1565c0", bold=False))  # 52W High
-        reqs.append(color_cell_req(ws.id, rn, 4, "fdf2f2", "c62828", bold=False))  # 52W Low
+        # ── 52W High / Low ──
+        reqs.append(color_cell_req(ws.id, rn, C["high52"], "eaf4fb", "1565c0", bold=False))
+        reqs.append(color_cell_req(ws.id, rn, C["low52"], "fdf2f2", "c62828", bold=False))
 
+        # ── Day Chg% ──
+        if day_chg is not None:
+            reqs.append(color_cell_req(ws.id, rn, C["day_chg_pct"], "d9ead3", "0b8043") if day_chg > 0
+                        else color_cell_req(ws.id, rn, C["day_chg_pct"], "fde9d9", "c62828") if day_chg < 0
+                        else color_cell_req(ws.id, rn, C["day_chg_pct"], "f1f1f1", "666666"))
+
+        # ── Buy 20% Less (pct from 52W high) ──
         if pct is not None:
-            reqs.append(color_cell_req(ws.id, rn, 7, "d9ead3", "0b8043") if pct >= -20
-                        else color_cell_req(ws.id, rn, 7, "fde9d9", "c62828"))
+            reqs.append(color_cell_req(ws.id, rn, C["pct_high"], "d9ead3", "0b8043") if pct >= -20
+                        else color_cell_req(ws.id, rn, C["pct_high"], "fde9d9", "c62828"))
 
+        # ── PE ──
+        if pe_v is not None:
+            if 0 < pe_v <= 25:   reqs.append(color_cell_req(ws.id, rn, C["pe"], "d9ead3", "0b8043"))
+            elif pe_v <= 40:     reqs.append(color_cell_req(ws.id, rn, C["pe"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws.id, rn, C["pe"], "fde9d9", "c62828"))
+
+        # ── EPS ──
+        if eps_v is not None:
+            reqs.append(color_cell_req(ws.id, rn, C["eps"], "d9ead3", "0b8043") if eps_v > 0
+                        else color_cell_req(ws.id, rn, C["eps"], "fde9d9", "c62828"))
+
+        # ── P/B ──
+        if pb_v is not None:
+            if pb_v <= 3:        reqs.append(color_cell_req(ws.id, rn, C["pb"], "d9ead3", "0b8043"))
+            elif pb_v <= 5:      reqs.append(color_cell_req(ws.id, rn, C["pb"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws.id, rn, C["pb"], "fde9d9", "c62828"))
+
+        # ── Div Yield% ──
+        if div_v is not None:
+            if div_v >= 2:       reqs.append(color_cell_req(ws.id, rn, C["div"], "d9ead3", "0b8043"))
+            elif div_v >= 1:     reqs.append(color_cell_req(ws.id, rn, C["div"], "fff2cc", "7f4f00"))
+
+        # ── RSI ──
+        if rsi_v is not None:
+            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id, rn, C["rsi"], "d9ead3", "0b8043"))
+            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id, rn, C["rsi"], "fde9d9", "c62828"))
+            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, C["rsi"], "fff2cc", "7f4f00"))
+
+        # ── ROE% / ROA% / Debt-Equity / Rev Growth% / Beta ──
+        if roe_v is not None:
+            if roe_v >= 15:      reqs.append(color_cell_req(ws.id, rn, C["roe"], "d9ead3", "0b8043"))
+            elif roe_v >= 8:     reqs.append(color_cell_req(ws.id, rn, C["roe"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws.id, rn, C["roe"], "fde9d9", "c62828"))
+        if roa_v is not None:
+            if roa_v >= 2:       reqs.append(color_cell_req(ws.id, rn, C["roa"], "d9ead3", "0b8043"))
+            elif roa_v >= 1:     reqs.append(color_cell_req(ws.id, rn, C["roa"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws.id, rn, C["roa"], "fde9d9", "c62828"))
+        if debt_v is not None:
+            if debt_v <= 0.5:    reqs.append(color_cell_req(ws.id, rn, C["debt_eq"], "d9ead3", "0b8043"))
+            elif debt_v <= 1:    reqs.append(color_cell_req(ws.id, rn, C["debt_eq"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws.id, rn, C["debt_eq"], "fde9d9", "c62828"))
+        if growth_v is not None:
+            if growth_v >= 10:   reqs.append(color_cell_req(ws.id, rn, C["rev_growth"], "d9ead3", "0b8043"))
+            elif growth_v >= 0:  reqs.append(color_cell_req(ws.id, rn, C["rev_growth"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws.id, rn, C["rev_growth"], "fde9d9", "c62828"))
+        if beta_v is not None:
+            if beta_v <= 1:      reqs.append(color_cell_req(ws.id, rn, C["beta"], "d9ead3", "0b8043"))
+            elif beta_v <= 1.5:  reqs.append(color_cell_req(ws.id, rn, C["beta"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws.id, rn, C["beta"], "fde9d9", "c62828"))
+
+        # ── Strengths / Weaknesses — constant tint, groups them visually ──
+        reqs.append(color_cell_req(ws.id, rn, C["strengths"], "f1f9f1", "1a1a1a", bold=False))
+        reqs.append(color_cell_req(ws.id, rn, C["weaknesses"], "fdf2f2", "1a1a1a", bold=False))
+
+        # ── Technical Setup / Decision Detail / Final Action ──
+        if tech_set in TECHNICAL_SETUP_COLORS:
+            bg, fg = TECHNICAL_SETUP_COLORS[tech_set]
+            reqs.append(color_cell_req(ws.id, rn, C["technical_setup"], bg, fg))
+        if dec_det in DECISION_DETAIL_COLORS:
+            bg, fg = DECISION_DETAIL_COLORS[dec_det]
+            reqs.append(color_cell_req(ws.id, rn, C["decision_detail"], bg, fg))
         if action in ACTION_COLORS:
             bg_a, fg_a = ACTION_COLORS[action]
-            reqs.append(color_cell_req(ws.id, rn, 27, bg_a, fg_a))
+            reqs.append(color_cell_req(ws.id, rn, C["action"], bg_a, fg_a))
 
+        # ── Quality / Valuation / Timing / Total ──
         if q_sc is not None:
-            if q_sc >= 30:   reqs.append(color_cell_req(ws.id, rn, 18, "d9ead3", "0b8043"))
-            elif q_sc <= 15: reqs.append(color_cell_req(ws.id, rn, 18, "fde9d9", "c62828"))
-
+            if q_sc >= 30:   reqs.append(color_cell_req(ws.id, rn, C["quality"], "d9ead3", "0b8043"))
+            elif q_sc <= 15: reqs.append(color_cell_req(ws.id, rn, C["quality"], "fde9d9", "c62828"))
         if v_sc is not None:
-            if v_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 19, "d9ead3", "0b8043"))
-            elif v_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 19, "fde9d9", "c62828"))
-
+            if v_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, C["valuation"], "d9ead3", "0b8043"))
+            elif v_sc <= 10: reqs.append(color_cell_req(ws.id, rn, C["valuation"], "fde9d9", "c62828"))
         if t_sc is not None:
-            if t_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, 20, "d9ead3", "0b8043"))
-            elif t_sc <= 10: reqs.append(color_cell_req(ws.id, rn, 20, "fde9d9", "c62828"))
-
+            if t_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, C["timing"], "d9ead3", "0b8043"))
+            elif t_sc <= 10: reqs.append(color_cell_req(ws.id, rn, C["timing"], "fde9d9", "c62828"))
         if tot_sc is not None:
-            if   tot_sc >= 65: reqs.append(color_cell_req(ws.id, rn, 28, "00c853", "ffffff"))
-            elif tot_sc >= 50: reqs.append(color_cell_req(ws.id, rn, 28, "d9ead3", "0b8043"))
-            elif tot_sc >= 35: reqs.append(color_cell_req(ws.id, rn, 28, "fff2cc", "7f4f00"))
-            else:              reqs.append(color_cell_req(ws.id, rn, 28, "fde9d9", "c62828"))
+            if   tot_sc >= 65: reqs.append(color_cell_req(ws.id, rn, C["total"], "00c853", "ffffff"))
+            elif tot_sc >= 50: reqs.append(color_cell_req(ws.id, rn, C["total"], "d9ead3", "0b8043"))
+            elif tot_sc >= 35: reqs.append(color_cell_req(ws.id, rn, C["total"], "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, C["total"], "fde9d9", "c62828"))
 
-        if rsi_v is not None:
-            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id, rn, 31, "d9ead3", "0b8043"))
-            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id, rn, 31, "fde9d9", "c62828"))
-            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, 31, "fff2cc", "7f4f00"))
+        # ── Vol Spike / Trend ──
+        if vol_v is not None:
+            if vol_v >= 2:      reqs.append(color_cell_req(ws.id, rn, C["vol_spike"], "fde9d9", "c62828"))
+            elif vol_v >= 1.5:  reqs.append(color_cell_req(ws.id, rn, C["vol_spike"], "fff2cc", "7f4f00"))
+            else:               reqs.append(color_cell_req(ws.id, rn, C["vol_spike"], "d9ead3", "0b8043"))
+        if trend_val in TREND_COLORS:
+            bg, fg = TREND_COLORS[trend_val]
+            reqs.append(color_cell_req(ws.id, rn, C["trend"], bg, fg))
 
     batch_update_safe(sh, reqs)
     log.info(f"{tab_name} tab written and formatted")
