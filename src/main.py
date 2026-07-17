@@ -869,36 +869,7 @@ def classify_technical_setup(tech, cmp):
         return "🟡 Consolidating"
 
     return "🟡 Consolidating"
-    
-# ══════════════════════════════════════════════
-# DECISION DETAIL CLASSIFICATION
-# Informational only — reuses final_action, q_sc, v_sc, rsi already
-# computed by compute_unified_score() / fetch_technicals(). Does not
-# modify compute_unified_score(), Final Action, or Total Score.
-# ══════════════════════════════════════════════
-def classify_decision_detail(final_action, q_sc, v_sc, rsi):
-    rsi_val = rsi if isinstance(rsi, (int, float)) else None
-
-    if final_action == "STRONG BUY":
-        if q_sc >= 30 and rsi_val is not None and rsi_val < 40:
-            return "High Conviction Buy"
-        return "Strong Buy"
-    if final_action == "BUY":
-        if rsi_val is not None and rsi_val < 45:
-            return "Buy on Dip"
-        return "Buy"
-    if final_action == "ACCUMULATE":
-        return "Fully Valued — Accumulate on Dips" if v_sc < 15 else "Accumulate Slowly"
-    if final_action == "HOLD":
-        return "Fully Valued" if v_sc < 10 else "Hold"
-    if final_action == "WATCH":
-        return "Monitor Closely"
-    if final_action == "AVOID":
-        return "Reduce Exposure"
-    if final_action == "SELL":
-        return "Exit Candidate"
-    return final_action
-    
+       
 # ══════════════════════════════════════════════
 # FETCH FUNDAMENTALS
 # ══════════════════════════════════════════════
@@ -1044,11 +1015,11 @@ GITHUB_DATA_COLS = {
     "rsi": 13,
     "roe": 14, "roa": 15, "debt_eq": 16,
     "rev_growth": 17, "beta": 18,
-    "strengths": 19, "weaknesses": 20, "technical_setup": 21, "decision_detail": 22,
-    "action": 23,
+    "strengths": 19, "weaknesses": 20, "technical_setup": 21,
+    "action": 22, "trend": 23,
     "quality": 24, "valuation": 25, "timing": 26, "total": 27,
-    "vol_spike": 28, "trend": 29,
-    "mcap": 30, "cap_type": 31,
+    "vol_spike": 28,
+    "mcap": 29, "cap_type": 30,
 }
 
 # Header text per column key — headers[] is built FROM this dict via
@@ -1063,10 +1034,10 @@ GITHUB_DATA_HEADER_NAMES = {
     "roe": "ROE%", "roa": "ROA%", "debt_eq": "Debt/Equity",
     "rev_growth": "Rev Growth%", "beta": "Beta",
     "strengths": "Strengths", "weaknesses": "Weaknesses",
-    "technical_setup": "Technical Setup", "decision_detail": "Decision Detail",
-    "action": "Final Action",
+    "technical_setup": "Technical Setup",
+    "action": "Final Action", "trend": "Trend",
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
-    "vol_spike": "Vol Spike", "trend": "Trend",
+    "vol_spike": "Vol Spike",
     "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
 }
 
@@ -1080,10 +1051,10 @@ GITHUB_DATA_COL_WIDTHS = {
     "roe": 50, "roa": 50, "debt_eq": 55,
     "rev_growth": 55, "beta": 45,
     "strengths": 200, "weaknesses": 200,
-    "technical_setup": 110, "decision_detail": 150,
-    "action": 90,
+    "technical_setup": 110,
+    "action": 90, "trend": 90,
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
-    "vol_spike": 55, "trend": 90,
+    "vol_spike": 55,
     "mcap": 65, "cap_type": 65,
 }
 
@@ -1143,7 +1114,6 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
     strengths_str   = " | ".join(strengths)
     weaknesses_str  = " | ".join(weaknesses)
     technical_setup = classify_technical_setup(tech, cmp)
-    decision_detail = classify_decision_detail(final_action, q_sc, v_sc, rsi if rsi != "" else None)
 
     # Row is built BY KEY via GITHUB_DATA_COLS, not by position in a
     # literal list — reordering the columns is now a one-line change
@@ -1172,7 +1142,6 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
     row[C["strengths"]]       = strengths_str
     row[C["weaknesses"]]      = weaknesses_str
     row[C["technical_setup"]] = technical_setup
-    row[C["decision_detail"]] = decision_detail
     row[C["action"]]          = final_action
     row[C["quality"]]         = q_sc
     row[C["valuation"]]       = v_sc
@@ -1193,19 +1162,6 @@ def clean_row(row):
 # sorting-ready columns, search/filter-friendly headers,
 # styling, and coloring rules.
 # ══════════════════════════════════════════════
-DECISION_DETAIL_COLORS = {
-    "High Conviction Buy": ("00c853", "ffffff"),
-    "Strong Buy":          ("00c853", "ffffff"),
-    "Buy on Dip":          ("0b8043", "ffffff"),
-    "Buy":                 ("0b8043", "ffffff"),
-    "Accumulate Slowly":   ("d9ead3", "0b8043"),
-    "Fully Valued — Accumulate on Dips": ("fff2cc", "7f4f00"),
-    "Fully Valued":        ("fff2cc", "7f4f00"),
-    "Hold":                ("fff2cc", "7f4f00"),
-    "Monitor Closely":     ("fce8b2", "7f4f00"),
-    "Reduce Exposure":     ("fde9d9", "c62828"),
-    "Exit Candidate":      ("cc0000", "ffffff"),
-}
 
 TECHNICAL_SETUP_COLORS = {
     "🟣 Breakout":      ("e1d5f7", "6a1b9a"),
@@ -1309,7 +1265,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         cap       = row[C["cap_type"]].strip() if len(row) > C["cap_type"] else ""
         action    = row[C["action"]].strip() if len(row) > C["action"] else ""
         tech_set  = row[C["technical_setup"]].strip() if len(row) > C["technical_setup"] else ""
-        dec_det   = row[C["decision_detail"]].strip() if len(row) > C["decision_detail"] else ""
         trend_val = row[C["trend"]].strip() if len(row) > C["trend"] else ""
 
         pct    = sf(row, "pct_high")
@@ -1404,17 +1359,16 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             elif beta_v <= 1.5:  reqs.append(color_cell_req(ws.id, rn, C["beta"], "fff2cc", "7f4f00"))
             else:                reqs.append(color_cell_req(ws.id, rn, C["beta"], "fde9d9", "c62828"))
 
-        # ── Strengths / Weaknesses — constant tint, groups them visually ──
-        reqs.append(color_cell_req(ws.id, rn, C["strengths"], "f1f9f1", "1a1a1a", bold=False))
-        reqs.append(color_cell_req(ws.id, rn, C["weaknesses"], "fdf2f2", "1a1a1a", bold=False))
+        # ── Strengths / Weaknesses — green text for positive, red for
+        # negative, on the same light tint as before. This is the
+        # colored-text look that existed pre-cleanup, restored.
+        reqs.append(color_cell_req(ws.id, rn, C["strengths"], "f1f9f1", "0b8043", bold=False))
+        reqs.append(color_cell_req(ws.id, rn, C["weaknesses"], "fdf2f2", "c62828", bold=False))
 
-        # ── Technical Setup / Decision Detail / Final Action ──
+        # ── Technical Setup / Final Action ──
         if tech_set in TECHNICAL_SETUP_COLORS:
             bg, fg = TECHNICAL_SETUP_COLORS[tech_set]
             reqs.append(color_cell_req(ws.id, rn, C["technical_setup"], bg, fg))
-        if dec_det in DECISION_DETAIL_COLORS:
-            bg, fg = DECISION_DETAIL_COLORS[dec_det]
-            reqs.append(color_cell_req(ws.id, rn, C["decision_detail"], bg, fg))
         if action in ACTION_COLORS:
             bg_a, fg_a = ACTION_COLORS[action]
             reqs.append(color_cell_req(ws.id, rn, C["action"], bg_a, fg_a))
