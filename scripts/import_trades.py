@@ -19,8 +19,8 @@ from typing import List, Dict, Tuple
 # Helpers – reading / writing the master CSV
 # --------------------------------------------------------------------------- #
 MASTER_CSV = Path(__file__).parents[2] / "data" / "trade_log.csv"
-ZERODHA_DIR = Path(__file__).parents[2] / "imports" / "zerodha"
-GROWW_DIR = Path(__file__).parents[2] / "imports" / "groww"
+ZERODHA_DIR = Path(__file__).parents[2] / "data" / "imports" / "zerodha"
+GROWW_DIR = Path(__file__).parents[2] / "data" / "imports" / "groww"
 
 SCHEMA = [
     "trade_id",
@@ -70,7 +70,7 @@ def _write_master(all_rows: List[Dict[str, str]]) -> None:
 # --------------------------------------------------------------------------- #
 def _import_zerodha_files() -> Tuple[int, List[Dict[str, str]]]:
     """Run the Zerodha importer on every CSV under imports/zerodha."""
-    from imports.zerodha.import_zerodha import import_zerodha
+    from data.imports.zerodha.import_zerodha import import_zerodha
 
     imported = 0
     new_rows: List[Dict[str, str]] = []
@@ -85,7 +85,7 @@ def _import_zerodha_files() -> Tuple[int, List[Dict[str, str]]]:
 
 def _import_groww_files() -> Tuple[int, List[Dict[str, str]]]:
     """Run the Groww importer on every XLSX under imports/groww."""
-    from imports.groww.import_groww import import_groww
+    from data.imports.groww.import_groww import import_groww
 
     imported = 0
     new_rows: List[Dict[str, str]] = []
