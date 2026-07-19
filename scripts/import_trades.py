@@ -18,9 +18,9 @@ from typing import List, Dict, Tuple
 # --------------------------------------------------------------------------- #
 # Helpers – reading / writing the master CSV
 # --------------------------------------------------------------------------- #
-MASTER_CSV = Path(__file__).parents[2] / "data" / "trade_log.csv"
-ZERODHA_DIR = Path(__file__).parents[2] / "data" / "imports" / "zerodha"
-GROWW_DIR = Path(__file__).parents[2] / "data" / "imports" / "groww"
+MASTER_CSV = Path(__file__).parents[1] / "data" / "trade_log.csv"
+ZERODHA_DIR = Path(__file__).parents[1] / "data" / "imports" / "zerodha"
+GROWW_DIR = Path(__file__).parents[1] / "data" / "imports" / "groww"
 
 SCHEMA = [
     "trade_id",
