@@ -997,10 +997,23 @@ def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
         }
     }
 
-def batch_update_safe(sh, requests, chunk=100):
+def batch_update_safe(sh, requests, chunk=30):
+    """Send batchUpdate requests in small chunks with retry on 429 quota errors."""
+    import gspread.exceptions
     for i in range(0, len(requests), chunk):
-        sh.batch_update({"requests": requests[i:i + chunk]})
-        time.sleep(0.2)
+        slice_ = requests[i:i + chunk]
+        for attempt in range(5):  # up to 5 retries
+            try:
+                sh.batch_update({"requests": slice_})
+                time.sleep(1.5)   # 1.5 s between every chunk to stay under quota
+                break
+            except gspread.exceptions.APIError as e:
+                if "429" in str(e):
+                    wait = 15 * (2 ** attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
+                    print(f"[quota] 429 hit, waiting {wait}s before retry {attempt+1}/5…")
+                    time.sleep(wait)
+                else:
+                    raise
 
 # ══════════════════════════════════════════════
 # ROW COLUMN MAP — mirrors the list built in build_result_row().
