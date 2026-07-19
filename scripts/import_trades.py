@@ -14,6 +14,10 @@ import os
 import sys
 from pathlib import Path
 from typing import List, Dict, Tuple
+import pandas as pd
+# Ensure project root is on sys.path for package imports
+project_root = Path(__file__).parents[1]
+sys.path.append(str(project_root))
 
 # --------------------------------------------------------------------------- #
 # Helpers – reading / writing the master CSV
