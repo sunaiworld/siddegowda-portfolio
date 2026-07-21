@@ -1,1 +1,120 @@
-IyBpbXBvcnRzL2dyb3d3L2ltcG9ydF9ncm93dy5weQoiIiIKR3Jvd3cgaW1wb3J0ZXIgLSBjb252ZXJ0cyBhIEdyb3d3ICJTdG9jayBPcmRlciBIaXN0b3J5IiBYTFNYIGV4cG9ydCBpbnRvCnJvd3MgdGhhdCBleGFjdGx5IG1hdGNoIHRoZSBhcHByb3ZlZCBtYXN0ZXItdHJhZGUgc2NoZW1hLgoKMjAyNi0wNy0yMSBmaXg6IHRoZSByZWFsIGV4cG9ydCBpcyBOT1QgYSBmbGF0IHRhYmxlIGZyb20gcm93IDEuIEl0IGhhcwo1IG1ldGFkYXRhL3RpdGxlIHJvd3MgZmlyc3Q6CiAgICBSb3cgMTogTmFtZSwgPGFjY291bnQgaG9sZGVyPgogICAgUm93IDI6IFVuaXF1ZSBDbGllbnQgQ29kZSwgPGNvZGU+CiAgICBSb3cgMzogKGJsYW5rKQogICAgUm93IDQ6IE9yZGVyIGhpc3RvcnkgZm9yIHN0b2NrcyBmcm9tIDxkYXRlPiB0byA8ZGF0ZT4KICAgIFJvdyA1OiAoYmxhbmspCiAgICBSb3cgNjogU3RvY2sgbmFtZSB8IFN5bWJvbCB8IElTSU4gfCBUeXBlIHwgUXVhbnRpdHkgfCBWYWx1ZSB8IEV4Y2hhbmdlIHwKICAgICAgICAgICBFeGNoYW5nZSBPcmRlciBJZCB8IEV4ZWN1dGlvbiBkYXRlIGFuZCB0aW1lIHwgT3JkZXIgc3RhdHVzClRoZSBwcmV2aW91cyB2ZXJzaW9uIG9mIHRoaXMgaW1wb3J0ZXIgcmVhZCByb3cgMSBhcyB0aGUgaGVhZGVyIGFuZApsb29rZWQgZm9yIHRyYWRlX2lkL3ByaWNlL3RyYWRlX2RhdGUvdHJhZGVfdHlwZSBjb2x1bW5zIHRoYXQgZG9uJ3QKZXhpc3QgaW4gdGhpcyBleHBvcnQgYXQgYWxsIC0+IGV2ZXJ5IHJvdyBmYWlsZWQgdGhlIGBpZiBub3QgdHJhZGVfaWRgCmd1YXJkIGFuZCAwIHRyYWRlcyB3ZXJlIGV2ZXIgaW1wb3J0ZWQsIHNpbGVudGx5LiBSZXdyaXR0ZW4gYWdhaW5zdCB0aGUKYWN0dWFsIGZpbGVzIGNvbW1pdHRlZCB1bmRlciBkYXRhL2ltcG9ydHMvZ3Jvd3cvLgoiIiIKCmltcG9ydCBvcwpmcm9tIGRhdGV0aW1lIGltcG9ydCBkYXRldGltZQpmcm9tIHR5cGluZyBpbXBvcnQgTGlzdCwgRGljdAoKaW1wb3J0IHBhbmRhcyBhcyBwZCAgIyBwYW5kYXMgaXMgdGhlIGVhc2llc3Qgd2F5IHRvIHJlYWQgRXhjZWwgZmlsZXMKCgojIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tIC0tIwojIEhlbHBlciBjb252ZXJzaW9uIHV0aWxpdGllcwojIC0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tIC0tIwpkZWYgX3RvX2ludCh2YWx1ZSkgLT4gaW50OgogICAgdHJ5OgogICAgICAgIHJldHVybiBpbnQoZmxvYXQodmFsdWUpKQogICAgZXhjZXB0IEV4Y2VwdGlvbjoKICAgICAgICByZXR1cm4gMAoKCmRlZiBfdG9fZmxvYXQodmFsdWUpIC0+IGZsb2F0OgogICAgdHJ5OgogICAgICAgIHJldHVybiBmbG9hdCh2YWx1ZSkKICAgIGV4Y2VwdCBFeGNlcHRpb246CiAgICAgICAgcmV0dXJuIDAuMAoKCmRlZiBfcGFyc2VfZGF0ZXRpbWUodmFsdWUpIC0+IHN0cjoKICAgICIiIgogICAgR3Jvd3cncyAnRXhlY3V0aW9uIGRhdGUgYW5kIHRpbWUnIGNvbHVtbiBsb29rcyBsaWtlCiAgICAnMDEtMDEtMjAyNiAxMDowNSBBTScuIENvbnZlcnQgdG8gSVNPIGRhdGUgKHRpbWUgaXNuJ3QgcGFydCBvZgogICAgdGhlIG1hc3RlciBzY2hlbWEncyBgZGF0ZWAgZmllbGQpLgogICAgIiIiCiAgICBpZiBpc2luc3RhbmNlKHZhbHVlLCBkYXRldGltZSk6CiAgICAgICAgcmV0dXJuIHZhbHVlLnN0cmZ0aW1lKCIlWS0lbS0lZCIpCiAgICB2YWx1ZSA9IHN0cih2YWx1ZSkuc3RyaXAoKQogICAgZm9yIGZtdCBpbiAoIiVkLSVtLSVZICVJOiVNICVwIiwgIiVkLSVtLSVZIiwgIiVkLyVtLyVZIiwgIiVZLSVtLSVkIik6CiAgICAgICAgdHJ5OgogICAgICAgICAgICByZXR1cm4gZGF0ZXRpbWUuc3RycHRpbWUodmFsdWUsIGZtdCkuc3RyZnRpbWUoIiVZLSVtLSVkIikKICAgICAgICBleGNlcHQgRXhjZXB0aW9uOgogICAgICAgICAgICBjb250aW51ZQogICAgcmV0dXJuIHZhbHVlICAjIGZhbGxiYWNrCgoKIyAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLSAtLSMKIyBDb3JlIGltcG9ydGVyCiMgLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0gLS0jCmRlZiBpbXBvcnRfZ3Jvd3coeGxzeF9wYXRoOiBzdHIpIC0+IExpc3RbRGljdFtzdHIsIHN0cl1dOgogICAgIiIiCiAgICBSZWFkcyBhIEdyb3d3ICJTdG9jayBPcmRlciBIaXN0b3J5IiBYTFNYIGV4cG9ydCBhbmQgcmV0dXJucyBhIGxpc3QKICAgIG9mIGRpY3RzIHRoYXQgZm9sbG93IHRoZSBtYXN0ZXIgc2NoZW1hLgoKICAgIFRoZSByZWFsIGV4cG9ydCBoYXMgNSBtZXRhZGF0YS90aXRsZSByb3dzIGFib3ZlIHRoZSBhY3R1YWwgdGFibGUKICAgIChOYW1lLCBVbmlxdWUgQ2xpZW50IENvZGUsIGJsYW5rLCB0aXRsZSwgYmxhbmspLCBzbyB0aGUgaGVhZGVyIGlzCiAgICBvbiByb3cgNiAtIGBoZWFkZXI9NWAgKDAtaW5kZXhlZCkgdGVsbHMgcGFuZGFzIHRvIHNraXAgdGhlbS4KICAgICIiIgogICAgYnJva2VyX25hbWUgPSAiR3Jvd3ciCiAgICBmaWxlbmFtZSA9IG9zLnBhdGguYmFzZW5hbWUoeGxzeF9wYXRoKQoKICAgIGRmID0gcGQucmVhZF9leGNlbCh4bHN4X3BhdGgsIGVuZ2luZT0ib3BlbnB5eGwiLCBoZWFkZXI9NSkKICAgIGRmLmNvbHVtbnMgPSBbc3RyKGMpLnN0cmlwKCkubG93ZXIoKS5yZXBsYWNlKCIgIiwgIl8iKSBmb3IgYyBpbiBkZi5jb2x1bW5zXQoKICAgIHJvd3M6IExpc3RbRGljdFtzdHIsIHN0cl1dID0gW10KCiAgICBmb3IgXywgcmF3IGluIGRmLml0ZXJyb3dzKCk6CiAgICAgICAgIyBHcm93dyBkb2Vzbid0IGlzc3VlIGl0cyBvd24gdHJhZGVfaWQ7IHRoZSBleGNoYW5nZSBvcmRlciBpZAogICAgICAgICMgaXMgdW5pcXVlIHBlciBmaWxsLCBzbyBpdCBkb3VibGVzIGFzIG9uZS4KICAgICAgICBvcmRlcl9pZCA9IHN0cihyYXcuZ2V0KCJleGNoYW5nZV9vcmRlcl9pZCIsICIiKSkuc3RyaXAoKQogICAgICAgIGlmIG5vdCBvcmRlcl9pZCBvciBvcmRlcl9pZC5sb3dlcigpID09ICJuYW4iOgogICAgICAgICAgICBjb250aW51ZSAgIyBza2lwIGJsYW5rIC8gbWFsZm9ybWVkIHJvd3MKCiAgICAgICAgc3RhdHVzID0gc3RyKHJhdy5nZXQoIm9yZGVyX3N0YXR1cyIsICIiKSkuc3RyaXAoKS5sb3dlcigpCiAgICAgICAgaWYgc3RhdHVzIGFuZCBzdGF0dXMgIT0gImV4ZWN1dGVkIjoKICAgICAgICAgICAgY29udGludWUgICMgb25seSBjb21wbGV0ZWQgZmlsbHMgY291bnQgYXMgaG9sZGluZ3MKCiAgICAgICAgcXVhbnRpdHkgPSBfdG9faW50KHJhdy5nZXQoInF1YW50aXR5IiwgMCkpCiAgICAgICAgZ3Jvc3NfdmFsdWUgPSBfdG9fZmxvYXQocmF3LmdldCgidmFsdWUiLCAwKSkKICAgICAgICBwcmljZSA9IHJvdW5kKGdyb3NzX3ZhbHVlIC8gcXVhbnRpdHksIDQpIGlmIHF1YW50aXR5IGVsc2UgMC4wCiAgICAgICAgYWN0aW9uID0gc3RyKHJhdy5nZXQoInR5cGUiLCAiIikpLnN0cmlwKCkubG93ZXIoKSAgIyAnYnV5JyAvICdzZWxsJwoKICAgICAgICByb3cgPSB7CiAgICAgICAgICAgICJ0cmFkZV9pZCI6IG9yZGVyX2lkLAogICAgICAgICAgICAiZGF0ZSI6IF9wYXJzZV9kYXRldGltZShyYXcuZ2V0KCJleGVjdXRpb25fZGF0ZV9hbmRfdGltZSIpKSwKICAgICAgICAgICAgInN5bWJvbCI6IHN0cihyYXcuZ2V0KCJzeW1ib2wiLCAiIikpLnN0cmlwKCkudXBwZXIoKSwKICAgICAgICAgICAgImV4Y2hhbmdlIjogc3RyKHJhdy5nZXQoImV4Y2hhbmdlIiwgIiIpKS5zdHJpcCgpLAogICAgICAgICAgICAic2VnbWVudCI6ICJFUSIsICAgICAgICAgICAgICAgICAjIG5vdCBwcm92aWRlZDsgYWxsIHJvd3MgYXJlIGVxdWl0eSBkZWxpdmVyeQogICAgICAgICAgICAiYWN0aW9uIjogYWN0aW9uLAogICAgICAgICAgICAicXVhbnRpdHkiOiBzdHIocXVhbnRpdHkpLAogICAgICAgICAgICAicHJpY2UiOiBmIntwcmljZTouNGZ9IiwKICAgICAgICAgICAgImdyb3NzX2Ftb3VudCI6IGYie2dyb3NzX3ZhbHVlOi4yZn0iLAogICAgICAgICAgICAiYnJva2VyYWdlIjogIiIsICAgICAgICAgICAgICAgICAgIyBub3QgYnJva2VuIG91dCBpbiB0aGlzIGV4cG9ydAogICAgICAgICAgICAidGF4ZXNfY2hhcmdlcyI6ICIiLCAgICAgICAgICAgICAgIyBub3QgYnJva2VuIG91dCBpbiB0aGlzIGV4cG9ydAogICAgICAgICAgICAibmV0X2Ftb3VudCI6IGYie2dyb3NzX3ZhbHVlOi4yZn0iLAogICAgICAgICAgICAiYnJva2VyIjogYnJva2VyX25hbWUsCiAgICAgICAgICAgICJicm9rZXJfb3JkZXJfaWQiOiBvcmRlcl9pZCwKICAgICAgICAgICAgImN1cnJlbmN5IjogIiIsICAgICAgICAgICAgICAgICAgICMgbm90IHN1cHBsaWVkCiAgICAgICAgICAgICJpbXBvcnRfc291cmNlIjogZmlsZW5hbWUsCiAgICAgICAgICAgICJub3RlcyI6IHN0cihyYXcuZ2V0KCJzdG9ja19uYW1lIiwgIiIpKS5zdHJpcCgpLAogICAgICAgIH0KICAgICAgICByb3dzLmFwcGVuZChyb3cpCgogICAgcmV0dXJuIHJvd3MK
+# imports/groww/import_groww.py
+"""
+Groww importer - converts a Groww "Stock Order History" XLSX export into
+rows that exactly match the approved master-trade schema.
+
+2026-07-21 fix: the real export is NOT a flat table from row 1. It has
+5 metadata/title rows first:
+    Row 1: Name, <account holder>
+    Row 2: Unique Client Code, <code>
+    Row 3: (blank)
+    Row 4: Order history for stocks from <date> to <date>
+    Row 5: (blank)
+    Row 6: Stock name | Symbol | ISIN | Type | Quantity | Value | Exchange |
+           Exchange Order Id | Execution date and time | Order status
+The previous version of this importer read row 1 as the header and
+looked for trade_id/price/trade_date/trade_type columns that don't
+exist in this export at all -> every row failed the `if not trade_id`
+guard and 0 trades were ever imported, silently. Rewritten against the
+actual files committed under data/imports/groww/.
+"""
+
+import os
+from datetime import datetime
+from typing import List, Dict
+
+import pandas as pd  # pandas is the easiest way to read Excel files
+
+
+# --------------------------------------------------------------------------- #
+# Helper conversion utilities
+# --------------------------------------------------------------------------- #
+def _to_int(value) -> int:
+    try:
+        return int(float(value))
+    except Exception:
+        return 0
+
+
+def _to_float(value) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+def _parse_datetime(value) -> str:
+    """
+    Groww's 'Execution date and time' column looks like
+    '01-01-2026 10:05 AM'. Convert to ISO date (time isn't part of
+    the master schema's `date` field).
+    """
+    if isinstance(value, datetime):
+        return value.strftime("%Y-%m-%d")
+    value = str(value).strip()
+    for fmt in ("%d-%m-%Y %I:%M %p", "%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(value, fmt).strftime("%Y-%m-%d")
+        except Exception:
+            continue
+    return value  # fallback
+
+
+# --------------------------------------------------------------------------- #
+# Core importer
+# --------------------------------------------------------------------------- #
+def import_groww(xlsx_path: str) -> List[Dict[str, str]]:
+    """
+    Reads a Groww "Stock Order History" XLSX export and returns a list
+    of dicts that follow the master schema.
+
+    The real export has 5 metadata/title rows above the actual table
+    (Name, Unique Client Code, blank, title, blank), so the header is
+    on row 6 - `header=5` (0-indexed) tells pandas to skip them.
+    """
+    broker_name = "Groww"
+    filename = os.path.basename(xlsx_path)
+
+    df = pd.read_excel(xlsx_path, engine="openpyxl", header=5)
+    df.columns = [str(c).strip().lower().replace(" ", "_") for c in df.columns]
+
+    rows: List[Dict[str, str]] = []
+
+    for _, raw in df.iterrows():
+        # Groww doesn't issue its own trade_id; the exchange order id
+        # is unique per fill, so it doubles as one.
+        order_id = str(raw.get("exchange_order_id", "")).strip()
+        if not order_id or order_id.lower() == "nan":
+            continue  # skip blank / malformed rows
+
+        status = str(raw.get("order_status", "")).strip().lower()
+        if status and status != "executed":
+            continue  # only completed fills count as holdings
+
+        quantity = _to_int(raw.get("quantity", 0))
+        gross_value = _to_float(raw.get("value", 0))
+        price = round(gross_value / quantity, 4) if quantity else 0.0
+        action = str(raw.get("type", "")).strip().lower()  # 'buy' / 'sell'
+
+        row = {
+            "trade_id": order_id,
+            "date": _parse_datetime(raw.get("execution_date_and_time")),
+            "symbol": str(raw.get("symbol", "")).strip().upper(),
+            "exchange": str(raw.get("exchange", "")).strip(),
+            "segment": "EQ",                 # not provided; all rows are equity delivery
+            "action": action,
+            "quantity": str(quantity),
+            "price": f"{price:.4f}",
+            "gross_amount": f"{gross_value:.2f}",
+            "brokerage": "",                  # not broken out in this export
+            "taxes_charges": "",              # not broken out in this export
+            "net_amount": f"{gross_value:.2f}",
+            "broker": broker_name,
+            "broker_order_id": order_id,
+            "currency": "",                   # not supplied
+            "import_source": filename,
+            "notes": str(raw.get("stock_name", "")).strip(),
+        }
+        rows.append(row)
+
+    return rows
