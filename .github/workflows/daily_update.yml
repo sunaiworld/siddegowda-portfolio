@@ -39,4 +39,4 @@ jobs:
           TELEGRAM_TOKEN:          ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID:        ${{ secrets.TELEGRAM_CHAT_ID }}
           TRIGGER_SOURCE:          ${{ github.event_name }}
-        run: python src/main.py
+        run: python scripts/run_daily_update.py
