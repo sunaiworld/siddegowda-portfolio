@@ -6,6 +6,7 @@ GitHub Actions — runs daily 6 PM IST
 """
 
 import os
+import csv
 import json
 import time
 import logging
@@ -751,8 +752,252 @@ def get_xirr(sym, trades, current_price):
     return round(r*100, 2) if r else None
 
 # ══════════════════════════════════════════════
+# PORTFOLIO TAB — CSV-BASED (data/trade_log.csv)
+# Additive, parallel to read_trades()/get_avg_buy_and_qty()/get_xirr()
+# above. Those three remain untouched and keep driving GITHUB DATA,
+# Dashboard, and SL/Target alerts from the Sheets "Trade Log" tab.
+# Everything below reads data/trade_log.csv instead, and is used ONLY
+# by the Portfolio tab writer — fully isolated from the rest of the
+# pipeline. Reuses compute_xirr() (above) rather than duplicating the
+# Newton's-method solver.
+# ══════════════════════════════════════════════
+TRADE_COLS = {
+    "symbol":   "symbol",
+    "action":   "action",
+    "quantity": "quantity",
+    "price":    "price",
+    "date":     "date",
+}
+
+def read_trades_csv():
+    """
+    Reads the master trade log from data/trade_log.csv. Mirrors
+    read_trades()'s error-handling shape (try/except + log.warning +
+    return []) so a missing/unreadable file degrades the same way a
+    missing Trade Log tab already does — no new failure behavior.
+    """
+    file_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "trade_log.csv"
+    )
+    try:
+        with open(file_path, mode="r", encoding="utf-8") as f:
+            reader = csv.DictReader(f)
+            return [{k.strip(): v.strip() for k, v in row.items() if k is not None} for row in reader]
+    except Exception as e:
+        log.warning(f"Could not read {file_path}: {e}")
+        return []
+
+def get_avg_buy_and_qty_csv(sym, trades_csv):
+    """CSV-row (dict) equivalent of get_avg_buy_and_qty() — identical
+    average-cost algorithm, only the row access differs (dict lookup
+    via TRADE_COLS instead of positional list indices)."""
+    total_cost, total_qty = 0.0, 0.0
+    for t in trades_csv:
+        trade_sym = t.get(TRADE_COLS["symbol"], "")
+        if not trade_sym or trade_sym.strip().upper() != sym:
+            continue
+        try:
+            typ   = t.get(TRADE_COLS["action"], "").strip().upper()
+            qty   = float(t.get(TRADE_COLS["quantity"], 0))
+            price = float(t.get(TRADE_COLS["price"], 0))
+            if typ == "BUY":
+                total_cost += qty * price
+                total_qty  += qty
+            elif typ == "SELL" and total_qty > 0:
+                avg = total_cost / total_qty
+                total_cost -= qty * avg
+                total_qty  -= qty
+        except (ValueError, TypeError):
+            continue
+    total_qty = max(total_qty, 0)
+    avg_buy   = round(total_cost / total_qty, 2) if total_qty > 0 else None
+    return avg_buy, total_qty
+
+def get_xirr_csv(sym, trades_csv, current_price):
+    """CSV-row (dict) equivalent of get_xirr() — same cashflow
+    construction and reuses compute_xirr() unchanged."""
+    cashflows, dates, total_qty = [], [], 0
+    for t in trades_csv:
+        trade_sym = t.get(TRADE_COLS["symbol"], "")
+        if not trade_sym or trade_sym.strip().upper() != sym:
+            continue
+        try:
+            raw = str(t.get(TRADE_COLS["date"], "")).strip()
+            dt  = None
+            for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y"]:
+                try: dt = datetime.strptime(raw, fmt).date(); break
+                except ValueError: pass
+            if not dt: continue
+            typ   = t.get(TRADE_COLS["action"], "").strip().upper()
+            qty   = float(t.get(TRADE_COLS["quantity"], 0))
+            price = float(t.get(TRADE_COLS["price"], 0))
+            if typ == "BUY":
+                cashflows.append(-qty * price); dates.append(dt); total_qty += qty
+            elif typ == "SELL":
+                cashflows.append(qty * price);  dates.append(dt); total_qty -= qty
+        except (ValueError, TypeError):
+            continue
+    if total_qty > 0 and current_price:
+        cashflows.append(total_qty * current_price)
+        dates.append(date.today())
+    if len(cashflows) < 2: return None
+    r = compute_xirr(cashflows, dates)
+    return round(r * 100, 2) if r else None
+
+def _first_buy_date_csv(sym, trades_csv):
+    """Earliest BUY date for `sym` — needed for simple Annualized
+    Return% (distinct from XIRR, which is cash-flow-weighted). No
+    existing function exposes this, so a small new helper is
+    justified rather than restructuring get_xirr_csv()."""
+    dates = []
+    for t in trades_csv:
+        trade_sym = t.get(TRADE_COLS["symbol"], "")
+        if not trade_sym or trade_sym.strip().upper() != sym:
+            continue
+        if t.get(TRADE_COLS["action"], "").strip().upper() != "BUY":
+            continue
+        raw = str(t.get(TRADE_COLS["date"], "")).strip()
+        for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y"]:
+            try:
+                dates.append(datetime.strptime(raw, fmt).date())
+                break
+            except ValueError:
+                pass
+    return min(dates) if dates else None
+
+def compute_portfolio_metrics_csv(prices):
+    """
+    Self-contained Portfolio-tab calculation. Reads data/trade_log.csv
+    directly; takes `prices` (the dict already built by
+    fetch_prices_batch() in run_portfolio_update()) as a parameter —
+    zero new yfinance calls. Touches nothing from the GITHUB DATA
+    pipeline (no `results`, `holdings`, or Sheets `trades`).
+    Returns {symbol: {shares, avg_buy, current_price, invested,
+    current_value, pnl, return_pct, xirr_pct, ann_return_pct}} for
+    every symbol with an open position (qty > 0).
+    """
+    trades_csv = read_trades_csv()
+    if not trades_csv:
+        return {}
+
+    symbols = sorted({
+        t.get(TRADE_COLS["symbol"], "").strip().upper()
+        for t in trades_csv if t.get(TRADE_COLS["symbol"])
+    })
+
+    metrics = {}
+    for sym in symbols:
+        avg_buy, qty = get_avg_buy_and_qty_csv(sym, trades_csv)
+        cmp = prices.get(sym)
+        if not qty or qty <= 0 or not cmp:
+            continue
+
+        invested      = round(avg_buy * qty, 2) if avg_buy else 0
+        current_value = round(cmp * qty, 2)
+        pnl           = round(current_value - invested, 2)
+        return_pct    = round(pnl / invested * 100, 2) if invested else None
+        xirr_pct      = get_xirr_csv(sym, trades_csv, cmp)
+
+        first_buy   = _first_buy_date_csv(sym, trades_csv)
+        ann_return  = None
+        if first_buy and return_pct is not None:
+            days_held  = max((date.today() - first_buy).days, 1)
+            ann_return = round((return_pct / 100) / days_held * 365 * 100, 2)
+
+        metrics[sym] = {
+            "shares": qty, "avg_buy": avg_buy, "current_price": cmp,
+            "invested": invested, "current_value": current_value, "pnl": pnl,
+            "return_pct": return_pct, "xirr_pct": xirr_pct, "ann_return_pct": ann_return,
+        }
+    return metrics
+
+PORTFOLIO_TAB_COL_ALIASES = {
+    "shares":         ["shares", "quantity", "qty", "volume"],
+    "avg_buy":        ["avg buy", "avg price", "average buy price", "avg buy price"],
+    "current_price":  ["current price", "cmp", "price", "today"],
+    "invested":       ["invested"],
+    "current_value":  ["value", "current value"],
+    "pnl":            ["p&l", "pnl", "profit/loss"],
+    "return_pct":     ["return%", "return %"],
+    "xirr_pct":       ["xirr", "xirr%"],
+    "ann_return_pct": ["ann ret%", "annualized return", "ann return%", "annualized return%"],
+}
+
+def write_portfolio_tab_csv(sh, metrics):
+    """
+    Writes computed Portfolio metrics as plain VALUES into whichever
+    columns already exist on the "Portfolio" worksheet, matched by
+    header alias (same self-adapting approach the earlier VLOOKUP
+    writer used) — but sourced entirely from compute_portfolio_metrics_csv(),
+    not GITHUB DATA. Reuses batch_update_safe() for the actual write,
+    same as every other tab in this file — no new batching mechanism.
+    """
+    try:
+        pws = sh.worksheet("Portfolio")
+    except Exception as e:
+        log.warning(f"Portfolio tab not found, skipping CSV-based update: {e}")
+        return
+
+    rows = pws.get_all_values()
+    if not rows or len(rows) < 2:
+        return
+
+    headers = [h.strip().lower() for h in rows[0]]
+
+    sym_col_idx = None
+    for idx, h in enumerate(headers):
+        if h in ("symbol", "ticker", "instrument"):
+            sym_col_idx = idx
+            break
+    if sym_col_idx is None:
+        log.warning("Symbol column not found in Portfolio sheet — skipping CSV-based update.")
+        return
+
+    col_indices = {}
+    for key, aliases in PORTFOLIO_TAB_COL_ALIASES.items():
+        for idx, h in enumerate(headers):
+            if h in aliases:
+                col_indices[key] = idx
+                break
+    if not col_indices:
+        log.warning("No matching Portfolio columns found — skipping CSV-based update.")
+        return
+
+    reqs = []
+    for row_num in range(2, len(rows) + 1):
+        row = rows[row_num - 1]
+        sym_val = row[sym_col_idx].strip().upper() if len(row) > sym_col_idx else ""
+        if not sym_val or sym_val in ("TOTAL", "SUM", "SUBTOTAL", "GRAND"):
+            continue
+
+        m = metrics.get(sym_val)
+        if not m:
+            continue
+
+        for key, col_idx in col_indices.items():
+            value = m.get(key)
+            if value is None:
+                continue
+            reqs.append({
+                "updateCells": {
+                    "rows": [{"values": [{"userEnteredValue": {"numberValue": value}}]}],
+                    "fields": "userEnteredValue",
+                    "range": {
+                        "sheetId": pws.id,
+                        "startRowIndex": row_num - 1, "endRowIndex": row_num,
+                        "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1,
+                    },
+                }
+            })
+
+    if reqs:
+        batch_update_safe(sh, reqs)
+        log.info(f"Portfolio tab: {len(metrics)} symbols updated from trade_log.csv")
+
+# ══════════════════════════════════════════════
 # TECHNICAL INDICATORS
 # ══════════════════════════════════════════════
+
 def fetch_technicals(sym):
     try:
         df = yf.download(
@@ -1536,6 +1781,18 @@ def run_portfolio_update(sh):
 
     write_github_data(sh, results, tab_name="GITHUB DATA")
     process_all_watchlists(sh)
+
+    # Portfolio tab — fully self-contained, computed from
+    # data/trade_log.csv + the `prices` dict already fetched above.
+    # Independent of GITHUB DATA/results/holdings/trades — touches
+    # nothing else in this function. Wrapped in try/except so a
+    # failure here can never affect GITHUB DATA/Future Buy/Dashboard,
+    # same isolation pattern process_all_watchlists() already uses.
+    try:
+        portfolio_metrics = compute_portfolio_metrics_csv(prices)
+        write_portfolio_tab_csv(sh, portfolio_metrics)
+    except Exception as e:
+        log.error(f"Portfolio (CSV) update failed (GITHUB DATA/Future Buy unaffected): {e}")
 
     changes = history_tracker.compute_todays_changes(sh, results)
     prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
