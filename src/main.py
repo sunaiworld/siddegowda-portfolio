@@ -9,13 +9,10 @@ import os
 import json
 import time
 import logging
-import statistics
 import requests
 import math
 from datetime import datetime, date
 
-import numpy as np
-import pandas as pd
 import yfinance as yf
 import gspread
 from google.oauth2.service_account import Credentials
@@ -1010,7 +1007,7 @@ def batch_update_safe(sh, requests, chunk=30):
             except gspread.exceptions.APIError as e:
                 if "429" in str(e):
                     wait = 15 * (2 ** attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
-                    print(f"[quota] 429 hit, waiting {wait}s before retry {attempt+1}/5…")
+                    log.warning(f"[quota] 429 hit, waiting {wait}s before retry {attempt+1}/5…")
                     time.sleep(wait)
                 else:
                     raise
@@ -1416,137 +1413,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     return ws
 
 # ══════════════════════════════════════════════
-# WRITE GROWTH SCREENER TAB
-# ══════════════════════════════════════════════
-def write_growth_screener(sh, all_out):
-    ACTION_COLORS = {
-        "STRONG BUY":  ("ffffff", "00c853"),
-        "BUY":         ("ffffff", "0b8043"),
-        "ACCUMULATE":  ("0b8043", "d9ead3"),
-        "HOLD":        ("7f4f00", "fff2cc"),
-        "WATCH":       ("7f4f00", "fce8b2"),
-        "AVOID":       ("c62828", "fde9d9"),
-        "SELL":        ("ffffff", "cc0000"),
-    }
-    growth = []
-
-    for row in all_out:
-        if not row or not row[0]: continue
-        sym    = row[0].strip()
-        action = row[23].strip() if len(row) > 23 else ""
-        cap    = row[35].strip() if len(row) > 35 else ""
-
-        def sf(v):
-            try: return float(str(v).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip())
-            except: return None
-
-        tot_sc = sf(row[22] if len(row) > 22 else "")
-        q_sc   = sf(row[19] if len(row) > 19 else "")
-        v_sc   = sf(row[20] if len(row) > 20 else "")
-        t_sc   = sf(row[21] if len(row) > 21 else "")
-        rsi    = row[28] if len(row) > 28 else ""
-        trend  = row[33] if len(row) > 33 else ""
-
-        growth.append([
-            sym, cap,
-            row[9]  if len(row) > 9  else "",   # PE
-            row[14] if len(row) > 14 else "",   # ROE%
-            row[16] if len(row) > 16 else "",   # Debt/Eq
-            row[17] if len(row) > 17 else "",   # Rev Growth%
-            row[13] if len(row) > 13 else "",   # Div Yield%
-            row[8]  if len(row) > 8  else "",   # Buy 20% Less
-            q_sc or "", v_sc or "", t_sc or "", tot_sc or "",
-            action,
-            row[24] if len(row) > 24 else "",   # Strengths
-            row[25] if len(row) > 25 else "",   # Weaknesses
-            rsi, trend,
-        ])
-
-    growth.sort(key=lambda x: float(x[11]) if x[11] != "" else 0, reverse=True)
-
-    try:
-        gsw = sh.worksheet("Growth Screener")
-        gsw.clear()
-    except:
-        gsw = sh.add_worksheet("Growth Screener", rows=200, cols=18)
-
-    gsw.append_row([
-        "Symbol", "Cap Type",
-        "PE", "ROE%", "Debt/Eq", "Rev Growth%", "Div Yield%", "Buy 20% Less",
-        "Quality", "Valuation", "Timing", "Total Score",
-        "Final Action",
-        "Strengths", "Weaknesses",
-        "RSI", "Trend"
-    ])
-    if growth: gsw.append_rows(growth)
-
-    reqs = [{"repeatCell": {
-        "range": {"sheetId": gsw.id, "startRowIndex": 0, "endRowIndex": 1,
-                  "startColumnIndex": 0, "endColumnIndex": 17},
-        "cell": {"userEnteredFormat": {
-            "backgroundColor": hex_rgb("0d1b2a"),
-            "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
-            "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"
-        }},
-        "fields": "userEnteredFormat"
-    }}]
-    reqs.append({"updateSheetProperties": {
-        "properties": {"sheetId": gsw.id, "gridProperties": {"frozenRowCount": 1, "frozenColumnCount": 1}},
-        "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
-    }})
-    gs_widths = [80, 80, 50, 55, 60, 70, 65, 80, 55, 60, 55, 60, 90, 220, 220, 50, 90]
-    reqs += [{"updateDimensionProperties": {
-        "range": {"sheetId": gsw.id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
-        "properties": {"pixelSize": w}, "fields": "pixelSize"
-    }} for i, w in enumerate(gs_widths)]
-
-    for i, row in enumerate(growth):
-        rn  = i + 1
-        alt = "f8f9fa" if i % 2 == 0 else "ffffff"
-        action = str(row[12])
-        reqs.append({"repeatCell": {
-            "range": {"sheetId": gsw.id, "startRowIndex": rn, "endRowIndex": rn + 1,
-                      "startColumnIndex": 0, "endColumnIndex": 17},
-            "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
-            "fields": "userEnteredFormat.backgroundColor"
-        }})
-
-        if action in ACTION_COLORS:
-            fg_a, bg_a = ACTION_COLORS[action]
-            reqs.append(color_cell_req(gsw.id, rn, 12, bg_a, fg_a))
-
-        cap = str(row[1])
-        if   cap == "Large Cap": reqs.append(color_cell_req(gsw.id, rn, 1, "d9ead3", "0b8043"))
-        elif cap == "Mid Cap":   reqs.append(color_cell_req(gsw.id, rn, 1, "d9eaf7", "1565c0"))
-        elif cap == "Small Cap": reqs.append(color_cell_req(gsw.id, rn, 1, "fde9d9", "c62828"))
-
-        try:
-            rsi_val = float(str(row[15]).replace("%", ""))
-            if   rsi_val < 35: reqs.append(color_cell_req(gsw.id, rn, 15, "d9ead3", "0b8043"))
-            elif rsi_val > 70: reqs.append(color_cell_req(gsw.id, rn, 15, "fde9d9", "c62828"))
-        except: pass
-
-        try:
-            tot = float(str(row[11]))
-            if   tot >= 65: reqs.append(color_cell_req(gsw.id, rn, 11, "00c853", "ffffff"))
-            elif tot >= 50: reqs.append(color_cell_req(gsw.id, rn, 11, "d9ead3", "0b8043"))
-            elif tot >= 35: reqs.append(color_cell_req(gsw.id, rn, 11, "fff2cc", "7f4f00"))
-            else:           reqs.append(color_cell_req(gsw.id, rn, 11, "fde9d9", "c62828"))
-        except: pass
-
-    for col_idx in [13, 14]:
-        reqs.append({"repeatCell": {
-            "range": {"sheetId": gsw.id, "startRowIndex": 1, "endRowIndex": len(growth) + 1,
-                      "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
-            "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP"}},
-            "fields": "userEnteredFormat.wrapStrategy"
-        }})
-
-    batch_update_safe(sh, reqs)
-    log.info(f"Growth Screener: {len(growth)} stocks")
-    return growth
-
-# ══════════════════════════════════════════════
 # WATCHLIST PROCESSING (Future Buy, and any future
 # watchlist added to WATCHLISTS). Market-data only —
 # no qty, no buy price, no purchase date, no XIRR/SL/
@@ -1625,8 +1491,9 @@ def run_portfolio_update(sh):
     fund_cache.save_cache(sh, fc_cache)
 
     holdings, portfolio_live_value = {}, 0.0
-    for sym in symbols:   
-        avg_buy, qty = get_avg_buy_and_qty(sym, trades)
+    holdings_map = {sym: get_avg_buy_and_qty(sym, trades) for sym in symbols}
+    for sym in symbols:
+        avg_buy, qty = holdings_map[sym]
         cmp = prices.get(sym)
         if qty > 0 and cmp and cmp > 0:
             holdings[sym] = (qty, cmp, avg_buy)
@@ -1644,7 +1511,7 @@ def run_portfolio_update(sh):
             continue
 
         f, tech, rev_gr = fund_map.get(sym, {}), tech_map.get(sym, {}), rev_map.get(sym)
-        avg_buy, qty = get_avg_buy_and_qty(sym, trades)
+        avg_buy, qty = holdings_map[sym]
         xirr_val = get_xirr(sym, trades, cmp)
 
         row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val)
@@ -1669,14 +1536,6 @@ def run_portfolio_update(sh):
 
     write_github_data(sh, results, tab_name="GITHUB DATA")
     process_all_watchlists(sh)
-    # ── TEMP DEBUG LOGGING — remove after root cause confirmed ──
-    log.info(f"[DEBUG] len(symbols)={len(symbols)} len(results)={len(results)} "
-              f"len(holdings)={len(holdings)} len(fund_map)={len(fund_map)} len(prices)={len(prices)}")
-    log.info(f"[DEBUG] holdings keys (first 5): {list(holdings.keys())[:5]}")
-    log.info(f"[DEBUG] results symbols (first 5): {[r[GITHUB_DATA_COLS['symbol']] for r in results[:5]]}")
-    log.info(f"[DEBUG] fund_map keys (first 5): {list(fund_map.keys())[:5]}")
-    log.info(f"[DEBUG] trades row count: {len(trades)}, first trade row: {trades[0] if trades else 'EMPTY'}")
-    # ── END TEMP DEBUG LOGGING ──
 
     changes = history_tracker.compute_todays_changes(sh, results)
     prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
