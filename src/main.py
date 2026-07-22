@@ -994,6 +994,84 @@ def write_portfolio_tab_csv(sh, metrics):
         batch_update_safe(sh, reqs)
         log.info(f"Portfolio tab: {len(metrics)} symbols updated from trade_log.csv")
 
+def apply_portfolio_formatting(sh):
+    """
+    Presentation-only — makes the Portfolio worksheet visually
+    consistent with GITHUB DATA. Writes zero cell values; only
+    header style, row banding, freeze panes, and column widths.
+
+    Column widths are matched by HEADER NAME (not position) against
+    GITHUB_DATA_COL_WIDTHS — the same dict write_github_data() already
+    uses as its single source of truth, so both sheets stay in sync
+    from one place, with no live Sheets-metadata read needed (GITHUB
+    DATA's rendered widths always equal this dict's values, since
+    write_github_data() reapplies them every run).
+
+    Only Portfolio columns whose header text also appears in GITHUB
+    DATA get a width applied; columns unique to Portfolio (Shares,
+    Invested, Signal, etc.) keep their existing width untouched —
+    there's no "corresponding column" in GITHUB DATA to copy for those.
+    """
+    try:
+        pws = sh.worksheet("Portfolio")
+    except Exception as e:
+        log.warning(f"Portfolio tab not found, skipping formatting: {e}")
+        return
+
+    rows = pws.get_all_values()
+    if not rows:
+        return
+    headers = [h.strip() for h in rows[0]]
+    num_cols = len(headers)
+    num_data_rows = len(rows) - 1
+
+    reqs = []
+
+    # Header style — identical to write_github_data()'s header block
+    reqs.append({"repeatCell": {
+        "range": {"sheetId": pws.id, "startRowIndex": 0, "endRowIndex": 1,
+                  "startColumnIndex": 0, "endColumnIndex": num_cols},
+        "cell": {"userEnteredFormat": {
+            "backgroundColor": hex_rgb("0d1b2a"),
+            "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
+            "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"
+        }},
+        "fields": "userEnteredFormat"
+    }})
+
+    # Freeze — same frozenRowCount/frozenColumnCount as GITHUB DATA
+    reqs.append({"updateSheetProperties": {
+        "properties": {"sheetId": pws.id, "gridProperties": {"frozenRowCount": 1, "frozenColumnCount": 1}},
+        "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
+    }})
+
+    # Column widths — matched by header name against GITHUB_DATA_COL_WIDTHS
+    name_to_key = {v.strip().lower(): k for k, v in GITHUB_DATA_HEADER_NAMES.items()}
+    for idx, h in enumerate(headers):
+        key = name_to_key.get(h.strip().lower())
+        if key is not None:
+            width = GITHUB_DATA_COL_WIDTHS.get(key)
+            if width:
+                reqs.append({"updateDimensionProperties": {
+                    "range": {"sheetId": pws.id, "dimension": "COLUMNS", "startIndex": idx, "endIndex": idx + 1},
+                    "properties": {"pixelSize": width}, "fields": "pixelSize"
+                }})
+
+    # Alternating row colors — same pattern as write_github_data()
+    if num_data_rows > 0:
+        for i in range(num_data_rows):
+            rn  = i + 1
+            alt = "f8f9fa" if i % 2 == 0 else "ffffff"
+            reqs.append({"repeatCell": {
+                "range": {"sheetId": pws.id, "startRowIndex": rn, "endRowIndex": rn + 1,
+                          "startColumnIndex": 0, "endColumnIndex": num_cols},
+                "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
+                "fields": "userEnteredFormat.backgroundColor"
+            }})
+
+    batch_update_safe(sh, reqs)
+    log.info("Portfolio tab: formatting applied (GITHUB DATA-consistent)")
+
 # ══════════════════════════════════════════════
 # TECHNICAL INDICATORS
 # ══════════════════════════════════════════════
@@ -1707,10 +1785,10 @@ def process_all_watchlists(sh):
 def run_portfolio_update(sh):
     """
     Runs the full daily pipeline: fetch prices/fundamentals/technicals,
-    score every symbol, write GITHUB DATA + Growth Screener + all
-    WATCHLISTS tabs. Returns everything the caller needs (GitHub Actions
-    cron AND the /refresh bot command both call this — single source
-    of truth, no duplicated pipeline logic).
+    score every symbol, write GITHUB DATA + all WATCHLISTS tabs.
+    Returns everything the caller needs (GitHub Actions cron AND the
+    /refresh bot command both call this — single source of truth, no
+    duplicated pipeline logic).
     """
     symbols = read_symbols(sh)
     if not symbols:
@@ -1791,6 +1869,7 @@ def run_portfolio_update(sh):
     try:
         portfolio_metrics = compute_portfolio_metrics_csv(prices)
         write_portfolio_tab_csv(sh, portfolio_metrics)
+        apply_portfolio_formatting(sh)
     except Exception as e:
         log.error(f"Portfolio (CSV) update failed (GITHUB DATA/Future Buy unaffected): {e}")
 
