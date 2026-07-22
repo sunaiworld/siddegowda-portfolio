@@ -19,6 +19,9 @@ import pandas as pd
 import yfinance as yf
 import gspread
 from google.oauth2.service_account import Credentials
+import fund_cache
+import history_tracker
+import portfolio_analytics
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -45,6 +48,8 @@ SLEEP_BATCH = 8
 SLEEP_INFO  = 3
 SL_PCT      = 0.07
 TARGET_PCT  = 0.20
+FUNDAMENTALS_CACHE_DAYS = 7
+
 
 # ══════════════════════════════════════════════
 # WATCHLISTS
@@ -675,35 +680,21 @@ def read_symbols(sh):
 # ══════════════════════════════════════════════
 # READ TRADES
 # ══════════════════════════════════════════════
-def read_trades(sh=None):
-    import csv
-    file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "trade_log.csv")
+def read_trades(sh):
     try:
-        with open(file_path, mode="r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            out = []
-            for row in reader:
-                if not row:
-                    continue
-                trimmed_row = {k.strip(): v.strip() for k, v in row.items() if k is not None}
-                out.append(trimmed_row)
-            return out
-    except Exception as e:
-        log.warning(f"Could not read local trade log {file_path}: {e}")
+        return sh.worksheet("Trade Log").get_all_values()[1:]
+    except:
         return []
 
 def get_avg_buy_and_qty(sym, trades):
     total_cost, total_qty = 0.0, 0.0
     for t in trades:
-        trade_sym = t.get(TRADE_COLS["symbol"])
-        if not trade_sym:
-            continue
-        if trade_sym.upper() != sym:
-            continue
+        if not t[0]: continue
+        if t[0].strip().upper() != sym: continue
         try:
-            typ   = t.get(TRADE_COLS["action"], "").upper()
-            qty   = float(t.get(TRADE_COLS["quantity"], 0))
-            price = float(t.get(TRADE_COLS["price"], 0))
+            typ   = t[2].strip().upper()
+            qty   = float(t[3])
+            price = float(t[4])
             if typ == "BUY":
                 total_cost += qty * price
                 total_qty  += qty
@@ -737,21 +728,18 @@ def compute_xirr(cashflows, dates):
 def get_xirr(sym, trades, current_price):
     cashflows, dates, total_qty = [], [], 0
     for t in trades:
-        trade_sym = t.get(TRADE_COLS["symbol"])
-        if not trade_sym:
-            continue
-        if trade_sym.upper() != sym:
-            continue
+        if not t[0]: continue
+        if t[0].strip().upper() != sym: continue
         try:
-            raw = str(t.get(TRADE_COLS["date"], "")).strip()
+            raw = str(t[1]).strip()
             dt  = None
             for fmt in ["%d-%m-%Y","%Y-%m-%d","%d/%m/%Y","%d-%b-%Y"]:
                 try: dt = datetime.strptime(raw, fmt).date(); break
                 except: pass
             if not dt: continue
-            typ   = t.get(TRADE_COLS["action"], "").upper()
-            qty   = float(t.get(TRADE_COLS["quantity"], 0))
-            price = float(t.get(TRADE_COLS["price"], 0))
+            typ   = t[2].strip().upper()
+            qty   = float(t[3])
+            price = float(t[4])
             if typ == "BUY":
                 cashflows.append(-qty*price); dates.append(dt); total_qty += qty
             elif typ == "SELL":
@@ -829,7 +817,59 @@ def fetch_technicals(sym):
     except Exception as e:
         log.warning(f"  technicals failed {sym}: {e}")
         return {}
+# ══════════════════════════════════════════════
+# TECHNICAL SETUP CLASSIFICATION
+# Informational only — reuses fields already returned by
+# fetch_technicals(). Does not read metrics{}, does not touch
+# compute_unified_score(), Total Score, or Final Action anywhere.
+# No new fetch, no new API call.
+# ══════════════════════════════════════════════
+def classify_technical_setup(tech, cmp):
+    sma50  = tech.get("sma50")
+    sma200 = tech.get("sma200")
+    ema20  = tech.get("ema20")
+    rsi    = tech.get("rsi")
+    vol_spike   = tech.get("vol_spike")
+    trend       = tech.get("trend", "")
+    day_chg_pct = tech.get("day_chg_pct")
 
+    if not sma50 or not ema20 or rsi is None or not cmp:
+        return "⚪ Unknown"
+
+    dist_ema20 = (cmp - ema20) / ema20 * 100 if ema20 else 0
+    dist_sma50 = (cmp - sma50) / sma50 * 100 if sma50 else 0
+    above_sma200 = (sma200 is not None and sma200 != "" and cmp > sma200)
+
+    day_chg_val = day_chg_pct if isinstance(day_chg_pct, (int, float)) else None
+    vol_val     = vol_spike if isinstance(vol_spike, (int, float)) else None
+
+    # Priority 2: Breakout — checked before the generic Volatile
+    # trigger so a genuine high-volume breakout isn't swallowed by
+    # the broader volatility check that shares the same vol_spike
+    # threshold.
+    if (trend == "Strong Uptrend" and vol_val is not None and vol_val >= 2.0
+            and rsi is not None and 55 <= rsi <= 70 and cmp > sma50):
+        return "🟣 Breakout"
+
+    if (vol_val is not None and vol_val >= 2.0) or (day_chg_val is not None and abs(day_chg_val) >= 4):
+        return "🟠 Volatile"
+
+    if trend in ("Strong Uptrend", "Uptrend") and rsi is not None and rsi >= 70 and dist_ema20 >= 8:
+        return "🔴 Extended"
+
+    if above_sma200 and cmp < sma50 and rsi is not None and 35 <= rsi <= 55:
+        return "🔵 Pullback"
+
+    if (abs(dist_ema20) <= 3 and abs(dist_sma50) <= 3
+            and rsi is not None and 45 <= rsi <= 55
+            and vol_val is not None and vol_val < 1.5):
+        return "🟢 Tight Base"
+
+    if trend == "Sideways" or (abs(dist_sma50) <= 6 and rsi is not None and 40 <= rsi <= 60):
+        return "🟡 Consolidating"
+
+    return "🟡 Consolidating"
+       
 # ══════════════════════════════════════════════
 # FETCH FUNDAMENTALS
 # ══════════════════════════════════════════════
@@ -957,10 +997,23 @@ def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
         }
     }
 
-def batch_update_safe(sh, requests, chunk=100):
+def batch_update_safe(sh, requests, chunk=30):
+    """Send batchUpdate requests in small chunks with retry on 429 quota errors."""
+    import gspread.exceptions
     for i in range(0, len(requests), chunk):
-        sh.batch_update({"requests": requests[i:i + chunk]})
-        time.sleep(0.2)
+        slice_ = requests[i:i + chunk]
+        for attempt in range(5):  # up to 5 retries
+            try:
+                sh.batch_update({"requests": slice_})
+                time.sleep(1.5)   # 1.5 s between every chunk to stay under quota
+                break
+            except gspread.exceptions.APIError as e:
+                if "429" in str(e):
+                    wait = 15 * (2 ** attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
+                    print(f"[quota] 429 hit, waiting {wait}s before retry {attempt+1}/5…")
+                    time.sleep(wait)
+                else:
+                    raise
 
 # ══════════════════════════════════════════════
 # ROW COLUMN MAP — mirrors the list built in build_result_row().
@@ -968,26 +1021,54 @@ def batch_update_safe(sh, requests, chunk=100):
 # without re-deriving indices.
 # ══════════════════════════════════════════════
 GITHUB_DATA_COLS = {
-    "symbol": 0, "sector": 1, "industry": 2, "archetype": 3, "cmp": 4,
-    "high52": 5, "low52": 6, "day_chg_pct": 7, "pct_high": 8,
-    "pe": 9, "eps": 10, "bv": 11, "pb": 12,
-    "div": 13, "roe": 14, "roa": 15, "debt_eq": 16,
+    "symbol": 0, "sector": 1, "industry": 2, "archetype": 3,
+    "low52": 4, "high52": 5, "day_chg_pct": 6, "pct_high": 7,
+    "pe": 8, "eps": 9, "bv": 10, "pb": 11,
+    "div": 12,
+    "rsi": 13,
+    "roe": 14, "roa": 15, "debt_eq": 16,
     "rev_growth": 17, "beta": 18,
-    "quality": 19, "valuation": 20, "timing": 21, "total": 22,
-    "action": 23, "strengths": 24, "weaknesses": 25,
-    "technical_setup": 26,
-    "xirr": 27, "updated": 28,
-    "rsi": 29, "sma50": 30, "sma200": 31, "ema20": 32, "vol_spike": 33, "trend": 34,
-    "mcap": 35, "cap_type": 36,
-    "qty": 37, "avg_buy": 38,
+    "strengths": 19, "weaknesses": 20, "technical_setup": 21,
+    "action": 22, "trend": 23,
+    "quality": 24, "valuation": 25, "timing": 26, "total": 27,
+    "vol_spike": 28,
+    "mcap": 29, "cap_type": 30,
 }
 
-TRADE_COLS = {
-    "symbol": "symbol",
-    "action": "action",
-    "quantity": "quantity",
-    "price": "price",
-    "date": "date",
+# Header text per column key — headers[] is built FROM this dict via
+# GITHUB_DATA_COLS's own indices in write_github_data(), so header
+# position can never drift out of sync with the row layout again.
+GITHUB_DATA_HEADER_NAMES = {
+    "symbol": "Symbol", "sector": "Sector", "industry": "Industry", "archetype": "Archetype",
+    "low52": "52W Low", "high52": "52W High", "day_chg_pct": "Day Chg%", "pct_high": "Buy 20% Less",
+    "pe": "PE", "eps": "EPS", "bv": "Book Value", "pb": "P/B",
+    "div": "Div Yield%",
+    "rsi": "RSI",
+    "roe": "ROE%", "roa": "ROA%", "debt_eq": "Debt/Equity",
+    "rev_growth": "Rev Growth%", "beta": "Beta",
+    "strengths": "Strengths", "weaknesses": "Weaknesses",
+    "technical_setup": "Technical Setup",
+    "action": "Final Action", "trend": "Trend",
+    "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
+    "vol_spike": "Vol Spike",
+    "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
+}
+
+# Column pixel width per key — same self-syncing pattern as headers.
+GITHUB_DATA_COL_WIDTHS = {
+    "symbol": 70, "sector": 75, "industry": 90, "archetype": 80,
+    "low52": 55, "high52": 55, "day_chg_pct": 60, "pct_high": 65,
+    "pe": 45, "eps": 45, "bv": 55, "pb": 45,
+    "div": 50,
+    "rsi": 45,
+    "roe": 50, "roa": 50, "debt_eq": 55,
+    "rev_growth": 55, "beta": 45,
+    "strengths": 200, "weaknesses": 200,
+    "technical_setup": 110,
+    "action": 90, "trend": 90,
+    "quality": 55, "valuation": 60, "timing": 55, "total": 55,
+    "vol_spike": 55,
+    "mcap": 65, "cap_type": 65,
 }
 
 # ══════════════════════════════════════════════
@@ -997,7 +1078,7 @@ TRADE_COLS = {
 # scoring, and formatting identical everywhere.
 # xirr_val is left as "" for watchlist symbols (no holdings).
 # ══════════════════════════════════════════════
-def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", qty_val="", avg_buy_val=""):
+def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
     sector   = f.get("sector", "")
     industry = f.get("industry", "")
     high52   = f.get("high52")
@@ -1017,9 +1098,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", qty_val="", avg_buy
     mcap_fmt         = indian_cr(mcap_cr) if mcap_cr else ""
 
     rsi         = tech.get("rsi", "")
-    sma50       = tech.get("sma50", "")
     sma200      = tech.get("sma200", "")
-    ema20       = tech.get("ema20", "")
     vol_spike   = tech.get("vol_spike", "")
     trend       = tech.get("trend", "")
     cross       = tech.get("cross", "")
@@ -1045,78 +1124,50 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", qty_val="", avg_buy
         sym, archetype, metrics
     )
 
-    strengths_str  = " | ".join(strengths)
-    weaknesses_str = " | ".join(weaknesses)
-
+    strengths_str   = " | ".join(strengths)
+    weaknesses_str  = " | ".join(weaknesses)
     technical_setup = classify_technical_setup(tech, cmp)
 
-    row = [
-        sym, sector, industry, archetype, cmp,
-        high52 or "", low52 or "", day_chg_pct, pct_high_display,
-        f.get("pe") or "", f.get("eps") or "", f.get("bv") or "", f.get("pb") or "",
-        f.get("div") or "", f.get("roe") or "", f.get("roa") or "", f.get("debt_eq") or "",
-        rev_gr or "", f.get("beta") or "",
-        q_sc, v_sc, t_sc, tot_sc,
-        final_action,
-        strengths_str, weaknesses_str,
-        technical_setup,
-        xirr_val if xirr_val else "",
-        datetime.now().strftime("%d-%b-%Y %H:%M"),
-        rsi, sma50, sma200, ema20, vol_spike, trend,
-        mcap_fmt, cap_type,
-        qty_val if qty_val is not None and qty_val != "" else "",
-        avg_buy_val if avg_buy_val is not None and avg_buy_val != "" else ""
-    ]
+    # Row is built BY KEY via GITHUB_DATA_COLS, not by position in a
+    # literal list — reordering the columns is now a one-line change
+    # to GITHUB_DATA_COLS, nothing here needs to change to match.
+    C = GITHUB_DATA_COLS
+    row = [""] * len(C)
+    row[C["symbol"]]          = sym
+    row[C["sector"]]          = sector
+    row[C["industry"]]        = industry
+    row[C["archetype"]]       = archetype
+    row[C["low52"]]           = low52 or ""
+    row[C["high52"]]          = high52 or ""
+    row[C["day_chg_pct"]]     = day_chg_pct
+    row[C["pct_high"]]        = pct_high_display
+    row[C["pe"]]              = f.get("pe") or ""
+    row[C["eps"]]             = f.get("eps") or ""
+    row[C["bv"]]              = f.get("bv") or ""
+    row[C["pb"]]              = f.get("pb") or ""
+    row[C["div"]]             = f.get("div") or ""
+    row[C["rsi"]]             = rsi
+    row[C["roe"]]             = f.get("roe") or ""
+    row[C["roa"]]             = f.get("roa") or ""
+    row[C["debt_eq"]]         = f.get("debt_eq") or ""
+    row[C["rev_growth"]]      = rev_gr or ""
+    row[C["beta"]]            = f.get("beta") or ""
+    row[C["strengths"]]       = strengths_str
+    row[C["weaknesses"]]      = weaknesses_str
+    row[C["technical_setup"]] = technical_setup
+    row[C["action"]]          = final_action
+    row[C["quality"]]         = q_sc
+    row[C["valuation"]]       = v_sc
+    row[C["timing"]]          = t_sc
+    row[C["total"]]           = tot_sc
+    row[C["vol_spike"]]       = vol_spike
+    row[C["trend"]]           = trend
+    row[C["mcap"]]            = mcap_fmt
+    row[C["cap_type"]]        = cap_type
+
     return row, archetype, tot_sc, final_action
 def clean_row(row):
     return [("" if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v) for v in row]
-# ══════════════════════════════════════════════
-# TECHNICAL SETUP CLASSIFIER
-# ══════════════════════════════════════════════
-def classify_technical_setup(tech, cmp):
-    sma50       = tech.get("sma50")
-    sma200      = tech.get("sma200")
-    ema20       = tech.get("ema20")
-    rsi         = tech.get("rsi")
-    vol_spike   = tech.get("vol_spike")
-    trend       = tech.get("trend", "")
-    day_chg_pct = tech.get("day_chg_pct")
-
-    if not sma50 or not ema20 or rsi is None or not cmp:
-        return "⚪ Unknown"
-
-    dist_ema20   = (cmp - ema20) / ema20 * 100 if ema20 else 0
-    dist_sma50   = (cmp - sma50) / sma50 * 100 if sma50 else 0
-    above_sma200 = (sma200 is not None and sma200 != "" and cmp > sma200)
-
-    day_chg_val = day_chg_pct if isinstance(day_chg_pct, (int, float)) else None
-    vol_val     = vol_spike   if isinstance(vol_spike,   (int, float)) else None
-
-    # Breakout checked before generic Volatile so a high-volume breakout
-    # isn't swallowed by the broader volatility check.
-    if (trend == "Strong Uptrend" and vol_val is not None and vol_val >= 2.0
-            and rsi is not None and 55 <= rsi <= 70 and cmp > sma50):
-        return "🟣 Breakout"
-
-    if (vol_val is not None and vol_val >= 2.0) or (day_chg_val is not None and abs(day_chg_val) >= 4):
-        return "🟠 Volatile"
-
-    if trend in ("Strong Uptrend", "Uptrend") and rsi is not None and rsi >= 70 and dist_ema20 >= 8:
-        return "🔴 Extended"
-
-    if above_sma200 and cmp < sma50 and rsi is not None and 35 <= rsi <= 55:
-        return "🔵 Pullback"
-
-    if (abs(dist_ema20) <= 3 and abs(dist_sma50) <= 3
-            and rsi is not None and 45 <= rsi <= 55
-            and vol_val is not None and vol_val < 1.5):
-        return "🟢 Tight Base"
-
-    if trend == "Sideways" or (abs(dist_sma50) <= 6 and rsi is not None and 40 <= rsi <= 60):
-        return "🟡 Consolidating"
-
-    return "🟡 Consolidating"
-
 # ══════════════════════════════════════════════
 # WRITE A GITHUB-DATA-STYLE TAB
 # Generic writer reused for "GITHUB DATA" and any
@@ -1124,35 +1175,6 @@ def classify_technical_setup(tech, cmp):
 # sorting-ready columns, search/filter-friendly headers,
 # styling, and coloring rules.
 # ══════════════════════════════════════════════
-GITHUB_DATA_HEADER_NAMES = {
-    "symbol": "Symbol", "sector": "Sector", "industry": "Industry", "archetype": "Archetype", "cmp": "CMP",
-    "high52": "52W High", "low52": "52W Low", "day_chg_pct": "Day Chg%", "pct_high": "Buy 20% Less",
-    "pe": "PE", "eps": "EPS", "bv": "Book Value", "pb": "P/B",
-    "div": "Div Yield%", "roe": "ROE%", "roa": "ROA%", "debt_eq": "Debt/Equity",
-    "rev_growth": "Rev Growth%", "beta": "Beta",
-    "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
-    "action": "Final Action", "strengths": "Strengths", "weaknesses": "Weaknesses",
-    "technical_setup": "Technical Setup",
-    "xirr": "XIRR%", "updated": "Updated",
-    "rsi": "RSI", "sma50": "SMA 50", "sma200": "SMA 200", "ema20": "EMA 20", "vol_spike": "Vol Spike", "trend": "Trend",
-    "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
-    "qty": "Quantity", "avg_buy": "Avg Buy Price",
-}
-
-GITHUB_DATA_COL_WIDTHS = {
-    "symbol": 70, "sector": 75, "industry": 90, "archetype": 80, "cmp": 55,
-    "high52": 55, "low52": 55, "day_chg_pct": 55, "pct_high": 65,
-    "pe": 45, "eps": 45, "bv": 55, "pb": 45,
-    "div": 50, "roe": 50, "roa": 50, "debt_eq": 55,
-    "rev_growth": 55, "beta": 45,
-    "quality": 55, "valuation": 60, "timing": 55, "total": 55,
-    "action": 90, "strengths": 200, "weaknesses": 200,
-    "technical_setup": 110,
-    "xirr": 55, "updated": 90,
-    "rsi": 45, "sma50": 55, "sma200": 55, "ema20": 55, "vol_spike": 55, "trend": 90,
-    "mcap": 65, "cap_type": 65,
-    "qty": 55, "avg_buy": 65,
-}
 
 TECHNICAL_SETUP_COLORS = {
     "🟣 Breakout":      ("e1d5f7", "6a1b9a"),
@@ -1172,6 +1194,7 @@ TREND_COLORS = {
     "Strong Downtrend": ("cc0000", "ffffff"),
 }
 
+
 def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     C = GITHUB_DATA_COLS
     num_cols = len(C)
@@ -1182,6 +1205,8 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     except:
         ws = sh.add_worksheet(tab_name, rows=300, cols=num_cols)
 
+    # Headers and widths assembled BY KEY from GITHUB_DATA_COLS — the
+    # only place column order is ever defined. Nothing else can drift.
     headers = [""] * num_cols
     widths  = [70] * num_cols
     for key, idx in C.items():
@@ -1232,6 +1257,14 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         "SELL":        ("cc0000", "ffffff"),
     }
 
+    def sf(row, key):
+        idx = C[key]
+        try:
+            v = str(row[idx]).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip()
+            return float(v) if len(row) > idx and v else None
+        except:
+            return None
+
     for i, row in enumerate(all_out):
         rn  = i + 1
         alt = "f8f9fa" if i % 2 == 0 else "ffffff"
@@ -1242,36 +1275,28 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             "fields": "userEnteredFormat.backgroundColor"
         }})
 
-        def sf(key):
-            idx = C[key]
-            try:
-                v = str(row[idx]).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip()
-                return float(v) if len(row) > idx and v else None
-            except:
-                return None
-
         cap       = row[C["cap_type"]].strip() if len(row) > C["cap_type"] else ""
         action    = row[C["action"]].strip() if len(row) > C["action"] else ""
+        tech_set  = row[C["technical_setup"]].strip() if len(row) > C["technical_setup"] else ""
         trend_val = row[C["trend"]].strip() if len(row) > C["trend"] else ""
 
-        pct      = sf("pct_high")
-        day_chg  = sf("day_chg_pct")
-        rsi_v    = sf("rsi")
-        q_sc     = sf("quality")
-        v_sc     = sf("valuation")
-        t_sc     = sf("timing")
-        tot_sc   = sf("total")
-
-        pe_v     = sf("pe")
-        eps_v    = sf("eps")
-        pb_v     = sf("pb")
-        div_v    = sf("div")
-        roe_v    = sf("roe")
-        roa_v    = sf("roa")
-        debt_v   = sf("debt_eq")
-        growth_v = sf("rev_growth")
-        beta_v   = sf("beta")
-        vol_v    = sf("vol_spike")
+        pct    = sf(row, "pct_high")
+        day_chg = sf(row, "day_chg_pct")
+        rsi_v  = sf(row, "rsi")
+        pe_v   = sf(row, "pe")
+        eps_v  = sf(row, "eps")
+        pb_v   = sf(row, "pb")
+        div_v  = sf(row, "div")
+        roe_v  = sf(row, "roe")
+        roa_v  = sf(row, "roa")
+        debt_v = sf(row, "debt_eq")
+        growth_v = sf(row, "rev_growth")
+        beta_v = sf(row, "beta")
+        vol_v  = sf(row, "vol_spike")
+        q_sc   = sf(row, "quality")
+        v_sc   = sf(row, "valuation")
+        t_sc   = sf(row, "timing")
+        tot_sc = sf(row, "total")
 
         # ── Cap Type family: Symbol, Mkt Cap Cr, Cap Type ──
         if cap == "Large Cap":       cb, cf = "d9ead3", "0b8043"
@@ -1288,32 +1313,11 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 
         # ── Day Chg% ──
         if day_chg is not None:
-            if day_chg > 0:
-                reqs.append({
-                    "repeatCell": {
-                        "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn+1,
-                                  "startColumnIndex": C["day_chg_pct"], "endColumnIndex": C["day_chg_pct"]+1},
-                        "cell": {"userEnteredFormat": {
-                            "backgroundColor": hex_rgb("d9ead3"),
-                            "textFormat": {"foregroundColor": hex_rgb("0b8043"), "bold": True}
-                        }},
-                        "fields": "userEnteredFormat(backgroundColor,textFormat)"
-                    }
-                })
-            elif day_chg < 0:
-                reqs.append({
-                    "repeatCell": {
-                        "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn+1,
-                                  "startColumnIndex": C["day_chg_pct"], "endColumnIndex": C["day_chg_pct"]+1},
-                        "cell": {"userEnteredFormat": {
-                            "backgroundColor": hex_rgb("fde9d9"),
-                            "textFormat": {"foregroundColor": hex_rgb("c62828"), "bold": True}
-                        }},
-                        "fields": "userEnteredFormat(backgroundColor,textFormat)"
-                    }
-                })
+            reqs.append(color_cell_req(ws.id, rn, C["day_chg_pct"], "d9ead3", "0b8043") if day_chg > 0
+                        else color_cell_req(ws.id, rn, C["day_chg_pct"], "fde9d9", "c62828") if day_chg < 0
+                        else color_cell_req(ws.id, rn, C["day_chg_pct"], "f1f1f1", "666666"))
 
-        # ── Buy 20% Less ──
+        # ── Buy 20% Less (pct from 52W high) ──
         if pct is not None:
             reqs.append(color_cell_req(ws.id, rn, C["pct_high"], "d9ead3", "0b8043") if pct >= -20
                         else color_cell_req(ws.id, rn, C["pct_high"], "fde9d9", "c62828"))
@@ -1368,17 +1372,16 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             elif beta_v <= 1.5:  reqs.append(color_cell_req(ws.id, rn, C["beta"], "fff2cc", "7f4f00"))
             else:                reqs.append(color_cell_req(ws.id, rn, C["beta"], "fde9d9", "c62828"))
 
-        # ── Strengths / Weaknesses ──
+        # ── Strengths / Weaknesses — green text for positive, red for
+        # negative, on the same light tint as before. This is the
+        # colored-text look that existed pre-cleanup, restored.
         reqs.append(color_cell_req(ws.id, rn, C["strengths"], "f1f9f1", "0b8043", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["weaknesses"], "fdf2f2", "c62828", bold=False))
 
-        # ── Technical Setup ──
-        tech_set = row[C["technical_setup"]].strip() if len(row) > C["technical_setup"] else ""
+        # ── Technical Setup / Final Action ──
         if tech_set in TECHNICAL_SETUP_COLORS:
-            bg_ts, fg_ts = TECHNICAL_SETUP_COLORS[tech_set]
-            reqs.append(color_cell_req(ws.id, rn, C["technical_setup"], bg_ts, fg_ts))
-
-        # ── Final Action ──
+            bg, fg = TECHNICAL_SETUP_COLORS[tech_set]
+            reqs.append(color_cell_req(ws.id, rn, C["technical_setup"], bg, fg))
         if action in ACTION_COLORS:
             bg_a, fg_a = ACTION_COLORS[action]
             reqs.append(color_cell_req(ws.id, rn, C["action"], bg_a, fg_a))
@@ -1416,7 +1419,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 # WRITE GROWTH SCREENER TAB
 # ══════════════════════════════════════════════
 def write_growth_screener(sh, all_out):
-    C = GITHUB_DATA_COLS  # single source of truth — no stale hardcoded indices
     ACTION_COLORS = {
         "STRONG BUY":  ("ffffff", "00c853"),
         "BUY":         ("ffffff", "0b8043"),
@@ -1428,39 +1430,35 @@ def write_growth_screener(sh, all_out):
     }
     growth = []
 
-    def _get(row, key):
-        idx = C[key]
-        return row[idx] if len(row) > idx else ""
-
-    def sf(v):
-        try: return float(str(v).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip())
-        except: return None
-
     for row in all_out:
         if not row or not row[0]: continue
         sym    = row[0].strip()
-        action = _get(row, "action").strip()
-        cap    = _get(row, "cap_type").strip()
+        action = row[23].strip() if len(row) > 23 else ""
+        cap    = row[35].strip() if len(row) > 35 else ""
 
-        tot_sc = sf(_get(row, "total"))
-        q_sc   = sf(_get(row, "quality"))
-        v_sc   = sf(_get(row, "valuation"))
-        t_sc   = sf(_get(row, "timing"))
-        rsi    = _get(row, "rsi")
-        trend  = _get(row, "trend")
+        def sf(v):
+            try: return float(str(v).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip())
+            except: return None
+
+        tot_sc = sf(row[22] if len(row) > 22 else "")
+        q_sc   = sf(row[19] if len(row) > 19 else "")
+        v_sc   = sf(row[20] if len(row) > 20 else "")
+        t_sc   = sf(row[21] if len(row) > 21 else "")
+        rsi    = row[28] if len(row) > 28 else ""
+        trend  = row[33] if len(row) > 33 else ""
 
         growth.append([
             sym, cap,
-            _get(row, "pe"),
-            _get(row, "roe"),
-            _get(row, "debt_eq"),
-            _get(row, "rev_growth"),
-            _get(row, "div"),
-            _get(row, "pct_high"),
+            row[9]  if len(row) > 9  else "",   # PE
+            row[14] if len(row) > 14 else "",   # ROE%
+            row[16] if len(row) > 16 else "",   # Debt/Eq
+            row[17] if len(row) > 17 else "",   # Rev Growth%
+            row[13] if len(row) > 13 else "",   # Div Yield%
+            row[8]  if len(row) > 8  else "",   # Buy 20% Less
             q_sc or "", v_sc or "", t_sc or "", tot_sc or "",
             action,
-            _get(row, "strengths"),
-            _get(row, "weaknesses"),
+            row[24] if len(row) > 24 else "",   # Strengths
+            row[25] if len(row) > 25 else "",   # Weaknesses
             rsi, trend,
         ])
 
@@ -1562,7 +1560,7 @@ def process_watchlist_tab(sh, tab_name, symbols):
         return []
 
     log.info(f"{tab_name}: fetching prices for {len(symbols)} symbols...")
-    prices   = fetch_prices_batch(symbols)
+    prices = fetch_prices_batch(symbols)
     wl_cache = fund_cache.load_cache(sh)
 
     rows = []
@@ -1592,89 +1590,6 @@ def process_all_watchlists(sh):
         except Exception as e:
             log.error(f"Watchlist '{tab_name}' failed (existing tabs unaffected): {e}")
 
-def update_portfolio_formulas(sh):
-    try:
-        pws = sh.worksheet("Portfolio")
-        rows = pws.get_all_values()
-        if not rows or len(rows) < 2:
-            return
-        
-        headers = [h.strip().lower() for h in rows[0]]
-        
-        # Locate Symbol column
-        sym_col_idx = None
-        for idx, h in enumerate(headers):
-            if h in ("symbol", "ticker", "instrument"):
-                sym_col_idx = idx
-                break
-        if sym_col_idx is None:
-            log.warning("Symbol column not found in Portfolio sheet.")
-            return
-            
-        sym_col_letter = chr(65 + sym_col_idx) # e.g. 'B' if index is 1
-        
-        # Define the target column headers to look for and their respective GITHUB DATA VLOOKUP templates
-        # GITHUB DATA columns (1-based for VLOOKUP):
-        # 5: CMP
-        # 9: Buy 20% Less (Buy More@)
-        # 24: Final Action (Signal)
-        # 27: XIRR%
-        # 37: Quantity (Shares)
-        # 38: Avg Buy Price (Avg Buy)
-        vlookup_targets = {
-            "shares": ('=IFERROR(VLOOKUP({sym_col}{row}, \'GITHUB DATA\'!A:AL, 37, FALSE), 0)', ["shares", "quantity", "qty", "volume"]),
-            "avg_buy": ('=IFERROR(VLOOKUP({sym_col}{row}, \'GITHUB DATA\'!A:AL, 38, FALSE), 0)', ["avg buy", "avg price", "average buy price", "avg buy price"]),
-            "current_price": ('=IFERROR(VLOOKUP({sym_col}{row}, \'GITHUB DATA\'!A:AL, 5, FALSE), 0)', ["current price", "cmp", "price"]),
-            "xirr": ('=IFERROR(VLOOKUP({sym_col}{row}, \'GITHUB DATA\'!A:AL, 27, FALSE), "")', ["xirr", "xirr%"]),
-            "signal": ('=IFERROR(VLOOKUP({sym_col}{row}, \'GITHUB DATA\'!A:AL, 24, FALSE), "")', ["signal", "action", "final action"]),
-            "buy_more": ('=IFERROR(VLOOKUP({sym_col}{row}, \'GITHUB DATA\'!A:AL, 9, FALSE), "")', ["buy more@", "buy more @", "buy 20% less"]),
-        }
-        
-        col_indices = {}
-        for key, (formula_tpl, aliases) in vlookup_targets.items():
-            for idx, h in enumerate(headers):
-                if h in aliases:
-                    col_indices[key] = (idx, formula_tpl)
-                    break
-                    
-        if not col_indices:
-            log.warning("No target formula columns found in Portfolio sheet.")
-            return
-            
-        # Build batch update request for writing formulas
-        requests = []
-        for row_num in range(2, len(rows) + 1):
-            # Check if symbol cell is empty (skip totals row at the bottom)
-            sym_val = rows[row_num-1][sym_col_idx].strip()
-            if not sym_val or sym_val in ("TOTAL", "SUM", "SUBTOTAL", "GRAND"):
-                continue
-                
-            for key, (col_idx, formula_tpl) in col_indices.items():
-                formula = formula_tpl.format(sym_col=sym_col_letter, row=row_num)
-                requests.append({
-                    "updateCells": {
-                        "rows": [{
-                            "values": [{
-                                "userEnteredValue": {"formulaValue": formula}
-                            }]
-                        }],
-                        "fields": "userEnteredValue",
-                        "range": {
-                            "sheetId": pws.id,
-                            "startRowIndex": row_num - 1,
-                            "endRowIndex": row_num,
-                            "startColumnIndex": col_idx,
-                            "endColumnIndex": col_idx + 1
-                        }
-                    }
-                })
-                
-        if requests:
-            batch_update_safe(sh, requests, chunk=100)
-            log.info(f"Updated VLOOKUP formulas for {len(rows)-1} rows on Portfolio sheet.")
-    except Exception as e:
-        log.warning(f"Could not update Portfolio sheet formulas: {e}")
-
 # ══════════════════════════════════════════════
 # MAIN
 # ══════════════════════════════════════════════
@@ -1691,7 +1606,7 @@ def run_portfolio_update(sh):
         log.error("No symbols found.")
         return None
 
-    trades = read_trades()
+    trades = read_trades(sh)
     log.info(f"Found {len(symbols)} symbols")
 
     log.info("Fetching prices...")
@@ -1699,16 +1614,18 @@ def run_portfolio_update(sh):
 
     log.info("Fetching fundamentals + technicals...")
     fund_map, tech_map, rev_map = {}, {}, {}
+    fc_cache = fund_cache.load_cache(sh)
     for sym in symbols:
-        f = fetch_fundamentals(sym)
+        f = fund_cache.get_or_fetch_fundamentals(sym, fc_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
         fund_map[sym] = f
         rev_map[sym]  = fetch_rev_growth(sym)
         log.info(f"  Technicals: {sym}")
         tech_map[sym] = fetch_technicals(sym)
         time.sleep(SLEEP_INFO)
+    fund_cache.save_cache(sh, fc_cache)
 
     holdings, portfolio_live_value = {}, 0.0
-    for sym in symbols:
+    for sym in symbols:   
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         cmp = prices.get(sym)
         if qty > 0 and cmp and cmp > 0:
@@ -1730,9 +1647,7 @@ def run_portfolio_update(sh):
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         xirr_val = get_xirr(sym, trades, cmp)
 
-        row, archetype, tot_sc, final_action = build_result_row(
-            sym, cmp, f, tech, rev_gr, xirr_val=xirr_val, qty_val=qty, avg_buy_val=avg_buy
-        )
+        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val)
 
         if avg_buy and qty > 0:
             sl_price, tgt_price = avg_buy * (1 - SL_PCT), avg_buy * (1 + TARGET_PCT)
@@ -1752,16 +1667,33 @@ def run_portfolio_update(sh):
 
     top_picks.sort(key=lambda x: x["total"], reverse=True)
 
-    ws = write_github_data(sh, results, tab_name="GITHUB DATA")
-    all_out = ws.get_all_values()[1:]
-    write_growth_screener(sh, all_out)
+    write_github_data(sh, results, tab_name="GITHUB DATA")
     process_all_watchlists(sh)
-    update_portfolio_formulas(sh)
+    # ── TEMP DEBUG LOGGING — remove after root cause confirmed ──
+    log.info(f"[DEBUG] len(symbols)={len(symbols)} len(results)={len(results)} "
+              f"len(holdings)={len(holdings)} len(fund_map)={len(fund_map)} len(prices)={len(prices)}")
+    log.info(f"[DEBUG] holdings keys (first 5): {list(holdings.keys())[:5]}")
+    log.info(f"[DEBUG] results symbols (first 5): {[r[GITHUB_DATA_COLS['symbol']] for r in results[:5]]}")
+    log.info(f"[DEBUG] fund_map keys (first 5): {list(fund_map.keys())[:5]}")
+    log.info(f"[DEBUG] trades row count: {len(trades)}, first trade row: {trades[0] if trades else 'EMPTY'}")
+    # ── END TEMP DEBUG LOGGING ──
+
+    changes = history_tracker.compute_todays_changes(sh, results)
+    prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
+
+    dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
+    health = portfolio_analytics.compute_portfolio_health(results, holdings, fund_map, dash)
+    health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
+
+    history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
+
+    portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
 
     return {
         "results": results, "alerts": alerts,
         "portfolio_live_value": portfolio_live_value,
         "top_picks": top_picks, "failed": failed,
+        "changes": changes,
     }
 
 
@@ -1781,6 +1713,9 @@ def main():
         return
 
     msg = build_alert_message(out["alerts"], out["portfolio_live_value"], out["top_picks"])
+    digest = history_tracker.format_telegram_digest(out.get("changes"))
+    if digest:
+        msg = msg + "\n\n" + digest
     if len(msg) > 4000:
         msg = msg[:4000] + "\n\n<i>...truncated</i>"
     send_telegram(msg)
