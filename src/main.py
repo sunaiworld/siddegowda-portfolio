@@ -12,7 +12,8 @@ import time
 import logging
 import requests
 import math
-from datetime import datetime, date
++import contextlib
+ from datetime import datetime, date
 
 import yfinance as yf
 import gspread
@@ -30,6 +31,19 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S"
 )
 log = logging.getLogger(__name__)
+
+# ══════════════════════════════════════════════
+# STAGE TIMING (additive only — no control flow, retries,
+# batching, or return values are touched by this helper)
+# ══════════════════════════════════════════════
+@contextlib.contextmanager
+def stage_timer(stage_name):
+    t0 = time.time()
+    log.info(f"[TIMING] START {stage_name} @ {datetime.now().strftime('%H:%M:%S')}")
+    try:
+        yield
+    finally:
+        log.info(f"[TIMING] END   {stage_name} @ {datetime.now().strftime('%H:%M:%S')} | elapsed={time.time()-t0:.1f}s")
 
 # ══════════════════════════════════════════════
 # CONFIG
@@ -1252,6 +1266,7 @@ def fetch_prices_batch(symbols):
     for i in range(0, len(ns_syms), BATCH_SIZE):
         batch      = ns_syms[i:i + BATCH_SIZE]
         batch_orig = symbols[i:i + BATCH_SIZE]
+        _batch_t0 = time.time()
         for attempt in range(3):
             try:
                 df = yf.download(
@@ -1265,7 +1280,7 @@ def fetch_prices_batch(symbols):
                         prices[sym] = round(float(close), 2)
                     except:
                         prices[sym] = None
-                log.info(f"Batch {i // BATCH_SIZE + 1}: {len(batch)} prices fetched")
+                log.info(f"Batch {i // BATCH_SIZE + 1}: {len(batch)} prices fetched | elapsed={time.time()-_batch_t0:.1f}s")
                 break
             except Exception as e:
                 if "429" in str(e) or "Too Many" in str(e):
@@ -1320,6 +1335,9 @@ def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
 def batch_update_safe(sh, requests, chunk=30):
     """Send batchUpdate requests in small chunks with retry on 429 quota errors."""
     import gspread.exceptions
+    _bu_t0 = time.time()
+    _num_chunks = (len(requests) + chunk - 1) // chunk if requests else 0
+    log.info(f"[TIMING] START google_sheets_write @ {datetime.now().strftime('%H:%M:%S')} | {len(requests)} requests in {_num_chunks} chunks")
     for i in range(0, len(requests), chunk):
         slice_ = requests[i:i + chunk]
         for attempt in range(5):  # up to 5 retries
@@ -1334,6 +1352,10 @@ def batch_update_safe(sh, requests, chunk=30):
                     time.sleep(wait)
                 else:
                     raise
+        _chunk_num = i // chunk + 1
+        if _chunk_num % 10 == 0 or _chunk_num == _num_chunks:
+            log.info(f"[TIMING] progress {_chunk_num}/{_num_chunks} sheet-write chunks | elapsed={time.time()-_bu_t0:.1f}s")
+    log.info(f"[TIMING] END   google_sheets_write @ {datetime.now().strftime('%H:%M:%S')} | elapsed={time.time()-_bu_t0:.1f}s")
 
 # ══════════════════════════════════════════════
 # ROW COLUMN MAP — mirrors the list built in build_result_row().
@@ -1795,38 +1817,54 @@ def run_portfolio_update(sh):
         log.error("No symbols found.")
         return None
 
-    trades = read_trades(sh)
+    with stage_timer("read_trades"):
+        trades = read_trades(sh)
     log.info(f"Found {len(symbols)} symbols")
 
     log.info("Fetching prices...")
-    prices = fetch_prices_batch(symbols)
+    with stage_timer("fetch_prices_batch"):
+        prices = fetch_prices_batch(symbols)
 
     log.info("Fetching fundamentals + technicals...")
     fund_map, tech_map, rev_map = {}, {}, {}
     fc_cache = fund_cache.load_cache(sh)
-    for sym in symbols:
+    _ft_t0 = time.time()
+    _fund_elapsed_total = 0.0
+    _tech_elapsed_total = 0.0
+    log.info(f"[TIMING] START fetch_fundamentals+fetch_technicals @ {datetime.now().strftime('%H:%M:%S')} | {len(symbols)} symbols")
+    for _i, sym in enumerate(symbols, 1):
+        _f_t0 = time.time()
         f = fund_cache.get_or_fetch_fundamentals(sym, fc_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
+        _fund_elapsed_total += time.time() - _f_t0
         fund_map[sym] = f
         rev_map[sym]  = fetch_rev_growth(sym)
         log.info(f"  Technicals: {sym}")
+        _t_t0 = time.time()
         tech_map[sym] = fetch_technicals(sym)
+        _tech_elapsed_total += time.time() - _t_t0
         time.sleep(SLEEP_INFO)
+        if _i % 10 == 0 or _i == len(symbols):
+            log.info(f"[TIMING] progress {_i}/{len(symbols)} symbols | elapsed={time.time()-_ft_t0:.1f}s | fundamentals_total={_fund_elapsed_total:.1f}s | technicals_total={_tech_elapsed_total:.1f}s")
     fund_cache.save_cache(sh, fc_cache)
+    log.info(f"[TIMING] END   fetch_fundamentals+fetch_technicals @ {datetime.now().strftime('%H:%M:%S')} | elapsed={time.time()-_ft_t0:.1f}s | fundamentals_total={_fund_elapsed_total:.1f}s | technicals_total={_tech_elapsed_total:.1f}s")
 
-    holdings, portfolio_live_value = {}, 0.0
-    holdings_map = {sym: get_avg_buy_and_qty(sym, trades) for sym in symbols}
-    for sym in symbols:
-        avg_buy, qty = holdings_map[sym]
-        cmp = prices.get(sym)
-        if qty > 0 and cmp and cmp > 0:
-            holdings[sym] = (qty, cmp, avg_buy)
-            portfolio_live_value += qty * cmp
+    with stage_timer("portfolio_calculations"):
+        holdings, portfolio_live_value = {}, 0.0
+        holdings_map = {sym: get_avg_buy_and_qty(sym, trades) for sym in symbols}
+        for sym in symbols:
+            avg_buy, qty = holdings_map[sym]
+            cmp = prices.get(sym)
+            if qty > 0 and cmp and cmp > 0:
+                holdings[sym] = (qty, cmp, avg_buy)
+                portfolio_live_value += qty * cmp
 
     results, failed = [], []
     alerts = {"sl_breach": [], "target_hit": [], "strong_buy": [], "sell_watch": []}
     top_picks = []
 
-    for sym in symbols:
+    _score_t0 = time.time()
+    log.info(f"[TIMING] START score_and_build_results @ {datetime.now().strftime('%H:%M:%S')} | {len(symbols)} symbols")
+    for _i, sym in enumerate(symbols, 1):
         cmp = prices.get(sym)
         if not cmp:
             failed.append(sym)
@@ -1855,10 +1893,15 @@ def run_portfolio_update(sh):
         results.append(row)
         log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}")
 
+        if _i % 10 == 0 or _i == len(symbols):
+            log.info(f"[TIMING] progress {_i}/{len(symbols)} symbols scored | elapsed={time.time()-_score_t0:.1f}s")
+    log.info(f"[TIMING] END   score_and_build_results @ {datetime.now().strftime('%H:%M:%S')} | elapsed={time.time()-_score_t0:.1f}s")
+
     top_picks.sort(key=lambda x: x["total"], reverse=True)
 
-    write_github_data(sh, results, tab_name="GITHUB DATA")
-    process_all_watchlists(sh)
+    with stage_timer("github_data_generation (write_github_data + watchlists)"):
+        write_github_data(sh, results, tab_name="GITHUB DATA")
+        process_all_watchlists(sh)
 
     # Portfolio tab — fully self-contained, computed from
     # data/trade_log.csv + the `prices` dict already fetched above.
@@ -1866,23 +1909,25 @@ def run_portfolio_update(sh):
     # nothing else in this function. Wrapped in try/except so a
     # failure here can never affect GITHUB DATA/Future Buy/Dashboard,
     # same isolation pattern process_all_watchlists() already uses.
-    try:
-        portfolio_metrics = compute_portfolio_metrics_csv(prices)
-        write_portfolio_tab_csv(sh, portfolio_metrics)
-        apply_portfolio_formatting(sh)
-    except Exception as e:
-        log.error(f"Portfolio (CSV) update failed (GITHUB DATA/Future Buy unaffected): {e}")
+    with stage_timer("portfolio_tab_csv_write"):
+        try:
+            portfolio_metrics = compute_portfolio_metrics_csv(prices)
+            write_portfolio_tab_csv(sh, portfolio_metrics)
+            apply_portfolio_formatting(sh)
+        except Exception as e:
+            log.error(f"Portfolio (CSV) update failed (GITHUB DATA/Future Buy unaffected): {e}")
 
-    changes = history_tracker.compute_todays_changes(sh, results)
-    prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
+    with stage_timer("history_and_dashboard_update"):
+        changes = history_tracker.compute_todays_changes(sh, results)
+        prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
 
-    dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
-    health = portfolio_analytics.compute_portfolio_health(results, holdings, fund_map, dash)
-    health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
+        dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
+        health = portfolio_analytics.compute_portfolio_health(results, holdings, fund_map, dash)
+        health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
 
-    history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
+        history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
 
-    portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
+        portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
 
     return {
         "results": results, "alerts": alerts,
@@ -1898,22 +1943,23 @@ def main():
     log.info(f"Run time: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}")
     log.info("═" * 55)
 
-    gc = get_gspread_client()
-    sh = gc.open_by_key(SHEET_ID)
+    with stage_timer("get_gspread_client+open_sheet"):
+        gc = get_gspread_client()
+        sh = gc.open_by_key(SHEET_ID)
     log.info("Connected to Google Sheets")
 
-    out = run_portfolio_update(sh)
+    with stage_timer("run_portfolio_update_total"):
+        out = run_portfolio_update(sh)
     if out is None:
         send_telegram("❌ Portfolio update FAILED — no symbols found in Portfolio tab col B")
         return
 
     msg = build_alert_message(out["alerts"], out["portfolio_live_value"], out["top_picks"])
     digest = history_tracker.format_telegram_digest(out.get("changes"))
-    if digest:
-        msg = msg + "\n\n" + digest
     if len(msg) > 4000:
         msg = msg[:4000] + "\n\n<i>...truncated</i>"
-    send_telegram(msg)
+    with stage_timer("telegram_notification"):
+        send_telegram(msg)
 
     log.info("═" * 55)
     log.info(f"✅ {len(out['results'])} stocks updated | ❌ Failed: {out['failed'] or 'None'}")
