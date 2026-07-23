@@ -46,6 +46,8 @@ async def dispatch(text):
             return handlers.handle_top()
         if cmd == "/price":
             return handlers.handle_price(rest)
+        if cmd == "/news":
+            return handlers.handle_news(rest.split()[0] if rest.strip() else "")
         if cmd == "/refresh":
             return await handle_refresh()
         return "Unknown command. Send /help for the command list."
