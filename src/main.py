@@ -21,6 +21,8 @@ from google.oauth2.service_account import Credentials
 import fund_cache
 import history_tracker
 import portfolio_analytics
+from news_engine.sources import google_news_rss
+from news_engine import classifier, news_cache
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -87,6 +89,114 @@ WATCHLISTS = {
         "MEDPLUS", "ALKYLAMINE", "LAURUSLABS", "TTKPRESTIG", "JYOTHYLAB",
         "JKPAPER", "MASTEK", "WOCKPHARMA", "DATAPATTNS",
     ],
+}
+
+# ══════════════════════════════════════════════
+# SYMBOL → COMPANY NAME MAP
+# Used by the news engine (google_news_rss.fetch requires a human-readable
+# company name for a better search query). Symbols missing from this map
+# fall back to the symbol string itself — news will still be fetched, just
+# with a less precise query. Add new symbols here as the portfolio grows.
+# ══════════════════════════════════════════════
+SYMBOL_TO_COMPANY = {
+    # Banks
+    "HDFCBANK":   "HDFC Bank",
+    "ICICIBANK":  "ICICI Bank",
+    "AXISBANK":   "Axis Bank",
+    "KOTAKBANK":  "Kotak Mahindra Bank",
+    "SBIBANK":    "State Bank of India",
+    "AUBANK":     "AU Small Finance Bank",
+    "BANDHANBNK": "Bandhan Bank",
+    "IDFCFIRSTB": "IDFC First Bank",
+    "INDUSINDBK": "IndusInd Bank",
+    "PNB":        "Punjab National Bank",
+    "CANBK":      "Canara Bank",
+    # NBFCs
+    "BAJFINANCE": "Bajaj Finance",
+    "BAJAJFINSV": "Bajaj Finserv",
+    "CHOLAFIN":   "Cholamandalam Investment",
+    "MUTHOOTFIN": "Muthoot Finance",
+    "JIOFIN":     "Jio Financial Services",
+    # Insurance / Capital Markets
+    "HDFCLIFE":   "HDFC Life Insurance",
+    "SBILIFE":    "SBI Life Insurance",
+    "ANGELONE":   "Angel One",
+    "MOTILALOFS": "Motilal Oswal Financial Services",
+    "BSE":        "BSE Limited",
+    "CDSL":       "CDSL",
+    # IT / Software
+    "INFY":       "Infosys",
+    "TCS":        "Tata Consultancy Services",
+    "WIPRO":      "Wipro",
+    "HCLTECH":    "HCL Technologies",
+    "TECHM":      "Tech Mahindra",
+    "MPHASIS":    "Mphasis",
+    "COFORGE":    "Coforge",
+    "KPITTECH":   "KPIT Technologies",
+    "OFSS":       "Oracle Financial Services",
+    "MASTEK":     "Mastek",
+    "DATAPATTNS": "Data Patterns",
+    # Pharma / Healthcare
+    "SUNPHARMA":  "Sun Pharmaceutical",
+    "CIPLA":      "Cipla",
+    "DRREDDY":    "Dr Reddy's Laboratories",
+    "DIVISLAB":   "Divi's Laboratories",
+    "LUPIN":      "Lupin",
+    "AUROPHARMA": "Aurobindo Pharma",
+    "GLAND":      "Gland Pharma",
+    "BIOCON":     "Biocon",
+    "AJANTPHARM": "Ajanta Pharma",
+    "GLENMARK":   "Glenmark Pharmaceuticals",
+    "WOCKPHARMA": "Wockhardt",
+    "ABBOTINDIA": "Abbott India",
+    "GLAXO":      "GSK Pharmaceuticals",
+    "FORTIS":     "Fortis Healthcare",
+    "LAURUSLABS": "Laurus Labs",
+    "ALKYLAMINE": "Alkyl Amines Chemicals",
+    "ZYDUSLIFE":  "Zydus Lifesciences",
+    "MEDPLUS":    "Medplus Health Services",
+    # Industrials / Capital Goods / Defence
+    "LT":         "Larsen and Toubro",
+    "SIEMENS":    "Siemens India",
+    "CUMMINSIND": "Cummins India",
+    "HONAUT":     "Honeywell Automation India",
+    "CGPOWER":    "CG Power and Industrial Solutions",
+    "POLYCAB":    "Polycab India",
+    "HAVELLS":    "Havells India",
+    "BEL":        "Bharat Electronics",
+    "HAL":        "Hindustan Aeronautics",
+    "MAZDOCK":    "Mazagon Dock Shipbuilders",
+    "COCHINSHIP": "Cochin Shipyard",
+    "BHARATFORG": "Bharat Forge",
+    "TTKPRESTIG": "TTK Prestige",
+    "JWL":        "Jupiter Wagons",
+    # Energy / Utilities
+    "NTPC":       "NTPC",
+    "NHPC":       "NHPC",
+    "ADANIPOWER": "Adani Power",
+    "ADANIENT":   "Adani Enterprises",
+    "ADANIPORTS": "Adani Ports",
+    "COALINDIA":  "Coal India",
+    "ONGC":       "Oil and Natural Gas Corporation",
+    "OIL":        "Oil India",
+    "BPCL":       "Bharat Petroleum",
+    "HINDPETRO":  "Hindustan Petroleum",
+    # Metals / Mining
+    "NATIONALUM": "National Aluminium",
+    "HINDZINC":   "Hindustan Zinc",
+    "HINDCOPPER": "Hindustan Copper",
+    # Consumer Staples / FMCG
+    "MARICO":     "Marico",
+    "DABUR":      "Dabur India",
+    "BRITANNIA":  "Britannia Industries",
+    "JYOTHYLAB":  "Jyothy Labs",
+    # Consumer Discretionary / Auto
+    "EICHERMOT":  "Eicher Motors",
+    "BHARTIARTL": "Bharti Airtel",
+    "DMART":      "Avenue Supermarts",
+    "MRF":        "MRF",
+    "BLUESTARCO": "Blue Star",
+    "JKPAPER":    "JK Paper",
 }
 
 # ══════════════════════════════════════════════
@@ -1375,6 +1485,10 @@ GITHUB_DATA_COLS = {
     "quality": 24, "valuation": 25, "timing": 26, "total": 27,
     "vol_spike": 28,
     "mcap": 29, "cap_type": 30,
+    # Phase A — News Engine columns (appended; existing indices 0–30 unchanged)
+    "news_summary": 31, "bullish_score": 32, "bearish_score": 33,
+    "news_sentiment": 34, "news_reason": 35,
+    "news_timestamp": 36, "news_source": 37,
 }
 
 # Header text per column key — headers[] is built FROM this dict via
@@ -1394,6 +1508,10 @@ GITHUB_DATA_HEADER_NAMES = {
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
     "vol_spike": "Vol Spike",
     "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
+    # Phase A — News Engine
+    "news_summary": "News Summary", "bullish_score": "Bullish Score", "bearish_score": "Bearish Score",
+    "news_sentiment": "News Sentiment", "news_reason": "News Reason",
+    "news_timestamp": "News Timestamp", "news_source": "News Source",
 }
 
 # Column pixel width per key — same self-syncing pattern as headers.
@@ -1411,6 +1529,10 @@ GITHUB_DATA_COL_WIDTHS = {
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
     "vol_spike": 55,
     "mcap": 65, "cap_type": 65,
+    # Phase A — News Engine
+    "news_summary": 300, "bullish_score": 80, "bearish_score": 80,
+    "news_sentiment": 90, "news_reason": 250,
+    "news_timestamp": 120, "news_source": 100,
 }
 
 # ══════════════════════════════════════════════
@@ -1420,7 +1542,7 @@ GITHUB_DATA_COL_WIDTHS = {
 # scoring, and formatting identical everywhere.
 # xirr_val is left as "" for watchlist symbols (no holdings).
 # ══════════════════════════════════════════════
-def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
+def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_result=None):
     sector   = f.get("sector", "")
     industry = f.get("industry", "")
     high52   = f.get("high52")
@@ -1506,6 +1628,15 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
     row[C["trend"]]           = trend
     row[C["mcap"]]            = mcap_fmt
     row[C["cap_type"]]        = cap_type
+    # Phase A — News Engine fields (empty for watchlists; populated by run_portfolio_update)
+    nr = news_result or {}
+    row[C["news_summary"]]    = nr.get("summary", "")
+    row[C["bullish_score"]]   = nr.get("bullish_score", "")
+    row[C["bearish_score"]]   = nr.get("bearish_score", "")
+    row[C["news_sentiment"]]  = nr.get("sentiment", "")
+    row[C["news_reason"]]     = nr.get("reason", "")
+    row[C["news_timestamp"]]  = nr.get("timestamp", "")
+    row[C["news_source"]]     = nr.get("source", "")
 
     return row, archetype, tot_sc, final_action
 def clean_row(row):
@@ -1848,6 +1979,47 @@ def run_portfolio_update(sh):
     fund_cache.save_cache(sh, fc_cache)
     log.info(f"[TIMING] END   fetch_fundamentals+fetch_technicals @ {datetime.now().strftime('%H:%M:%S')} | elapsed={time.time()-_ft_t0:.1f}s | fundamentals_total={_fund_elapsed_total:.1f}s | technicals_total={_tech_elapsed_total:.1f}s")
 
+    # ══ Phase A: News Engine — fetch after fundamentals, before scoring ══
+    # Runs once per symbol. Never raises — per-symbol try/except so a news
+    # failure for one stock never stops the portfolio update.
+    news_map = {}  # {symbol: NewsResult.__dict__ or None}
+    with stage_timer("news_fetch"):
+        try:
+            nc_cache, nc_ws = news_cache.load_cache(sh)
+            # Build existing-row lookup once (used by news_cache.upsert to avoid
+            # an extra API call per symbol).
+            existing_symbol_rows = {
+                row[0].strip().upper(): (idx + 2)  # +2: 1-indexed + header row
+                for idx, row in enumerate(
+                    nc_ws.get_all_values()[1:]
+                )
+                if row and row[0]
+            }
+        except Exception as _ne:
+            log.warning(f"[news] cache load failed — news skipped this run: {_ne}")
+            nc_cache, nc_ws, existing_symbol_rows = {}, None, {}
+
+        _news_t0 = time.time()
+        log.info(f"[TIMING] START news_fetch @ {datetime.now().strftime('%H:%M:%S')} | {len(symbols)} symbols")
+        for sym in symbols:
+            try:
+                from datetime import timezone as _tz
+                if sym in nc_cache:
+                    fdt, result_dict, _ = nc_cache[sym]
+                    if news_cache.is_fresh(fdt):
+                        news_map[sym] = result_dict
+                        continue  # use cached result, no HTTP call
+                company_name = SYMBOL_TO_COMPANY.get(sym, sym)
+                articles = google_news_rss.fetch(sym, company_name, timeout=8)
+                result, enriched = classifier.classify(sym, articles)
+                news_map[sym] = result.__dict__
+                if nc_ws is not None:
+                    news_cache.upsert(nc_ws, sym, result, enriched, existing_symbol_rows)
+            except Exception as _e:
+                log.warning(f"[news] {sym}: skipped — {_e}")
+                news_map[sym] = None
+        log.info(f"[TIMING] END   news_fetch @ {datetime.now().strftime('%H:%M:%S')} | elapsed={time.time()-_news_t0:.1f}s")
+
     with stage_timer("portfolio_calculations"):
         holdings, portfolio_live_value = {}, 0.0
         holdings_map = {sym: get_avg_buy_and_qty(sym, trades) for sym in symbols}
@@ -1875,7 +2047,11 @@ def run_portfolio_update(sh):
         avg_buy, qty = holdings_map[sym]
         xirr_val = get_xirr(sym, trades, cmp)
 
-        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val)
+        row, archetype, tot_sc, final_action = build_result_row(
+            sym, cmp, f, tech, rev_gr,
+            xirr_val=xirr_val,
+            news_result=news_map.get(sym),  # Phase A: None → empty news columns
+        )
 
         if avg_buy and qty > 0:
             sl_price, tgt_price = avg_buy * (1 - SL_PCT), avg_buy * (1 + TARGET_PCT)
