@@ -16,6 +16,7 @@ jobs:
       - run: pip install -r requirements.txt
       - run: python telegram_bot.py
         env:
+          PYTHONPATH: ${{ github.workspace }}/src
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           SHEET_ID: ${{ secrets.SHEET_ID }}
