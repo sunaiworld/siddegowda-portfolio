@@ -12,8 +12,8 @@ import time
 import logging
 import requests
 import math
-+import contextlib
- from datetime import datetime, date
+import contextlib
+from datetime import datetime, date
 
 import yfinance as yf
 import gspread
