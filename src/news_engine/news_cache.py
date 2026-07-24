@@ -64,5 +64,9 @@ def upsert(ws, symbol, news_result, raw_articles, existing_symbol_rows):
     if row_num:
         ws.update(f"A{row_num}:D{row_num}", [row_values])
     else:
+        # Header occupies row 1; existing_symbol_rows holds exactly the
+        # symbols already on the sheet, so the next append lands at
+        # (count of known symbols + 2) — no extra read needed to know this.
+        next_row = len(existing_symbol_rows) + 2
         ws.append_row(row_values)
-        existing_symbol_rows[symbol] = ws.row_count  # approximate, refined by caller if needed
+        existing_symbol_rows[symbol] = next_row
