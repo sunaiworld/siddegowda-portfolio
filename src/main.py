@@ -1985,16 +1985,7 @@ def run_portfolio_update(sh):
     news_map = {}  # {symbol: NewsResult.__dict__ or None}
     with stage_timer("news_fetch"):
         try:
-            nc_cache, nc_ws = news_cache.load_cache(sh)
-            # Build existing-row lookup once (used by news_cache.upsert to avoid
-            # an extra API call per symbol).
-            existing_symbol_rows = {
-                row[0].strip().upper(): (idx + 2)  # +2: 1-indexed + header row
-                for idx, row in enumerate(
-                    nc_ws.get_all_values()[1:]
-                )
-                if row and row[0]
-            }
+            nc_cache, nc_ws, existing_symbol_rows = news_cache.load_cache(sh)
         except Exception as _ne:
             log.warning(f"[news] cache load failed — news skipped this run: {_ne}")
             nc_cache, nc_ws, existing_symbol_rows = {}, None, {}
