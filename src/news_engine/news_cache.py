@@ -1,78 +1,152 @@
 """
-Raw + summarized news cache, mirroring fund_cache.py's shape
-(load once per run, save once per run) but WITHOUT ws.clear() —
-per the project's standing rule, destructive ops used elsewhere in
-the codebase (fund_cache.save_cache does clear()+rewrite) are not
-copied into new code without explicit approval. This does a targeted
-upsert instead: existing rows are updated in place by range, new
-symbols are appended.
+news_cache.py — News Engine: Google Sheets Cache Layer
+Persists per-symbol raw articles + AI digest inside a dedicated
+"News Cache" worksheet.  Hardened against the Sheets 50,000-character
+cell limit and consecutive write quota (429) errors.
+
+Sheet layout (one row per symbol, no header):
+  col A  symbol          (lookup key)
+  col B  last_fetched    (ISO-8601 UTC timestamp)
+  col C  digest          (AI summary text, plain string)
+  col D  raw_articles    (JSON — MUST stay below RAW_ARTICLES_CELL_LIMIT)
 """
+
 import json
 import logging
-from datetime import datetime, timezone
+import time
+
+import gspread
+import gspread.exceptions
 
 log = logging.getLogger(__name__)
 
-CACHE_TAB = "News Cache"
-FRESHNESS_HOURS = 6
+# ── Constants ────────────────────────────────────────────────────────────────
+TAB_NAME              = "News Cache"
+RAW_ARTICLES_CELL_LIMIT = 45_000   # Google Sheets hard limit is 50 000; keep 5 k headroom
+
+# Column indices (0-based inside the row list we read/write)
+_COL_SYMBOL       = 0
+_COL_LAST_FETCHED = 1
+_COL_DIGEST       = 2
+_COL_RAW_ARTICLES = 3
+_NUM_COLS         = 4
 
 
-def load_cache(sh):
-    """Returns (cache, ws, existing_symbol_rows):
-    cache = {symbol: (fetch_dt, news_result_dict, raw_articles_list)}
-    existing_symbol_rows = {symbol: sheet_row_number} — built from the
-    same read, so callers no longer need a second get_all_values() call
-    to know where each symbol's row is."""
+# ── Internal helpers ─────────────────────────────────────────────────────────
+
+def _get_or_create_worksheet(sh):
+    """Return the News Cache worksheet, creating it if absent."""
     try:
-        ws = sh.worksheet(CACHE_TAB)
-    except Exception:
-        ws = sh.add_worksheet(CACHE_TAB, rows=500, cols=4)
-        ws.append_row(["Symbol", "FetchTimestamp", "NewsResultJSON", "RawArticlesJSON"])
-        return {}, ws, {}
+        return sh.worksheet(TAB_NAME)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = sh.add_worksheet(TAB_NAME, rows=500, cols=_NUM_COLS)
+        log.info(f"[news_cache] Created new worksheet: {TAB_NAME!r}")
+        return ws
 
-    rows = ws.get_all_values()[1:]
+
+def _truncate_raw_articles(raw_articles: list, limit: int = RAW_ARTICLES_CELL_LIMIT) -> str:
+    """
+    Serialise *raw_articles* to JSON, then truncate articles one-by-one
+    from the end until the serialised string fits within *limit* characters.
+
+    Logs a warning whenever truncation is necessary so the operator knows
+    data was dropped.
+
+    Returns a JSON string guaranteed to be ≤ limit characters.
+    """
+    if not raw_articles:
+        return "[]"
+
+    # Happy path — no truncation needed.
+    serialised = json.dumps(raw_articles, ensure_ascii=False)
+    if len(serialised) <= limit:
+        return serialised
+
+    # Truncate from the tail until we fit.
+    original_count = len(raw_articles)
+    articles = list(raw_articles)  # shallow copy so we don't mutate caller's list
+
+    while articles:
+        articles.pop()
+        serialised = json.dumps(articles, ensure_ascii=False)
+        if len(serialised) <= limit:
+            dropped = original_count - len(articles)
+            log.warning(
+                f"[news_cache] RAW_ARTICLES truncated: dropped {dropped} of "
+                f"{original_count} articles to stay within {limit}-char cell limit "
+                f"(retained {len(articles)}, serialised size {len(serialised)} chars)."
+            )
+            return serialised
+
+    # Edge case: even a single article exceeds the limit — store empty array.
+    log.warning(
+        f"[news_cache] RAW_ARTICLES: all {original_count} articles exceeded the "
+        f"{limit}-char cell limit individually; storing empty array."
+    )
+    return "[]"
+
+
+# ── Public API ───────────────────────────────────────────────────────────────
+
+def load(sh) -> dict:
+    """
+    Read the full News Cache worksheet and return a dict keyed by symbol.
+
+    Each value is a dict with keys: last_fetched, digest, raw_articles.
+    raw_articles is a Python list (parsed from JSON).
+    """
+    ws    = _get_or_create_worksheet(sh)
+    rows  = ws.get_all_values()
     cache = {}
-    existing_symbol_rows = {}
-    for idx, row in enumerate(rows):
-        if not row or not row[0]:
+
+    for row in rows:
+        if not row or not row[_COL_SYMBOL].strip():
             continue
-        sym = row[0].strip().upper()
-        existing_symbol_rows[sym] = idx + 2  # +2: 1-indexed sheet rows + header row
+        sym = row[_COL_SYMBOL].strip().upper()
         try:
-            fdt = datetime.fromisoformat(row[1])
-            result_dict = json.loads(row[2]) if row[2] else {}
-            raw_articles = json.loads(row[3]) if len(row) > 3 and row[3] else []
-        except (ValueError, IndexError, json.JSONDecodeError):
-            continue
-        cache[sym] = (fdt, result_dict, raw_articles)
-    return cache, ws, existing_symbol_rows
+            raw_json = row[_COL_RAW_ARTICLES] if len(row) > _COL_RAW_ARTICLES else "[]"
+            raw      = json.loads(raw_json) if raw_json.strip() else []
+        except (json.JSONDecodeError, ValueError):
+            raw = []
+        cache[sym] = {
+            "last_fetched":  row[_COL_LAST_FETCHED] if len(row) > _COL_LAST_FETCHED else "",
+            "digest":        row[_COL_DIGEST]        if len(row) > _COL_DIGEST        else "",
+            "raw_articles":  raw,
+        }
+
+    log.info(f"[news_cache] Loaded {len(cache)} cached symbols from {TAB_NAME!r}")
+    return cache
 
 
-def is_fresh(fetch_dt, max_age_hours=FRESHNESS_HOURS):
-    age = datetime.now(timezone.utc) - fetch_dt
-    return age.total_seconds() < max_age_hours * 3600
-
-
-def upsert(ws, symbol, news_result, raw_articles, existing_symbol_rows):
+def upsert(sh, symbol: str, last_fetched: str, digest: str, raw_articles: list) -> None:
     """
-    Targeted update: if symbol already has a row, update just that row's
-    range. If new, append. No clear(), no full-sheet rewrite.
-    existing_symbol_rows: {symbol: row_number} built once by the caller
-    from the current sheet state, avoiding a lookup per symbol.
+    Insert or update the cache row for *symbol*.
+
+    Enforces the RAW_ARTICLES_CELL_LIMIT before writing so the Sheets
+    50,000-character per-cell quota is never breached.
+
+    Raises gspread.exceptions.APIError on unrecoverable Sheets errors
+    (callers are responsible for spacing writes apart to avoid 429s).
     """
-    row_values = [
-        symbol,
-        datetime.now(timezone.utc).isoformat(),
-        json.dumps(news_result.__dict__),
-        json.dumps(raw_articles),
-    ]
-    row_num = existing_symbol_rows.get(symbol)
-    if row_num:
-        ws.update(f"A{row_num}:D{row_num}", [row_values])
+    symbol = symbol.strip().upper()
+    ws     = _get_or_create_worksheet(sh)
+
+    # Guard: serialise raw_articles with the cell-limit helper.
+    raw_json = _truncate_raw_articles(raw_articles, RAW_ARTICLES_CELL_LIMIT)
+
+    new_row = [""] * _NUM_COLS
+    new_row[_COL_SYMBOL]       = symbol
+    new_row[_COL_LAST_FETCHED] = last_fetched
+    new_row[_COL_DIGEST]       = digest
+    new_row[_COL_RAW_ARTICLES] = raw_json
+
+    # Find existing row for this symbol (column A, 1-indexed).
+    cell = ws.find(symbol, in_column=1)
+
+    if cell:
+        row_num = cell.row
+        ws.update(f"A{row_num}:D{row_num}", [new_row])
+        log.info(f"[news_cache] Updated row {row_num} for symbol {symbol!r}")
     else:
-        # Header occupies row 1; existing_symbol_rows holds exactly the
-        # symbols already on the sheet, so the next append lands at
-        # (count of known symbols + 2) — no extra read needed to know this.
-        next_row = len(existing_symbol_rows) + 2
-        ws.append_row(row_values)
-        existing_symbol_rows[symbol] = next_row
+        ws.append_row(new_row, value_input_option="RAW")
+        log.info(f"[news_cache] Appended new row for symbol {symbol!r}")

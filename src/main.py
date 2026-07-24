@@ -6,23 +6,23 @@ GitHub Actions — runs daily 6 PM IST
 """
 
 import os
-import csv
 import json
 import time
 import logging
+import statistics
 import requests
 import math
-import contextlib
 from datetime import datetime, date
 
+import numpy as np
+import pandas as pd
 import yfinance as yf
 import gspread
 from google.oauth2.service_account import Credentials
 import fund_cache
 import history_tracker
 import portfolio_analytics
-from news_engine.sources import google_news_rss
-from news_engine import classifier, news_cache
+import news_engine.news_cache as news_cache
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -35,19 +35,6 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 # ══════════════════════════════════════════════
-# STAGE TIMING (additive only — no control flow, retries,
-# batching, or return values are touched by this helper)
-# ══════════════════════════════════════════════
-@contextlib.contextmanager
-def stage_timer(stage_name):
-    t0 = time.time()
-    log.info(f"[TIMING] START {stage_name} @ {datetime.now().strftime('%H:%M:%S')}")
-    try:
-        yield
-    finally:
-        log.info(f"[TIMING] END   {stage_name} @ {datetime.now().strftime('%H:%M:%S')} | elapsed={time.time()-t0:.1f}s")
-
-# ══════════════════════════════════════════════
 # CONFIG
 # ══════════════════════════════════════════════
 SHEET_ID         = os.environ.get("SHEET_ID", "")
@@ -57,11 +44,12 @@ SCOPES           = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
-BATCH_SIZE  = 5
-SLEEP_BATCH = 8
-SLEEP_INFO  = 3
-SL_PCT      = 0.07
-TARGET_PCT  = 0.20
+BATCH_SIZE              = 5
+SLEEP_BATCH             = 8
+SLEEP_INFO              = 3
+SLEEP_NEWS_CACHE_WRITE  = 1   # throttle consecutive news_cache.upsert() calls (429 guard)
+SL_PCT                  = 0.07
+TARGET_PCT              = 0.20
 FUNDAMENTALS_CACHE_DAYS = 7
 
 
@@ -89,114 +77,6 @@ WATCHLISTS = {
         "MEDPLUS", "ALKYLAMINE", "LAURUSLABS", "TTKPRESTIG", "JYOTHYLAB",
         "JKPAPER", "MASTEK", "WOCKPHARMA", "DATAPATTNS",
     ],
-}
-
-# ══════════════════════════════════════════════
-# SYMBOL → COMPANY NAME MAP
-# Used by the news engine (google_news_rss.fetch requires a human-readable
-# company name for a better search query). Symbols missing from this map
-# fall back to the symbol string itself — news will still be fetched, just
-# with a less precise query. Add new symbols here as the portfolio grows.
-# ══════════════════════════════════════════════
-SYMBOL_TO_COMPANY = {
-    # Banks
-    "HDFCBANK":   "HDFC Bank",
-    "ICICIBANK":  "ICICI Bank",
-    "AXISBANK":   "Axis Bank",
-    "KOTAKBANK":  "Kotak Mahindra Bank",
-    "SBIBANK":    "State Bank of India",
-    "AUBANK":     "AU Small Finance Bank",
-    "BANDHANBNK": "Bandhan Bank",
-    "IDFCFIRSTB": "IDFC First Bank",
-    "INDUSINDBK": "IndusInd Bank",
-    "PNB":        "Punjab National Bank",
-    "CANBK":      "Canara Bank",
-    # NBFCs
-    "BAJFINANCE": "Bajaj Finance",
-    "BAJAJFINSV": "Bajaj Finserv",
-    "CHOLAFIN":   "Cholamandalam Investment",
-    "MUTHOOTFIN": "Muthoot Finance",
-    "JIOFIN":     "Jio Financial Services",
-    # Insurance / Capital Markets
-    "HDFCLIFE":   "HDFC Life Insurance",
-    "SBILIFE":    "SBI Life Insurance",
-    "ANGELONE":   "Angel One",
-    "MOTILALOFS": "Motilal Oswal Financial Services",
-    "BSE":        "BSE Limited",
-    "CDSL":       "CDSL",
-    # IT / Software
-    "INFY":       "Infosys",
-    "TCS":        "Tata Consultancy Services",
-    "WIPRO":      "Wipro",
-    "HCLTECH":    "HCL Technologies",
-    "TECHM":      "Tech Mahindra",
-    "MPHASIS":    "Mphasis",
-    "COFORGE":    "Coforge",
-    "KPITTECH":   "KPIT Technologies",
-    "OFSS":       "Oracle Financial Services",
-    "MASTEK":     "Mastek",
-    "DATAPATTNS": "Data Patterns",
-    # Pharma / Healthcare
-    "SUNPHARMA":  "Sun Pharmaceutical",
-    "CIPLA":      "Cipla",
-    "DRREDDY":    "Dr Reddy's Laboratories",
-    "DIVISLAB":   "Divi's Laboratories",
-    "LUPIN":      "Lupin",
-    "AUROPHARMA": "Aurobindo Pharma",
-    "GLAND":      "Gland Pharma",
-    "BIOCON":     "Biocon",
-    "AJANTPHARM": "Ajanta Pharma",
-    "GLENMARK":   "Glenmark Pharmaceuticals",
-    "WOCKPHARMA": "Wockhardt",
-    "ABBOTINDIA": "Abbott India",
-    "GLAXO":      "GSK Pharmaceuticals",
-    "FORTIS":     "Fortis Healthcare",
-    "LAURUSLABS": "Laurus Labs",
-    "ALKYLAMINE": "Alkyl Amines Chemicals",
-    "ZYDUSLIFE":  "Zydus Lifesciences",
-    "MEDPLUS":    "Medplus Health Services",
-    # Industrials / Capital Goods / Defence
-    "LT":         "Larsen and Toubro",
-    "SIEMENS":    "Siemens India",
-    "CUMMINSIND": "Cummins India",
-    "HONAUT":     "Honeywell Automation India",
-    "CGPOWER":    "CG Power and Industrial Solutions",
-    "POLYCAB":    "Polycab India",
-    "HAVELLS":    "Havells India",
-    "BEL":        "Bharat Electronics",
-    "HAL":        "Hindustan Aeronautics",
-    "MAZDOCK":    "Mazagon Dock Shipbuilders",
-    "COCHINSHIP": "Cochin Shipyard",
-    "BHARATFORG": "Bharat Forge",
-    "TTKPRESTIG": "TTK Prestige",
-    "JWL":        "Jupiter Wagons",
-    # Energy / Utilities
-    "NTPC":       "NTPC",
-    "NHPC":       "NHPC",
-    "ADANIPOWER": "Adani Power",
-    "ADANIENT":   "Adani Enterprises",
-    "ADANIPORTS": "Adani Ports",
-    "COALINDIA":  "Coal India",
-    "ONGC":       "Oil and Natural Gas Corporation",
-    "OIL":        "Oil India",
-    "BPCL":       "Bharat Petroleum",
-    "HINDPETRO":  "Hindustan Petroleum",
-    # Metals / Mining
-    "NATIONALUM": "National Aluminium",
-    "HINDZINC":   "Hindustan Zinc",
-    "HINDCOPPER": "Hindustan Copper",
-    # Consumer Staples / FMCG
-    "MARICO":     "Marico",
-    "DABUR":      "Dabur India",
-    "BRITANNIA":  "Britannia Industries",
-    "JYOTHYLAB":  "Jyothy Labs",
-    # Consumer Discretionary / Auto
-    "EICHERMOT":  "Eicher Motors",
-    "BHARTIARTL": "Bharti Airtel",
-    "DMART":      "Avenue Supermarts",
-    "MRF":        "MRF",
-    "BLUESTARCO": "Blue Star",
-    "JKPAPER":    "JK Paper",
 }
 
 # ══════════════════════════════════════════════
@@ -876,330 +756,8 @@ def get_xirr(sym, trades, current_price):
     return round(r*100, 2) if r else None
 
 # ══════════════════════════════════════════════
-# PORTFOLIO TAB — CSV-BASED (data/trade_log.csv)
-# Additive, parallel to read_trades()/get_avg_buy_and_qty()/get_xirr()
-# above. Those three remain untouched and keep driving GITHUB DATA,
-# Dashboard, and SL/Target alerts from the Sheets "Trade Log" tab.
-# Everything below reads data/trade_log.csv instead, and is used ONLY
-# by the Portfolio tab writer — fully isolated from the rest of the
-# pipeline. Reuses compute_xirr() (above) rather than duplicating the
-# Newton's-method solver.
-# ══════════════════════════════════════════════
-TRADE_COLS = {
-    "symbol":   "symbol",
-    "action":   "action",
-    "quantity": "quantity",
-    "price":    "price",
-    "date":     "date",
-}
-
-def read_trades_csv():
-    """
-    Reads the master trade log from data/trade_log.csv. Mirrors
-    read_trades()'s error-handling shape (try/except + log.warning +
-    return []) so a missing/unreadable file degrades the same way a
-    missing Trade Log tab already does — no new failure behavior.
-    """
-    file_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "trade_log.csv"
-    )
-    try:
-        with open(file_path, mode="r", encoding="utf-8") as f:
-            reader = csv.DictReader(f)
-            return [{k.strip(): v.strip() for k, v in row.items() if k is not None} for row in reader]
-    except Exception as e:
-        log.warning(f"Could not read {file_path}: {e}")
-        return []
-
-def get_avg_buy_and_qty_csv(sym, trades_csv):
-    """CSV-row (dict) equivalent of get_avg_buy_and_qty() — identical
-    average-cost algorithm, only the row access differs (dict lookup
-    via TRADE_COLS instead of positional list indices)."""
-    total_cost, total_qty = 0.0, 0.0
-    for t in trades_csv:
-        trade_sym = t.get(TRADE_COLS["symbol"], "")
-        if not trade_sym or trade_sym.strip().upper() != sym:
-            continue
-        try:
-            typ   = t.get(TRADE_COLS["action"], "").strip().upper()
-            qty   = float(t.get(TRADE_COLS["quantity"], 0))
-            price = float(t.get(TRADE_COLS["price"], 0))
-            if typ == "BUY":
-                total_cost += qty * price
-                total_qty  += qty
-            elif typ == "SELL" and total_qty > 0:
-                avg = total_cost / total_qty
-                total_cost -= qty * avg
-                total_qty  -= qty
-        except (ValueError, TypeError):
-            continue
-    total_qty = max(total_qty, 0)
-    avg_buy   = round(total_cost / total_qty, 2) if total_qty > 0 else None
-    return avg_buy, total_qty
-
-def get_xirr_csv(sym, trades_csv, current_price):
-    """CSV-row (dict) equivalent of get_xirr() — same cashflow
-    construction and reuses compute_xirr() unchanged."""
-    cashflows, dates, total_qty = [], [], 0
-    for t in trades_csv:
-        trade_sym = t.get(TRADE_COLS["symbol"], "")
-        if not trade_sym or trade_sym.strip().upper() != sym:
-            continue
-        try:
-            raw = str(t.get(TRADE_COLS["date"], "")).strip()
-            dt  = None
-            for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y"]:
-                try: dt = datetime.strptime(raw, fmt).date(); break
-                except ValueError: pass
-            if not dt: continue
-            typ   = t.get(TRADE_COLS["action"], "").strip().upper()
-            qty   = float(t.get(TRADE_COLS["quantity"], 0))
-            price = float(t.get(TRADE_COLS["price"], 0))
-            if typ == "BUY":
-                cashflows.append(-qty * price); dates.append(dt); total_qty += qty
-            elif typ == "SELL":
-                cashflows.append(qty * price);  dates.append(dt); total_qty -= qty
-        except (ValueError, TypeError):
-            continue
-    if total_qty > 0 and current_price:
-        cashflows.append(total_qty * current_price)
-        dates.append(date.today())
-    if len(cashflows) < 2: return None
-    r = compute_xirr(cashflows, dates)
-    return round(r * 100, 2) if r else None
-
-def _first_buy_date_csv(sym, trades_csv):
-    """Earliest BUY date for `sym` — needed for simple Annualized
-    Return% (distinct from XIRR, which is cash-flow-weighted). No
-    existing function exposes this, so a small new helper is
-    justified rather than restructuring get_xirr_csv()."""
-    dates = []
-    for t in trades_csv:
-        trade_sym = t.get(TRADE_COLS["symbol"], "")
-        if not trade_sym or trade_sym.strip().upper() != sym:
-            continue
-        if t.get(TRADE_COLS["action"], "").strip().upper() != "BUY":
-            continue
-        raw = str(t.get(TRADE_COLS["date"], "")).strip()
-        for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y"]:
-            try:
-                dates.append(datetime.strptime(raw, fmt).date())
-                break
-            except ValueError:
-                pass
-    return min(dates) if dates else None
-
-def compute_portfolio_metrics_csv(prices):
-    """
-    Self-contained Portfolio-tab calculation. Reads data/trade_log.csv
-    directly; takes `prices` (the dict already built by
-    fetch_prices_batch() in run_portfolio_update()) as a parameter —
-    zero new yfinance calls. Touches nothing from the GITHUB DATA
-    pipeline (no `results`, `holdings`, or Sheets `trades`).
-    Returns {symbol: {shares, avg_buy, current_price, invested,
-    current_value, pnl, return_pct, xirr_pct, ann_return_pct}} for
-    every symbol with an open position (qty > 0).
-    """
-    trades_csv = read_trades_csv()
-    if not trades_csv:
-        return {}
-
-    symbols = sorted({
-        t.get(TRADE_COLS["symbol"], "").strip().upper()
-        for t in trades_csv if t.get(TRADE_COLS["symbol"])
-    })
-
-    metrics = {}
-    for sym in symbols:
-        avg_buy, qty = get_avg_buy_and_qty_csv(sym, trades_csv)
-        cmp = prices.get(sym)
-        if not qty or qty <= 0 or not cmp:
-            continue
-
-        invested      = round(avg_buy * qty, 2) if avg_buy else 0
-        current_value = round(cmp * qty, 2)
-        pnl           = round(current_value - invested, 2)
-        return_pct    = round(pnl / invested * 100, 2) if invested else None
-        xirr_pct      = get_xirr_csv(sym, trades_csv, cmp)
-
-        first_buy   = _first_buy_date_csv(sym, trades_csv)
-        ann_return  = None
-        if first_buy and return_pct is not None:
-            days_held  = max((date.today() - first_buy).days, 1)
-            ann_return = round((return_pct / 100) / days_held * 365 * 100, 2)
-
-        metrics[sym] = {
-            "shares": qty, "avg_buy": avg_buy, "current_price": cmp,
-            "invested": invested, "current_value": current_value, "pnl": pnl,
-            "return_pct": return_pct, "xirr_pct": xirr_pct, "ann_return_pct": ann_return,
-        }
-    return metrics
-
-PORTFOLIO_TAB_COL_ALIASES = {
-    "shares":         ["shares", "quantity", "qty", "volume"],
-    "avg_buy":        ["avg buy", "avg price", "average buy price", "avg buy price"],
-    "current_price":  ["current price", "cmp", "price", "today"],
-    "invested":       ["invested"],
-    "current_value":  ["value", "current value"],
-    "pnl":            ["p&l", "pnl", "profit/loss"],
-    "return_pct":     ["return%", "return %"],
-    "xirr_pct":       ["xirr", "xirr%"],
-    "ann_return_pct": ["ann ret%", "annualized return", "ann return%", "annualized return%"],
-}
-
-def write_portfolio_tab_csv(sh, metrics):
-    """
-    Writes computed Portfolio metrics as plain VALUES into whichever
-    columns already exist on the "Portfolio" worksheet, matched by
-    header alias (same self-adapting approach the earlier VLOOKUP
-    writer used) — but sourced entirely from compute_portfolio_metrics_csv(),
-    not GITHUB DATA. Reuses batch_update_safe() for the actual write,
-    same as every other tab in this file — no new batching mechanism.
-    """
-    try:
-        pws = sh.worksheet("Portfolio")
-    except Exception as e:
-        log.warning(f"Portfolio tab not found, skipping CSV-based update: {e}")
-        return
-
-    rows = pws.get_all_values()
-    if not rows or len(rows) < 2:
-        return
-
-    headers = [h.strip().lower() for h in rows[0]]
-
-    sym_col_idx = None
-    for idx, h in enumerate(headers):
-        if h in ("symbol", "ticker", "instrument"):
-            sym_col_idx = idx
-            break
-    if sym_col_idx is None:
-        log.warning("Symbol column not found in Portfolio sheet — skipping CSV-based update.")
-        return
-
-    col_indices = {}
-    for key, aliases in PORTFOLIO_TAB_COL_ALIASES.items():
-        for idx, h in enumerate(headers):
-            if h in aliases:
-                col_indices[key] = idx
-                break
-    if not col_indices:
-        log.warning("No matching Portfolio columns found — skipping CSV-based update.")
-        return
-
-    reqs = []
-    for row_num in range(2, len(rows) + 1):
-        row = rows[row_num - 1]
-        sym_val = row[sym_col_idx].strip().upper() if len(row) > sym_col_idx else ""
-        if not sym_val or sym_val in ("TOTAL", "SUM", "SUBTOTAL", "GRAND"):
-            continue
-
-        m = metrics.get(sym_val)
-        if not m:
-            continue
-
-        for key, col_idx in col_indices.items():
-            value = m.get(key)
-            if value is None:
-                continue
-            reqs.append({
-                "updateCells": {
-                    "rows": [{"values": [{"userEnteredValue": {"numberValue": value}}]}],
-                    "fields": "userEnteredValue",
-                    "range": {
-                        "sheetId": pws.id,
-                        "startRowIndex": row_num - 1, "endRowIndex": row_num,
-                        "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1,
-                    },
-                }
-            })
-
-    if reqs:
-        batch_update_safe(sh, reqs)
-        log.info(f"Portfolio tab: {len(metrics)} symbols updated from trade_log.csv")
-
-def apply_portfolio_formatting(sh):
-    """
-    Presentation-only — makes the Portfolio worksheet visually
-    consistent with GITHUB DATA. Writes zero cell values; only
-    header style, row banding, freeze panes, and column widths.
-
-    Column widths are matched by HEADER NAME (not position) against
-    GITHUB_DATA_COL_WIDTHS — the same dict write_github_data() already
-    uses as its single source of truth, so both sheets stay in sync
-    from one place, with no live Sheets-metadata read needed (GITHUB
-    DATA's rendered widths always equal this dict's values, since
-    write_github_data() reapplies them every run).
-
-    Only Portfolio columns whose header text also appears in GITHUB
-    DATA get a width applied; columns unique to Portfolio (Shares,
-    Invested, Signal, etc.) keep their existing width untouched —
-    there's no "corresponding column" in GITHUB DATA to copy for those.
-    """
-    try:
-        pws = sh.worksheet("Portfolio")
-    except Exception as e:
-        log.warning(f"Portfolio tab not found, skipping formatting: {e}")
-        return
-
-    rows = pws.get_all_values()
-    if not rows:
-        return
-    headers = [h.strip() for h in rows[0]]
-    num_cols = len(headers)
-    num_data_rows = len(rows) - 1
-
-    reqs = []
-
-    # Header style — identical to write_github_data()'s header block
-    reqs.append({"repeatCell": {
-        "range": {"sheetId": pws.id, "startRowIndex": 0, "endRowIndex": 1,
-                  "startColumnIndex": 0, "endColumnIndex": num_cols},
-        "cell": {"userEnteredFormat": {
-            "backgroundColor": hex_rgb("0d1b2a"),
-            "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
-            "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"
-        }},
-        "fields": "userEnteredFormat"
-    }})
-
-    # Freeze — same frozenRowCount/frozenColumnCount as GITHUB DATA
-    reqs.append({"updateSheetProperties": {
-        "properties": {"sheetId": pws.id, "gridProperties": {"frozenRowCount": 1, "frozenColumnCount": 1}},
-        "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
-    }})
-
-    # Column widths — matched by header name against GITHUB_DATA_COL_WIDTHS
-    name_to_key = {v.strip().lower(): k for k, v in GITHUB_DATA_HEADER_NAMES.items()}
-    for idx, h in enumerate(headers):
-        key = name_to_key.get(h.strip().lower())
-        if key is not None:
-            width = GITHUB_DATA_COL_WIDTHS.get(key)
-            if width:
-                reqs.append({"updateDimensionProperties": {
-                    "range": {"sheetId": pws.id, "dimension": "COLUMNS", "startIndex": idx, "endIndex": idx + 1},
-                    "properties": {"pixelSize": width}, "fields": "pixelSize"
-                }})
-
-    # Alternating row colors — same pattern as write_github_data()
-    if num_data_rows > 0:
-        for i in range(num_data_rows):
-            rn  = i + 1
-            alt = "f8f9fa" if i % 2 == 0 else "ffffff"
-            reqs.append({"repeatCell": {
-                "range": {"sheetId": pws.id, "startRowIndex": rn, "endRowIndex": rn + 1,
-                          "startColumnIndex": 0, "endColumnIndex": num_cols},
-                "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
-                "fields": "userEnteredFormat.backgroundColor"
-            }})
-
-    batch_update_safe(sh, reqs)
-    log.info("Portfolio tab: formatting applied (GITHUB DATA-consistent)")
-
-# ══════════════════════════════════════════════
 # TECHNICAL INDICATORS
 # ══════════════════════════════════════════════
-
 def fetch_technicals(sym):
     try:
         df = yf.download(
@@ -1376,7 +934,6 @@ def fetch_prices_batch(symbols):
     for i in range(0, len(ns_syms), BATCH_SIZE):
         batch      = ns_syms[i:i + BATCH_SIZE]
         batch_orig = symbols[i:i + BATCH_SIZE]
-        _batch_t0 = time.time()
         for attempt in range(3):
             try:
                 df = yf.download(
@@ -1390,7 +947,7 @@ def fetch_prices_batch(symbols):
                         prices[sym] = round(float(close), 2)
                     except:
                         prices[sym] = None
-                log.info(f"Batch {i // BATCH_SIZE + 1}: {len(batch)} prices fetched | elapsed={time.time()-_batch_t0:.1f}s")
+                log.info(f"Batch {i // BATCH_SIZE + 1}: {len(batch)} prices fetched")
                 break
             except Exception as e:
                 if "429" in str(e) or "Too Many" in str(e):
@@ -1445,9 +1002,6 @@ def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
 def batch_update_safe(sh, requests, chunk=30):
     """Send batchUpdate requests in small chunks with retry on 429 quota errors."""
     import gspread.exceptions
-    _bu_t0 = time.time()
-    _num_chunks = (len(requests) + chunk - 1) // chunk if requests else 0
-    log.info(f"[TIMING] START google_sheets_write @ {datetime.now().strftime('%H:%M:%S')} | {len(requests)} requests in {_num_chunks} chunks")
     for i in range(0, len(requests), chunk):
         slice_ = requests[i:i + chunk]
         for attempt in range(5):  # up to 5 retries
@@ -1458,14 +1012,10 @@ def batch_update_safe(sh, requests, chunk=30):
             except gspread.exceptions.APIError as e:
                 if "429" in str(e):
                     wait = 15 * (2 ** attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
-                    log.warning(f"[quota] 429 hit, waiting {wait}s before retry {attempt+1}/5…")
+                    print(f"[quota] 429 hit, waiting {wait}s before retry {attempt+1}/5…")
                     time.sleep(wait)
                 else:
                     raise
-        _chunk_num = i // chunk + 1
-        if _chunk_num % 10 == 0 or _chunk_num == _num_chunks:
-            log.info(f"[TIMING] progress {_chunk_num}/{_num_chunks} sheet-write chunks | elapsed={time.time()-_bu_t0:.1f}s")
-    log.info(f"[TIMING] END   google_sheets_write @ {datetime.now().strftime('%H:%M:%S')} | elapsed={time.time()-_bu_t0:.1f}s")
 
 # ══════════════════════════════════════════════
 # ROW COLUMN MAP — mirrors the list built in build_result_row().
@@ -1485,10 +1035,6 @@ GITHUB_DATA_COLS = {
     "quality": 24, "valuation": 25, "timing": 26, "total": 27,
     "vol_spike": 28,
     "mcap": 29, "cap_type": 30,
-    # Phase A — News Engine columns (appended; existing indices 0–30 unchanged)
-    "news_summary": 31, "bullish_score": 32, "bearish_score": 33,
-    "news_sentiment": 34, "news_reason": 35,
-    "news_timestamp": 36, "news_source": 37,
 }
 
 # Header text per column key — headers[] is built FROM this dict via
@@ -1508,10 +1054,6 @@ GITHUB_DATA_HEADER_NAMES = {
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
     "vol_spike": "Vol Spike",
     "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
-    # Phase A — News Engine
-    "news_summary": "News Summary", "bullish_score": "Bullish Score", "bearish_score": "Bearish Score",
-    "news_sentiment": "News Sentiment", "news_reason": "News Reason",
-    "news_timestamp": "News Timestamp", "news_source": "News Source",
 }
 
 # Column pixel width per key — same self-syncing pattern as headers.
@@ -1529,10 +1071,6 @@ GITHUB_DATA_COL_WIDTHS = {
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
     "vol_spike": 55,
     "mcap": 65, "cap_type": 65,
-    # Phase A — News Engine
-    "news_summary": 300, "bullish_score": 80, "bearish_score": 80,
-    "news_sentiment": 90, "news_reason": 250,
-    "news_timestamp": 120, "news_source": 100,
 }
 
 # ══════════════════════════════════════════════
@@ -1542,7 +1080,7 @@ GITHUB_DATA_COL_WIDTHS = {
 # scoring, and formatting identical everywhere.
 # xirr_val is left as "" for watchlist symbols (no holdings).
 # ══════════════════════════════════════════════
-def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_result=None):
+def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
     sector   = f.get("sector", "")
     industry = f.get("industry", "")
     high52   = f.get("high52")
@@ -1628,15 +1166,6 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_result=None):
     row[C["trend"]]           = trend
     row[C["mcap"]]            = mcap_fmt
     row[C["cap_type"]]        = cap_type
-    # Phase A — News Engine fields (empty for watchlists; populated by run_portfolio_update)
-    nr = news_result or {}
-    row[C["news_summary"]]    = nr.get("summary", "")
-    row[C["bullish_score"]]   = nr.get("bullish_score", "")
-    row[C["bearish_score"]]   = nr.get("bearish_score", "")
-    row[C["news_sentiment"]]  = nr.get("sentiment", "")
-    row[C["news_reason"]]     = nr.get("reason", "")
-    row[C["news_timestamp"]]  = nr.get("timestamp", "")
-    row[C["news_source"]]     = nr.get("source", "")
 
     return row, archetype, tot_sc, final_action
 def clean_row(row):
@@ -1686,7 +1215,19 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         headers[idx] = GITHUB_DATA_HEADER_NAMES.get(key, key)
         widths[idx]  = GITHUB_DATA_COL_WIDTHS.get(key, 70)
 
-    ws.append_row(headers)
+    # Harden header write against transient 429 quota errors.
+    import gspread.exceptions as _gse
+    for _attempt in range(5):
+        try:
+            ws.append_row(headers)
+            break
+        except _gse.APIError as _e:
+            if "429" in str(_e):
+                _wait = 15 * (2 ** _attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
+                log.warning(f"[write_github_data] 429 on append_row(headers), waiting {_wait}s (attempt {_attempt+1}/5)")
+                time.sleep(_wait)
+            else:
+                raise
     if rows:
         rows = [clean_row(r) for r in rows]
         ws.append_rows(rows)
@@ -1889,6 +1430,137 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     return ws
 
 # ══════════════════════════════════════════════
+# WRITE GROWTH SCREENER TAB
+# ══════════════════════════════════════════════
+def write_growth_screener(sh, all_out):
+    ACTION_COLORS = {
+        "STRONG BUY":  ("ffffff", "00c853"),
+        "BUY":         ("ffffff", "0b8043"),
+        "ACCUMULATE":  ("0b8043", "d9ead3"),
+        "HOLD":        ("7f4f00", "fff2cc"),
+        "WATCH":       ("7f4f00", "fce8b2"),
+        "AVOID":       ("c62828", "fde9d9"),
+        "SELL":        ("ffffff", "cc0000"),
+    }
+    growth = []
+
+    for row in all_out:
+        if not row or not row[0]: continue
+        sym    = row[0].strip()
+        action = row[23].strip() if len(row) > 23 else ""
+        cap    = row[35].strip() if len(row) > 35 else ""
+
+        def sf(v):
+            try: return float(str(v).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip())
+            except: return None
+
+        tot_sc = sf(row[22] if len(row) > 22 else "")
+        q_sc   = sf(row[19] if len(row) > 19 else "")
+        v_sc   = sf(row[20] if len(row) > 20 else "")
+        t_sc   = sf(row[21] if len(row) > 21 else "")
+        rsi    = row[28] if len(row) > 28 else ""
+        trend  = row[33] if len(row) > 33 else ""
+
+        growth.append([
+            sym, cap,
+            row[9]  if len(row) > 9  else "",   # PE
+            row[14] if len(row) > 14 else "",   # ROE%
+            row[16] if len(row) > 16 else "",   # Debt/Eq
+            row[17] if len(row) > 17 else "",   # Rev Growth%
+            row[13] if len(row) > 13 else "",   # Div Yield%
+            row[8]  if len(row) > 8  else "",   # Buy 20% Less
+            q_sc or "", v_sc or "", t_sc or "", tot_sc or "",
+            action,
+            row[24] if len(row) > 24 else "",   # Strengths
+            row[25] if len(row) > 25 else "",   # Weaknesses
+            rsi, trend,
+        ])
+
+    growth.sort(key=lambda x: float(x[11]) if x[11] != "" else 0, reverse=True)
+
+    try:
+        gsw = sh.worksheet("Growth Screener")
+        gsw.clear()
+    except:
+        gsw = sh.add_worksheet("Growth Screener", rows=200, cols=18)
+
+    gsw.append_row([
+        "Symbol", "Cap Type",
+        "PE", "ROE%", "Debt/Eq", "Rev Growth%", "Div Yield%", "Buy 20% Less",
+        "Quality", "Valuation", "Timing", "Total Score",
+        "Final Action",
+        "Strengths", "Weaknesses",
+        "RSI", "Trend"
+    ])
+    if growth: gsw.append_rows(growth)
+
+    reqs = [{"repeatCell": {
+        "range": {"sheetId": gsw.id, "startRowIndex": 0, "endRowIndex": 1,
+                  "startColumnIndex": 0, "endColumnIndex": 17},
+        "cell": {"userEnteredFormat": {
+            "backgroundColor": hex_rgb("0d1b2a"),
+            "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
+            "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"
+        }},
+        "fields": "userEnteredFormat"
+    }}]
+    reqs.append({"updateSheetProperties": {
+        "properties": {"sheetId": gsw.id, "gridProperties": {"frozenRowCount": 1, "frozenColumnCount": 1}},
+        "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
+    }})
+    gs_widths = [80, 80, 50, 55, 60, 70, 65, 80, 55, 60, 55, 60, 90, 220, 220, 50, 90]
+    reqs += [{"updateDimensionProperties": {
+        "range": {"sheetId": gsw.id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
+        "properties": {"pixelSize": w}, "fields": "pixelSize"
+    }} for i, w in enumerate(gs_widths)]
+
+    for i, row in enumerate(growth):
+        rn  = i + 1
+        alt = "f8f9fa" if i % 2 == 0 else "ffffff"
+        action = str(row[12])
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": gsw.id, "startRowIndex": rn, "endRowIndex": rn + 1,
+                      "startColumnIndex": 0, "endColumnIndex": 17},
+            "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
+            "fields": "userEnteredFormat.backgroundColor"
+        }})
+
+        if action in ACTION_COLORS:
+            fg_a, bg_a = ACTION_COLORS[action]
+            reqs.append(color_cell_req(gsw.id, rn, 12, bg_a, fg_a))
+
+        cap = str(row[1])
+        if   cap == "Large Cap": reqs.append(color_cell_req(gsw.id, rn, 1, "d9ead3", "0b8043"))
+        elif cap == "Mid Cap":   reqs.append(color_cell_req(gsw.id, rn, 1, "d9eaf7", "1565c0"))
+        elif cap == "Small Cap": reqs.append(color_cell_req(gsw.id, rn, 1, "fde9d9", "c62828"))
+
+        try:
+            rsi_val = float(str(row[15]).replace("%", ""))
+            if   rsi_val < 35: reqs.append(color_cell_req(gsw.id, rn, 15, "d9ead3", "0b8043"))
+            elif rsi_val > 70: reqs.append(color_cell_req(gsw.id, rn, 15, "fde9d9", "c62828"))
+        except: pass
+
+        try:
+            tot = float(str(row[11]))
+            if   tot >= 65: reqs.append(color_cell_req(gsw.id, rn, 11, "00c853", "ffffff"))
+            elif tot >= 50: reqs.append(color_cell_req(gsw.id, rn, 11, "d9ead3", "0b8043"))
+            elif tot >= 35: reqs.append(color_cell_req(gsw.id, rn, 11, "fff2cc", "7f4f00"))
+            else:           reqs.append(color_cell_req(gsw.id, rn, 11, "fde9d9", "c62828"))
+        except: pass
+
+    for col_idx in [13, 14]:
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": gsw.id, "startRowIndex": 1, "endRowIndex": len(growth) + 1,
+                      "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
+            "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP"}},
+            "fields": "userEnteredFormat.wrapStrategy"
+        }})
+
+    batch_update_safe(sh, reqs)
+    log.info(f"Growth Screener: {len(growth)} stocks")
+    return growth
+
+# ══════════════════════════════════════════════
 # WATCHLIST PROCESSING (Future Buy, and any future
 # watchlist added to WATCHLISTS). Market-data only —
 # no qty, no buy price, no purchase date, no XIRR/SL/
@@ -1938,95 +1610,47 @@ def process_all_watchlists(sh):
 def run_portfolio_update(sh):
     """
     Runs the full daily pipeline: fetch prices/fundamentals/technicals,
-    score every symbol, write GITHUB DATA + all WATCHLISTS tabs.
-    Returns everything the caller needs (GitHub Actions cron AND the
-    /refresh bot command both call this — single source of truth, no
-    duplicated pipeline logic).
+    score every symbol, write GITHUB DATA + Growth Screener + all
+    WATCHLISTS tabs. Returns everything the caller needs (GitHub Actions
+    cron AND the /refresh bot command both call this — single source
+    of truth, no duplicated pipeline logic).
     """
     symbols = read_symbols(sh)
     if not symbols:
         log.error("No symbols found.")
         return None
 
-    with stage_timer("read_trades"):
-        trades = read_trades(sh)
+    trades = read_trades(sh)
     log.info(f"Found {len(symbols)} symbols")
 
     log.info("Fetching prices...")
-    with stage_timer("fetch_prices_batch"):
-        prices = fetch_prices_batch(symbols)
+    prices = fetch_prices_batch(symbols)
 
     log.info("Fetching fundamentals + technicals...")
     fund_map, tech_map, rev_map = {}, {}, {}
     fc_cache = fund_cache.load_cache(sh)
-    _ft_t0 = time.time()
-    _fund_elapsed_total = 0.0
-    _tech_elapsed_total = 0.0
-    log.info(f"[TIMING] START fetch_fundamentals+fetch_technicals @ {datetime.now().strftime('%H:%M:%S')} | {len(symbols)} symbols")
-    for _i, sym in enumerate(symbols, 1):
-        _f_t0 = time.time()
+    for sym in symbols:
         f = fund_cache.get_or_fetch_fundamentals(sym, fc_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
-        _fund_elapsed_total += time.time() - _f_t0
         fund_map[sym] = f
         rev_map[sym]  = fetch_rev_growth(sym)
         log.info(f"  Technicals: {sym}")
-        _t_t0 = time.time()
         tech_map[sym] = fetch_technicals(sym)
-        _tech_elapsed_total += time.time() - _t_t0
         time.sleep(SLEEP_INFO)
-        if _i % 10 == 0 or _i == len(symbols):
-            log.info(f"[TIMING] progress {_i}/{len(symbols)} symbols | elapsed={time.time()-_ft_t0:.1f}s | fundamentals_total={_fund_elapsed_total:.1f}s | technicals_total={_tech_elapsed_total:.1f}s")
     fund_cache.save_cache(sh, fc_cache)
-    log.info(f"[TIMING] END   fetch_fundamentals+fetch_technicals @ {datetime.now().strftime('%H:%M:%S')} | elapsed={time.time()-_ft_t0:.1f}s | fundamentals_total={_fund_elapsed_total:.1f}s | technicals_total={_tech_elapsed_total:.1f}s")
 
-    # ══ Phase A: News Engine — fetch after fundamentals, before scoring ══
-    # Runs once per symbol. Never raises — per-symbol try/except so a news
-    # failure for one stock never stops the portfolio update.
-    news_map = {}  # {symbol: NewsResult.__dict__ or None}
-    with stage_timer("news_fetch"):
-        try:
-            nc_cache, nc_ws, existing_symbol_rows = news_cache.load_cache(sh)
-        except Exception as _ne:
-            log.warning(f"[news] cache load failed — news skipped this run: {_ne}")
-            nc_cache, nc_ws, existing_symbol_rows = {}, None, {}
-
-        _news_t0 = time.time()
-        log.info(f"[TIMING] START news_fetch @ {datetime.now().strftime('%H:%M:%S')} | {len(symbols)} symbols")
-        for sym in symbols:
-            try:
-                if sym in nc_cache:
-                    fdt, result_dict, _ = nc_cache[sym]
-                    if news_cache.is_fresh(fdt):
-                        news_map[sym] = result_dict
-                        continue  # use cached result, no HTTP call
-                company_name = SYMBOL_TO_COMPANY.get(sym, sym)
-                articles = google_news_rss.fetch(sym, company_name, timeout=8)
-                result, enriched = classifier.classify(sym, articles)
-                news_map[sym] = result.__dict__
-                if nc_ws is not None:
-                    news_cache.upsert(nc_ws, sym, result, enriched, existing_symbol_rows)
-            except Exception as _e:
-                log.warning(f"[news] {sym}: skipped — {_e}")
-                news_map[sym] = None
-        log.info(f"[TIMING] END   news_fetch @ {datetime.now().strftime('%H:%M:%S')} | elapsed={time.time()-_news_t0:.1f}s")
-
-    with stage_timer("portfolio_calculations"):
-        holdings, portfolio_live_value = {}, 0.0
-        holdings_map = {sym: get_avg_buy_and_qty(sym, trades) for sym in symbols}
-        for sym in symbols:
-            avg_buy, qty = holdings_map[sym]
-            cmp = prices.get(sym)
-            if qty > 0 and cmp and cmp > 0:
-                holdings[sym] = (qty, cmp, avg_buy)
-                portfolio_live_value += qty * cmp
+    holdings, portfolio_live_value = {}, 0.0
+    for sym in symbols:   
+        avg_buy, qty = get_avg_buy_and_qty(sym, trades)
+        cmp = prices.get(sym)
+        if qty > 0 and cmp and cmp > 0:
+            holdings[sym] = (qty, cmp, avg_buy)
+            portfolio_live_value += qty * cmp
 
     results, failed = [], []
     alerts = {"sl_breach": [], "target_hit": [], "strong_buy": [], "sell_watch": []}
     top_picks = []
 
-    _score_t0 = time.time()
-    log.info(f"[TIMING] START score_and_build_results @ {datetime.now().strftime('%H:%M:%S')} | {len(symbols)} symbols")
-    for _i, sym in enumerate(symbols, 1):
+    for sym in symbols:
         cmp = prices.get(sym)
         if not cmp:
             failed.append(sym)
@@ -2034,14 +1658,10 @@ def run_portfolio_update(sh):
             continue
 
         f, tech, rev_gr = fund_map.get(sym, {}), tech_map.get(sym, {}), rev_map.get(sym)
-        avg_buy, qty = holdings_map[sym]
+        avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         xirr_val = get_xirr(sym, trades, cmp)
 
-        row, archetype, tot_sc, final_action = build_result_row(
-            sym, cmp, f, tech, rev_gr,
-            xirr_val=xirr_val,
-            news_result=news_map.get(sym),  # Phase A: None → empty news columns
-        )
+        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val)
 
         if avg_buy and qty > 0:
             sl_price, tgt_price = avg_buy * (1 - SL_PCT), avg_buy * (1 + TARGET_PCT)
@@ -2059,41 +1679,29 @@ def run_portfolio_update(sh):
         results.append(row)
         log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}")
 
-        if _i % 10 == 0 or _i == len(symbols):
-            log.info(f"[TIMING] progress {_i}/{len(symbols)} symbols scored | elapsed={time.time()-_score_t0:.1f}s")
-    log.info(f"[TIMING] END   score_and_build_results @ {datetime.now().strftime('%H:%M:%S')} | elapsed={time.time()-_score_t0:.1f}s")
-
     top_picks.sort(key=lambda x: x["total"], reverse=True)
 
-    with stage_timer("github_data_generation (write_github_data + watchlists)"):
-        write_github_data(sh, results, tab_name="GITHUB DATA")
-        process_all_watchlists(sh)
+    write_github_data(sh, results, tab_name="GITHUB DATA")
+    process_all_watchlists(sh)
+    # ── TEMP DEBUG LOGGING — remove after root cause confirmed ──
+    log.info(f"[DEBUG] len(symbols)={len(symbols)} len(results)={len(results)} "
+              f"len(holdings)={len(holdings)} len(fund_map)={len(fund_map)} len(prices)={len(prices)}")
+    log.info(f"[DEBUG] holdings keys (first 5): {list(holdings.keys())[:5]}")
+    log.info(f"[DEBUG] results symbols (first 5): {[r[GITHUB_DATA_COLS['symbol']] for r in results[:5]]}")
+    log.info(f"[DEBUG] fund_map keys (first 5): {list(fund_map.keys())[:5]}")
+    log.info(f"[DEBUG] trades row count: {len(trades)}, first trade row: {trades[0] if trades else 'EMPTY'}")
+    # ── END TEMP DEBUG LOGGING ──
 
-    # Portfolio tab — fully self-contained, computed from
-    # data/trade_log.csv + the `prices` dict already fetched above.
-    # Independent of GITHUB DATA/results/holdings/trades — touches
-    # nothing else in this function. Wrapped in try/except so a
-    # failure here can never affect GITHUB DATA/Future Buy/Dashboard,
-    # same isolation pattern process_all_watchlists() already uses.
-    with stage_timer("portfolio_tab_csv_write"):
-        try:
-            portfolio_metrics = compute_portfolio_metrics_csv(prices)
-            write_portfolio_tab_csv(sh, portfolio_metrics)
-            apply_portfolio_formatting(sh)
-        except Exception as e:
-            log.error(f"Portfolio (CSV) update failed (GITHUB DATA/Future Buy unaffected): {e}")
+    changes = history_tracker.compute_todays_changes(sh, results)
+    prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
 
-    with stage_timer("history_and_dashboard_update"):
-        changes = history_tracker.compute_todays_changes(sh, results)
-        prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
+    dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
+    health = portfolio_analytics.compute_portfolio_health(results, holdings, fund_map, dash)
+    health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
 
-        dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
-        health = portfolio_analytics.compute_portfolio_health(results, holdings, fund_map, dash)
-        health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
+    history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
 
-        history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
-
-        portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
+    portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
 
     return {
         "results": results, "alerts": alerts,
@@ -2109,23 +1717,22 @@ def main():
     log.info(f"Run time: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}")
     log.info("═" * 55)
 
-    with stage_timer("get_gspread_client+open_sheet"):
-        gc = get_gspread_client()
-        sh = gc.open_by_key(SHEET_ID)
+    gc = get_gspread_client()
+    sh = gc.open_by_key(SHEET_ID)
     log.info("Connected to Google Sheets")
 
-    with stage_timer("run_portfolio_update_total"):
-        out = run_portfolio_update(sh)
+    out = run_portfolio_update(sh)
     if out is None:
         send_telegram("❌ Portfolio update FAILED — no symbols found in Portfolio tab col B")
         return
 
     msg = build_alert_message(out["alerts"], out["portfolio_live_value"], out["top_picks"])
     digest = history_tracker.format_telegram_digest(out.get("changes"))
+    if digest:
+        msg = msg + "\n\n" + digest
     if len(msg) > 4000:
         msg = msg[:4000] + "\n\n<i>...truncated</i>"
-    with stage_timer("telegram_notification"):
-        send_telegram(msg)
+    send_telegram(msg)
 
     log.info("═" * 55)
     log.info(f"✅ {len(out['results'])} stocks updated | ❌ Failed: {out['failed'] or 'None'}")
