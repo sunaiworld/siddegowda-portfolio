@@ -2003,7 +2003,6 @@ def run_portfolio_update(sh):
         log.info(f"[TIMING] START news_fetch @ {datetime.now().strftime('%H:%M:%S')} | {len(symbols)} symbols")
         for sym in symbols:
             try:
-                from datetime import timezone as _tz
                 if sym in nc_cache:
                     fdt, result_dict, _ = nc_cache[sym]
                     if news_cache.is_fresh(fdt):
