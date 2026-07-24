@@ -18,20 +18,26 @@ FRESHNESS_HOURS = 6
 
 
 def load_cache(sh):
-    """Returns {symbol: (fetch_dt, news_result_dict, raw_articles_list)}."""
+    """Returns (cache, ws, existing_symbol_rows):
+    cache = {symbol: (fetch_dt, news_result_dict, raw_articles_list)}
+    existing_symbol_rows = {symbol: sheet_row_number} — built from the
+    same read, so callers no longer need a second get_all_values() call
+    to know where each symbol's row is."""
     try:
         ws = sh.worksheet(CACHE_TAB)
     except Exception:
         ws = sh.add_worksheet(CACHE_TAB, rows=500, cols=4)
         ws.append_row(["Symbol", "FetchTimestamp", "NewsResultJSON", "RawArticlesJSON"])
-        return {}, ws
+        return {}, ws, {}
 
     rows = ws.get_all_values()[1:]
     cache = {}
-    for row in rows:
+    existing_symbol_rows = {}
+    for idx, row in enumerate(rows):
         if not row or not row[0]:
             continue
         sym = row[0].strip().upper()
+        existing_symbol_rows[sym] = idx + 2  # +2: 1-indexed sheet rows + header row
         try:
             fdt = datetime.fromisoformat(row[1])
             result_dict = json.loads(row[2]) if row[2] else {}
@@ -39,7 +45,7 @@ def load_cache(sh):
         except (ValueError, IndexError, json.JSONDecodeError):
             continue
         cache[sym] = (fdt, result_dict, raw_articles)
-    return cache, ws
+    return cache, ws, existing_symbol_rows
 
 
 def is_fresh(fetch_dt, max_age_hours=FRESHNESS_HOURS):
