@@ -1035,6 +1035,14 @@ GITHUB_DATA_COLS = {
     "quality": 24, "valuation": 25, "timing": 26, "total": 27,
     "vol_spike": 28,
     "mcap": 29, "cap_type": 30,
+    # ── News Engine columns (Phase A) ──────────────────────
+    "news_summary":   31,
+    "bullish_score":  32,
+    "bearish_score":  33,
+    "news_sentiment": 34,
+    "news_reason":    35,
+    "news_timestamp": 36,
+    "news_source":    37,
 }
 
 # Header text per column key — headers[] is built FROM this dict via
@@ -1054,6 +1062,14 @@ GITHUB_DATA_HEADER_NAMES = {
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
     "vol_spike": "Vol Spike",
     "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
+    # ── News Engine columns (Phase A) ──────────────────────
+    "news_summary":   "News Summary",
+    "bullish_score":  "Bullish Score",
+    "bearish_score":  "Bearish Score",
+    "news_sentiment": "News Sentiment",
+    "news_reason":    "News Reason",
+    "news_timestamp": "News Timestamp",
+    "news_source":    "News Source",
 }
 
 # Column pixel width per key — same self-syncing pattern as headers.
@@ -1071,6 +1087,14 @@ GITHUB_DATA_COL_WIDTHS = {
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
     "vol_spike": 55,
     "mcap": 65, "cap_type": 65,
+    # ── News Engine columns (Phase A) ──────────────────────
+    "news_summary":   220,
+    "bullish_score":   55,
+    "bearish_score":   55,
+    "news_sentiment":  80,
+    "news_reason":    180,
+    "news_timestamp":  90,
+    "news_source":     80,
 }
 
 # ══════════════════════════════════════════════
@@ -1080,7 +1104,7 @@ GITHUB_DATA_COL_WIDTHS = {
 # scoring, and formatting identical everywhere.
 # xirr_val is left as "" for watchlist symbols (no holdings).
 # ══════════════════════════════════════════════
-def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
+def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     sector   = f.get("sector", "")
     industry = f.get("industry", "")
     high52   = f.get("high52")
@@ -1166,6 +1190,16 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=""):
     row[C["trend"]]           = trend
     row[C["mcap"]]            = mcap_fmt
     row[C["cap_type"]]        = cap_type
+
+    # ── News Engine fields (Phase A) ─────────────────────────────
+    nd = news_data or {}
+    row[C["news_summary"]]   = nd.get("digest", "")
+    row[C["bullish_score"]]  = nd.get("bullish_score", "")
+    row[C["bearish_score"]]  = nd.get("bearish_score", "")
+    row[C["news_sentiment"]] = nd.get("sentiment", "")
+    row[C["news_reason"]]    = nd.get("reason", "")
+    row[C["news_timestamp"]] = nd.get("last_fetched", "")
+    row[C["news_source"]]    = nd.get("source", "")
 
     return row, archetype, tot_sc, final_action
 def clean_row(row):
@@ -1638,6 +1672,14 @@ def run_portfolio_update(sh):
         time.sleep(SLEEP_INFO)
     fund_cache.save_cache(sh, fc_cache)
 
+    # ── News Engine: load cached news for all symbols (Phase A) ──
+    try:
+        nc_cache = news_cache.load(sh)
+        log.info(f"[news_cache] Loaded news for {len(nc_cache)} symbols")
+    except Exception as _e:
+        log.warning(f"[news_cache] Could not load news cache, skipping: {_e}")
+        nc_cache = {}
+
     holdings, portfolio_live_value = {}, 0.0
     for sym in symbols:   
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
@@ -1660,8 +1702,9 @@ def run_portfolio_update(sh):
         f, tech, rev_gr = fund_map.get(sym, {}), tech_map.get(sym, {}), rev_map.get(sym)
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         xirr_val = get_xirr(sym, trades, cmp)
+        nd = nc_cache.get(sym.upper(), {})
 
-        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val)
+        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val, news_data=nd)
 
         if avg_buy and qty > 0:
             sl_price, tgt_price = avg_buy * (1 - SL_PCT), avg_buy * (1 + TARGET_PCT)
