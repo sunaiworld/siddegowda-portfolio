@@ -92,8 +92,16 @@ def load(sh) -> dict:
     """
     Read the full News Cache worksheet and return a dict keyed by symbol.
 
-    Each value is a dict with keys: last_fetched, digest, raw_articles.
-    raw_articles is a Python list (parsed from JSON).
+    The Digest column may hold either:
+      - a JSON object (current format) with keys: summary, bullish_score,
+        bearish_score, sentiment, reason, timestamp, source
+      - a plain-text string (legacy rows written before this format existed)
+
+    Each returned value is a dict with keys: last_fetched, digest,
+    bullish_score, bearish_score, sentiment, reason, source, raw_articles.
+    raw_articles is a Python list (parsed from JSON). The Digest cell itself
+    is never rewritten here — only the in-memory dict this function returns
+    is restructured.
     """
     ws    = _get_or_create_worksheet(sh)
     rows  = ws.get_all_values()
@@ -108,11 +116,38 @@ def load(sh) -> dict:
             raw      = json.loads(raw_json) if raw_json.strip() else []
         except (json.JSONDecodeError, ValueError):
             raw = []
-        cache[sym] = {
-            "last_fetched":  row[_COL_LAST_FETCHED] if len(row) > _COL_LAST_FETCHED else "",
-            "digest":        row[_COL_DIGEST]        if len(row) > _COL_DIGEST        else "",
-            "raw_articles":  raw,
-        }
+
+        digest_raw = row[_COL_DIGEST] if len(row) > _COL_DIGEST else ""
+
+        try:
+            parsed = json.loads(digest_raw) if digest_raw.strip() else None
+        except (json.JSONDecodeError, ValueError):
+            parsed = None
+
+        if isinstance(parsed, dict):
+            # Digest cell holds the JSON object — unpack its fields.
+            cache[sym] = {
+                "last_fetched":  row[_COL_LAST_FETCHED] if len(row) > _COL_LAST_FETCHED else "",
+                "digest":        parsed.get("summary", ""),
+                "bullish_score": parsed.get("bullish_score", ""),
+                "bearish_score": parsed.get("bearish_score", ""),
+                "sentiment":     parsed.get("sentiment", ""),
+                "reason":        parsed.get("reason", ""),
+                "source":        parsed.get("source", ""),
+                "raw_articles":  raw,
+            }
+        else:
+            # Not JSON (legacy plain-text row) — backward compatible fallback.
+            cache[sym] = {
+                "last_fetched":  row[_COL_LAST_FETCHED] if len(row) > _COL_LAST_FETCHED else "",
+                "digest":        digest_raw,
+                "bullish_score": "",
+                "bearish_score": "",
+                "sentiment":     "",
+                "reason":        "",
+                "source":        "",
+                "raw_articles":  raw,
+            }
 
     log.info(f"[news_cache] Loaded {len(cache)} cached symbols from {TAB_NAME!r}")
     return cache
