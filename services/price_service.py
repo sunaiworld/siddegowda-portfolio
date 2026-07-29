@@ -28,12 +28,7 @@ def get_price_snapshot(symbol):
         return None
 
     high52, low52 = f.get("high52"), f.get("low52")
-    day_change_pct = None
-    if cmp and tech.get("sma50"):
-        try:
-            day_change_pct = round((cmp - tech["sma50"]) / tech["sma50"] * 100, 2)
-        except ZeroDivisionError:
-            day_change_pct = None
+    day_change_pct = tech.get("day_chg_pct")
 
     return {
         "symbol": symbol,
