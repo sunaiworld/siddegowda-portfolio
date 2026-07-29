@@ -98,6 +98,21 @@ def classify(symbol, articles):
 
     summary = f"{len(articles)} articles, dominant topic: {top_category}. {enriched[0]['title']}"
 
+    # Collect the distinct article-level outlet names (e.g. "Economic Times",
+    # "Moneycontrol") rather than the feed aggregator name. Capped at 3 to
+    # keep the cell readable. Falls back to the feed name when no outlet is
+    # tagged in the RSS items (which some feeds omit).
+    outlets = []
+    seen = set()
+    for art in enriched:
+        s = art.get("source", "").strip()
+        if s and s not in seen:
+            seen.add(s)
+            outlets.append(s)
+        if len(outlets) == 3:
+            break
+    source_str = ", ".join(outlets) if outlets else "google_news_rss"
+
     return NewsResult(
         summary=summary[:300],
         bullish_score=bullish_score,
@@ -105,5 +120,5 @@ def classify(symbol, articles):
         sentiment=sentiment,
         reason=reason[:300],
         timestamp=datetime.now(timezone.utc).isoformat(),
-        source="google_news_rss",
+        source=source_str,
     ), enriched
