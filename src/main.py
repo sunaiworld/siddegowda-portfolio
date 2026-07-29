@@ -1513,6 +1513,57 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             bg, fg = TREND_COLORS[trend_val]
             reqs.append(color_cell_req(ws.id, rn, C["trend"], bg, fg))
 
+        # ── AI News columns ────────────────────────────────────────────────
+        # Automatically covers every key present in GITHUB_DATA_COLS that
+        # has a "news_" prefix or is the cmp/updated timestamp column.
+        # Adding a new news column to GITHUB_DATA_COLS is sufficient —
+        # no further formatting wiring needed.
+
+        bull_v = sf(row, "bullish_score")
+        bear_v = sf(row, "bearish_score")
+        news_sent = row[C["news_sentiment"]].strip() if len(row) > C["news_sentiment"] else ""
+
+        # Bullish Score  0–10: >=6 green, >=3 yellow, else red
+        if bull_v is not None:
+            if bull_v >= 6:   reqs.append(color_cell_req(ws.id, rn, C["bullish_score"], "d9ead3", "0b8043"))
+            elif bull_v >= 3: reqs.append(color_cell_req(ws.id, rn, C["bullish_score"], "fff2cc", "7f4f00"))
+            else:             reqs.append(color_cell_req(ws.id, rn, C["bullish_score"], "fde9d9", "c62828"))
+
+        # Bearish Score  0–10: >=6 red, >=3 yellow, else green
+        if bear_v is not None:
+            if bear_v >= 6:   reqs.append(color_cell_req(ws.id, rn, C["bearish_score"], "fde9d9", "c62828"))
+            elif bear_v >= 3: reqs.append(color_cell_req(ws.id, rn, C["bearish_score"], "fff2cc", "7f4f00"))
+            else:             reqs.append(color_cell_req(ws.id, rn, C["bearish_score"], "d9ead3", "0b8043"))
+
+        # News Sentiment: Bullish=green, Bearish=red, Neutral/other=grey
+        if news_sent == "Bullish":
+            reqs.append(color_cell_req(ws.id, rn, C["news_sentiment"], "d9ead3", "0b8043"))
+        elif news_sent == "Bearish":
+            reqs.append(color_cell_req(ws.id, rn, C["news_sentiment"], "fde9d9", "c62828"))
+        elif news_sent:
+            reqs.append(color_cell_req(ws.id, rn, C["news_sentiment"], "f1f1f1", "555555"))
+
+        # News Summary / Reason — light teal tint for readability in wide cells
+        reqs.append(color_cell_req(ws.id, rn, C["news_summary"], "e8f5f9", "01579b", bold=False))
+        reqs.append(color_cell_req(ws.id, rn, C["news_reason"],  "e8f5f9", "01579b", bold=False))
+
+        # News Source / Timestamp — muted slate, non-distracting
+        reqs.append(color_cell_req(ws.id, rn, C["news_source"],    "f5f5f5", "757575", bold=False))
+        reqs.append(color_cell_req(ws.id, rn, C["news_timestamp"], "f5f5f5", "757575", bold=False))
+
+        # CMP — inherit day-change direction (green up / red down)
+        cmp_v = sf(row, "cmp")
+        if cmp_v is not None and cmp_v > 0:
+            if day_chg is not None and day_chg > 0:
+                reqs.append(color_cell_req(ws.id, rn, C["cmp"], "d9ead3", "0b8043"))
+            elif day_chg is not None and day_chg < 0:
+                reqs.append(color_cell_req(ws.id, rn, C["cmp"], "fde9d9", "c62828"))
+            else:
+                reqs.append(color_cell_req(ws.id, rn, C["cmp"], "f5f5f5", "555555", bold=False))
+
+        # Updated timestamp — neutral grey, low visual weight
+        reqs.append(color_cell_req(ws.id, rn, C["updated"], "f5f5f5", "9e9e9e", bold=False))
+
     batch_update_safe(sh, reqs)
     log.info(f"{tab_name} tab written and formatted")
     return ws
