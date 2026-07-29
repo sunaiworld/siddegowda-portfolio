@@ -566,6 +566,25 @@ def compute_unified_score(sym, archetype, metrics):
         timing_score += 5
         strengths.append(f"✓ Volume spike {vol_spk:.1f}x on uptrend")
 
+    # ── News Sentiment Modifier (bounded ±5 pts on Timing only) ──────────
+    # Reads classifier output already stored in news_data. Never overrides
+    # fundamentals — Quality and Valuation scores are unchanged. The cap of
+    # ±5 means news alone can never flip a BUY to SELL or vice versa;
+    # it acts as a tie-breaker when scores are close, and surfaces
+    # news-driven momentum in the Strengths/Weaknesses audit trail.
+    news_sentiment  = metrics.get("news_sentiment", "")
+    news_bull       = metrics.get("news_bullish_score")
+    news_bear       = metrics.get("news_bearish_score")
+    if news_sentiment == "Bullish" and news_bull is not None:
+        # Scale: bullish_score 1..10 → +1..+5 pts
+        adj = min(5, max(1, round(news_bull / 2)))
+        timing_score += adj
+        strengths.append(f"✓ Bullish news signal ({int(news_bull)}/10) — positive momentum")
+    elif news_sentiment == "Bearish" and news_bear is not None:
+        adj = min(5, max(1, round(news_bear / 2)))
+        timing_score = max(0, timing_score - adj)
+        weaknesses.append(f"✗ Bearish news signal ({int(news_bear)}/10) — negative momentum")
+
     timing_score = min(max(timing_score, 0), 30)
 
     total_score = quality_score + valuation_score + timing_score
@@ -1130,20 +1149,38 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     cross       = tech.get("cross", "")
     day_chg_pct = tech.get("day_chg_pct", "")
 
+    # News signals (already fetched by the news engine; zero cost here).
+    # Passed as optional keys — scoring degrades gracefully to zero if absent.
+    _nd = news_data or {}
+    _bull = _nd.get("bullish_score", "")
+    _bear = _nd.get("bearish_score", "")
+    try:
+        _bull = float(_bull) if _bull != "" else None
+    except (TypeError, ValueError):
+        _bull = None
+    try:
+        _bear = float(_bear) if _bear != "" else None
+    except (TypeError, ValueError):
+        _bear = None
+
     metrics = {
-        "roe":        f.get("roe"),
-        "roa":        f.get("roa"),
-        "roce":       f.get("roce"),
-        "rev_growth": rev_gr,
-        "debt_eq":    f.get("debt_eq"),
-        "pe":         f.get("pe"),
-        "pb":         f.get("pb"),
-        "div":        f.get("div"),
-        "rsi":        rsi if rsi != "" else None,
-        "sma200":     sma200 if sma200 != "" else None,
-        "cmp":        cmp,
-        "vol_spike":  vol_spike if vol_spike != "" else None,
-        "cross":      cross,
+        "roe":                f.get("roe"),
+        "roa":                f.get("roa"),
+        "roce":               f.get("roce"),
+        "rev_growth":         rev_gr,
+        "debt_eq":            f.get("debt_eq"),
+        "pe":                 f.get("pe"),
+        "pb":                 f.get("pb"),
+        "div":                f.get("div"),
+        "rsi":                rsi if rsi != "" else None,
+        "sma200":             sma200 if sma200 != "" else None,
+        "cmp":                cmp,
+        "vol_spike":          vol_spike if vol_spike != "" else None,
+        "cross":              cross,
+        # News signals — optional, never None-safe guard needed in scorer
+        "news_sentiment":     _nd.get("sentiment", ""),
+        "news_bullish_score": _bull,
+        "news_bearish_score": _bear,
     }
 
     q_sc, v_sc, t_sc, tot_sc, final_action, strengths, weaknesses = compute_unified_score(
