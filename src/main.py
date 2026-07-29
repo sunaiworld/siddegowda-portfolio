@@ -1720,7 +1720,13 @@ def write_growth_screener(sh, all_out):
 # DATA are independent here and never touch holdings
 # or portfolio-value calculations.
 # ══════════════════════════════════════════════
-def process_watchlist_tab(sh, tab_name, symbols):
+def process_watchlist_tab(sh, tab_name, symbols, nc_cache=None):
+    """
+    nc_cache: the in-memory news cache dict already built by
+    run_portfolio_update() (keyed by symbol.upper()). When provided,
+    watchlist symbols read news from it at zero cost — no extra fetch.
+    When None (e.g. standalone call), news columns are left blank.
+    """
     if not symbols:
         log.warning(f"{tab_name}: no symbols configured, skipping")
         return []
@@ -1741,24 +1747,40 @@ def process_watchlist_tab(sh, tab_name, symbols):
         tech   = fetch_technicals(sym)
         time.sleep(SLEEP_INFO)
 
-        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="")
+        # Read news from the shared cache (built in run_portfolio_update).
+        # Watchlist symbols that weren't in the portfolio won't have a
+        # cache entry yet — nd will be {} and news columns stay blank.
+        # No new fetch is triggered here: the 6-hour refresh cycle is
+        # handled exclusively by run_portfolio_update() for portfolio
+        # symbols; watchlist-only symbols pick up news on the next run
+        # after they enter the portfolio, or can be added separately.
+        nd = (nc_cache or {}).get(sym.upper(), {})
+
+        row, archetype, tot_sc, final_action = build_result_row(
+            sym, cmp, f, tech, rev_gr, xirr_val="", news_data=nd if nd else None
+        )
         rows.append(row)
-        log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}")
+        news_tag = f" | News:{nd.get('sentiment','')}" if nd.get('sentiment') else ""
+        log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}{news_tag}")
 
     fund_cache.save_cache(sh, wl_cache)
     write_github_data(sh, rows, tab_name=tab_name)
     return rows
 
-def process_all_watchlists(sh):
+def process_all_watchlists(sh, nc_cache=None):
     """
     Run every watchlist tab and return a dict:
       {tab_name: [row, ...]}  (same row layout as GITHUB DATA)
     Tabs with errors return [] so the caller can still use the rest.
+
+    nc_cache: pass the news cache dict from run_portfolio_update() so
+    watchlist symbols receive populated news columns and the news timing
+    modifier without any additional API calls.
     """
     all_rows = {}
     for tab_name, symbols in WATCHLISTS.items():
         try:
-            rows = process_watchlist_tab(sh, tab_name, symbols)
+            rows = process_watchlist_tab(sh, tab_name, symbols, nc_cache=nc_cache)
             all_rows[tab_name] = rows
         except Exception as e:
             log.error(f"Watchlist '{tab_name}' failed (existing tabs unaffected): {e}")
@@ -1887,7 +1909,11 @@ def run_portfolio_update(sh):
     top_picks.sort(key=lambda x: x["total"], reverse=True)
 
     write_github_data(sh, results, tab_name="GITHUB DATA")
-    watchlist_results = process_all_watchlists(sh)
+    # Pass nc_cache so watchlist symbols inherit the news signal that was
+    # already fetched/refreshed for portfolio symbols above. Zero new
+    # API calls for symbols that overlap; watchlist-only symbols get {}
+    # and their news columns stay blank until added to the portfolio.
+    watchlist_results = process_all_watchlists(sh, nc_cache=nc_cache)
 
     # ── Watchlist Opportunity Digest ───────────────────────────────────────
     # Identify watchlist stocks that have crossed into an attractive entry
