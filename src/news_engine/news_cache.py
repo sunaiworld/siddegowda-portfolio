@@ -29,7 +29,12 @@ _COL_SYMBOL       = 0
 _COL_LAST_FETCHED = 1
 _COL_DIGEST       = 2
 _COL_RAW_ARTICLES = 3
-_NUM_COLS         = 4
+_COL_BULLISH      = 4
+_COL_BEARISH      = 5
+_COL_SENTIMENT    = 6
+_COL_REASON       = 7
+_COL_SOURCE       = 8
+_NUM_COLS         = 9
 
 
 # ── Internal helpers ─────────────────────────────────────────────────────────
@@ -129,23 +134,23 @@ def load(sh) -> dict:
             cache[sym] = {
                 "last_fetched":  row[_COL_LAST_FETCHED] if len(row) > _COL_LAST_FETCHED else "",
                 "digest":        parsed.get("summary", ""),
-                "bullish_score": parsed.get("bullish_score", ""),
-                "bearish_score": parsed.get("bearish_score", ""),
-                "sentiment":     parsed.get("sentiment", ""),
-                "reason":        parsed.get("reason", ""),
-                "source":        parsed.get("source", ""),
+                "bullish_score": parsed.get("bullish_score", row[_COL_BULLISH] if len(row) > _COL_BULLISH else ""),
+                "bearish_score": parsed.get("bearish_score", row[_COL_BEARISH] if len(row) > _COL_BEARISH else ""),
+                "sentiment":     parsed.get("sentiment", row[_COL_SENTIMENT] if len(row) > _COL_SENTIMENT else ""),
+                "reason":        parsed.get("reason", row[_COL_REASON] if len(row) > _COL_REASON else ""),
+                "source":        parsed.get("source", row[_COL_SOURCE] if len(row) > _COL_SOURCE else ""),
                 "raw_articles":  raw,
             }
         else:
-            # Not JSON (legacy plain-text row) — backward compatible fallback.
+            # Not JSON (legacy plain-text row or separate-column format) — read columns directly.
             cache[sym] = {
                 "last_fetched":  row[_COL_LAST_FETCHED] if len(row) > _COL_LAST_FETCHED else "",
                 "digest":        digest_raw,
-                "bullish_score": "",
-                "bearish_score": "",
-                "sentiment":     "",
-                "reason":        "",
-                "source":        "",
+                "bullish_score": row[_COL_BULLISH]   if len(row) > _COL_BULLISH   else "",
+                "bearish_score": row[_COL_BEARISH]   if len(row) > _COL_BEARISH   else "",
+                "sentiment":     row[_COL_SENTIMENT] if len(row) > _COL_SENTIMENT else "",
+                "reason":        row[_COL_REASON]    if len(row) > _COL_REASON    else "",
+                "source":        row[_COL_SOURCE]    if len(row) > _COL_SOURCE    else "",
                 "raw_articles":  raw,
             }
 
@@ -153,7 +158,7 @@ def load(sh) -> dict:
     return cache
 
 
-def upsert(sh, symbol: str, last_fetched: str, digest: str, raw_articles: list) -> None:
+def upsert(sh, symbol: str, last_fetched: str, digest: str, raw_articles: list, bullish_score: float = 0.0, bearish_score: float = 0.0, sentiment: str = "", reason: str = "", source: str = "") -> None:
     """
     Insert or update the cache row for *symbol*.
 
@@ -174,6 +179,11 @@ def upsert(sh, symbol: str, last_fetched: str, digest: str, raw_articles: list) 
     new_row[_COL_LAST_FETCHED] = last_fetched
     new_row[_COL_DIGEST]       = digest
     new_row[_COL_RAW_ARTICLES] = raw_json
+    new_row[_COL_BULLISH]      = str(bullish_score)
+    new_row[_COL_BEARISH]      = str(bearish_score)
+    new_row[_COL_SENTIMENT]    = sentiment
+    new_row[_COL_REASON]       = reason
+    new_row[_COL_SOURCE]       = source
 
     # Find existing row for this symbol (column A, 1-indexed).
     cell = ws.find(symbol, in_column=1)

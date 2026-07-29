@@ -12,7 +12,7 @@ import logging
 import statistics
 import requests
 import math
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 import numpy as np
 import pandas as pd
@@ -23,6 +23,8 @@ import fund_cache
 import history_tracker
 import portfolio_analytics
 import news_engine.news_cache as news_cache
+from news_engine.sources import google_news_rss
+from news_engine import classifier
 
 # ══════════════════════════════════════════════
 # LOGGING
@@ -1062,6 +1064,8 @@ GITHUB_DATA_COLS = {
     "news_reason":    35,
     "news_timestamp": 36,
     "news_source":    37,
+    "cmp":            38,
+    "updated":        39,
 }
 
 # Header text per column key — headers[] is built FROM this dict via
@@ -1089,6 +1093,8 @@ GITHUB_DATA_HEADER_NAMES = {
     "news_reason":    "News Reason",
     "news_timestamp": "News Timestamp",
     "news_source":    "News Source",
+    "cmp":            "CMP",
+    "updated":        "Updated",
 }
 
 # Column pixel width per key — same self-syncing pattern as headers.
@@ -1114,6 +1120,8 @@ GITHUB_DATA_COL_WIDTHS = {
     "news_reason":    180,
     "news_timestamp":  90,
     "news_source":     80,
+    "cmp":             60,
+    "updated":        140,
 }
 
 # ══════════════════════════════════════════════
@@ -1237,6 +1245,8 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["news_reason"]]    = nd.get("reason", "")
     row[C["news_timestamp"]] = nd.get("last_fetched", "")
     row[C["news_source"]]    = nd.get("source", "")
+    row[C["cmp"]]            = cmp
+    row[C["updated"]]        = datetime.now(timezone.utc).isoformat()
 
     return row, archetype, tot_sc, final_action
 def clean_row(row):
@@ -1740,6 +1750,41 @@ def run_portfolio_update(sh):
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         xirr_val = get_xirr(sym, trades, cmp)
         nd = nc_cache.get(sym.upper(), {})
+
+        is_fresh = False
+        if "last_fetched" in nd and nd["last_fetched"]:
+            try:
+                dt = datetime.fromisoformat(nd["last_fetched"])
+                age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
+                if age_hours < 6:
+                    is_fresh = True
+            except Exception:
+                pass
+
+        if not is_fresh:
+            log.info(f"  Fetching news for {sym}...")
+            raw_articles = google_news_rss.fetch(sym, sym)
+            result, enriched = classifier.classify(sym, raw_articles)
+            try:
+                news_cache.upsert(
+                    sh, sym, result.timestamp, result.summary, enriched,
+                    result.bullish_score, result.bearish_score,
+                    result.sentiment, result.reason, result.source
+                )
+                nd = {
+                    "last_fetched": result.timestamp,
+                    "digest": result.summary,
+                    "raw_articles": enriched,
+                    "bullish_score": result.bullish_score,
+                    "bearish_score": result.bearish_score,
+                    "sentiment": result.sentiment,
+                    "reason": result.reason,
+                    "source": result.source
+                }
+                nc_cache[sym.upper()] = nd
+                time.sleep(SLEEP_NEWS_CACHE_WRITE)
+            except Exception as e:
+                log.warning(f"  News upsert failed for {sym}: {e}")
 
         row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val, news_data=nd)
 
