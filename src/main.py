@@ -630,7 +630,7 @@ def send_telegram(message):
         log.warning(f"Telegram error: {e}")
         return False
 
-def build_alert_message(alerts, portfolio_value, top_results):
+def build_alert_message(alerts, portfolio_value, top_results, watchlist_opps=None):
     now = datetime.now().strftime("%d-%b-%Y %H:%M")
     msg  = f"<b>SiddeGowda Portfolio Update</b>\n"
     msg += f"<i>{now} IST</i>\n"
@@ -665,6 +665,13 @@ def build_alert_message(alerts, portfolio_value, top_results):
         msg += "<b>🏆 Top 3 Picks Today</b>\n"
         for r in top_results[:3]:
             msg += f"  {r['sym']} — {r['action']} (Score:{r['total']})\n"
+
+    if watchlist_opps:
+        msg += "\n<b>📋 Watchlist Opportunities</b>\n"
+        for o in watchlist_opps[:5]:
+            rsi_str  = f" | RSI {o['rsi']}" if o['rsi'] != "" else ""
+            news_str = f" | News:{o['news']}" if o['news'] else ""
+            msg += f"  {o['sym']} — {o['action']} (Score:{o['score']}{rsi_str}{news_str})\n"
 
     msg += "\n<i>via GitHub Actions + yfinance</i>"
     return msg
@@ -1679,11 +1686,20 @@ def process_watchlist_tab(sh, tab_name, symbols):
     return rows
 
 def process_all_watchlists(sh):
+    """
+    Run every watchlist tab and return a dict:
+      {tab_name: [row, ...]}  (same row layout as GITHUB DATA)
+    Tabs with errors return [] so the caller can still use the rest.
+    """
+    all_rows = {}
     for tab_name, symbols in WATCHLISTS.items():
         try:
-            process_watchlist_tab(sh, tab_name, symbols)
+            rows = process_watchlist_tab(sh, tab_name, symbols)
+            all_rows[tab_name] = rows
         except Exception as e:
             log.error(f"Watchlist '{tab_name}' failed (existing tabs unaffected): {e}")
+            all_rows[tab_name] = []
+    return all_rows
 
 # ══════════════════════════════════════════════
 # MAIN
@@ -1807,7 +1823,39 @@ def run_portfolio_update(sh):
     top_picks.sort(key=lambda x: x["total"], reverse=True)
 
     write_github_data(sh, results, tab_name="GITHUB DATA")
-    process_all_watchlists(sh)
+    watchlist_results = process_all_watchlists(sh)
+
+    # ── Watchlist Opportunity Digest ───────────────────────────────────────
+    # Identify watchlist stocks that have crossed into an attractive entry
+    # window (score >= 50) and are NOT already held in the portfolio.
+    # Uses data already computed above — no new API calls.
+    portfolio_syms = set(holdings.keys())
+    watchlist_opportunities = []
+    C = GITHUB_DATA_COLS
+    for tab_rows in watchlist_results.values():
+        for row in tab_rows:
+            try:
+                sym    = row[C["symbol"]]
+                tot_sc = row[C["total"]]
+                action = row[C["action"]]
+                rsi    = row[C["rsi"]]
+                trend  = row[C["trend"]]
+                setup  = row[C["technical_setup"]]
+                news_s = row[C["news_sentiment"]]
+            except (IndexError, KeyError):
+                continue
+            if sym in portfolio_syms:
+                continue
+            try:
+                score_f = float(tot_sc)
+            except (TypeError, ValueError):
+                continue
+            if score_f >= 50:
+                watchlist_opportunities.append({
+                    "sym": sym, "score": int(score_f), "action": action,
+                    "rsi": rsi, "trend": trend, "setup": setup, "news": news_s,
+                })
+    watchlist_opportunities.sort(key=lambda x: x["score"], reverse=True)
     # ── TEMP DEBUG LOGGING — remove after root cause confirmed ──
     log.info(f"[DEBUG] len(symbols)={len(symbols)} len(results)={len(results)} "
               f"len(holdings)={len(holdings)} len(fund_map)={len(fund_map)} len(prices)={len(prices)}")
@@ -1833,6 +1881,7 @@ def run_portfolio_update(sh):
         "portfolio_live_value": portfolio_live_value,
         "top_picks": top_picks, "failed": failed,
         "changes": changes,
+        "watchlist_opportunities": watchlist_opportunities,
     }
 
 
@@ -1851,7 +1900,8 @@ def main():
         send_telegram("❌ Portfolio update FAILED — no symbols found in Portfolio tab col B")
         return
 
-    msg = build_alert_message(out["alerts"], out["portfolio_live_value"], out["top_picks"])
+    msg = build_alert_message(out["alerts"], out["portfolio_live_value"], out["top_picks"],
+                               watchlist_opps=out.get("watchlist_opportunities"))
     digest = history_tracker.format_telegram_digest(out.get("changes"))
     if digest:
         msg = msg + "\n\n" + digest
