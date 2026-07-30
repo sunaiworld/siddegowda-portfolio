@@ -93,29 +93,25 @@ def _truncate_raw_articles(raw_articles: list, limit: int = RAW_ARTICLES_CELL_LI
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
-def load(sh) -> dict:
+def load(sh):
     """
-    Read the full News Cache worksheet and return a dict keyed by symbol.
-
-    The Digest column may hold either:
-      - a JSON object (current format) with keys: summary, bullish_score,
-        bearish_score, sentiment, reason, timestamp, source
-      - a plain-text string (legacy rows written before this format existed)
-
-    Each returned value is a dict with keys: last_fetched, digest,
-    bullish_score, bearish_score, sentiment, reason, source, raw_articles.
-    raw_articles is a Python list (parsed from JSON). The Digest cell itself
-    is never rewritten here — only the in-memory dict this function returns
-    is restructured.
+    Read the full News Cache worksheet. Returns (cache, row_map, ws):
+      cache    — {symbol: {...}} same as before
+      row_map  — {symbol: sheet_row_number} built from this same read,
+                 so flush() never has to call ws.find() per symbol
+      ws       — the worksheet object, so callers never re-resolve it
     """
     ws    = _get_or_create_worksheet(sh)
     rows  = ws.get_all_values()
     cache = {}
+    row_map = {}
 
-    for row in rows:
+    for i, row in enumerate(rows):
         if not row or not row[_COL_SYMBOL].strip():
             continue
         sym = row[_COL_SYMBOL].strip().upper()
+        row_map[sym] = i + 1   # sheet rows are 1-indexed
+
         try:
             raw_json = row[_COL_RAW_ARTICLES] if len(row) > _COL_RAW_ARTICLES else "[]"
             raw      = json.loads(raw_json) if raw_json.strip() else []
@@ -130,7 +126,6 @@ def load(sh) -> dict:
             parsed = None
 
         if isinstance(parsed, dict):
-            # Digest cell holds the JSON object — unpack its fields.
             cache[sym] = {
                 "last_fetched":  row[_COL_LAST_FETCHED] if len(row) > _COL_LAST_FETCHED else "",
                 "digest":        parsed.get("summary", ""),
@@ -142,7 +137,6 @@ def load(sh) -> dict:
                 "raw_articles":  raw,
             }
         else:
-            # Not JSON (legacy plain-text row or separate-column format) — read columns directly.
             cache[sym] = {
                 "last_fetched":  row[_COL_LAST_FETCHED] if len(row) > _COL_LAST_FETCHED else "",
                 "digest":        digest_raw,
@@ -155,7 +149,37 @@ def load(sh) -> dict:
             }
 
     log.info(f"[news_cache] Loaded {len(cache)} cached symbols from {TAB_NAME!r}")
-    return cache
+    return cache, row_map, ws
+
+def stage_upsert(pending: dict, symbol: str, last_fetched: str, digest: str, raw_articles: list,
+                  bullish_score: float = 0.0, bearish_score: float = 0.0,
+                  sentiment: str = "", reason: str = "", source: str = "") -> None:
+    """No API call — stashes the row in `pending` for a single flush() later."""
+    symbol = symbol.strip().upper()
+    raw_json = _truncate_raw_articles(raw_articles, RAW_ARTICLES_CELL_LIMIT)
+    pending[symbol] = [symbol, last_fetched, digest, raw_json,
+                        str(bullish_score), str(bearish_score), sentiment, reason, source]
+
+
+def flush(ws, row_map: dict, pending: dict) -> None:
+    """Writes everything staged via stage_upsert() in a handful of batched calls."""
+    if not pending:
+        return
+    updates, new_rows = [], []
+    for sym, row in pending.items():
+        if sym in row_map:
+            r = row_map[sym]
+            updates.append({"range": f"A{r}:I{r}", "values": [row]})
+        else:
+            new_rows.append(row)
+
+    if updates:
+        for i in range(0, len(updates), 20):
+            ws.batch_update(updates[i:i + 20], value_input_option="RAW")
+            time.sleep(1.5)
+    if new_rows:
+        ws.append_rows(new_rows, value_input_option="RAW")
+    log.info(f"[news_cache] Flushed {len(updates)} updates, {len(new_rows)} new rows")
 
 
 def upsert(sh, symbol: str, last_fetched: str, digest: str, raw_articles: list, bullish_score: float = 0.0, bearish_score: float = 0.0, sentiment: str = "", reason: str = "", source: str = "") -> None:
