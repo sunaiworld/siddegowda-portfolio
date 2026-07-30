@@ -1335,34 +1335,37 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         rows = [clean_row(r) for r in rows]
         ws.append_rows(rows)
 
-    sh.batch_update({"requests": [{"repeatCell": {
-        "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
-                  "startColumnIndex": 0, "endColumnIndex": num_cols},
-        "cell": {"userEnteredFormat": {
-            "backgroundColor": hex_rgb("0d1b2a"),
-            "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
-            "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"
+    # ── Structural formatting: header, freeze, row height, column widths ──
+    # Consolidated into a single batch_update (was 4 separate calls).
+    struct_reqs = [
+        {"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
+                      "startColumnIndex": 0, "endColumnIndex": num_cols},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": hex_rgb("0d1b2a"),
+                "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
+                "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"
+            }},
+            "fields": "userEnteredFormat"
         }},
-        "fields": "userEnteredFormat"
-    }}]})
-
-    sh.batch_update({"requests": [{"updateSheetProperties": {
-        "properties": {"sheetId": ws.id, "gridProperties": {"frozenRowCount": 1, "frozenColumnCount": 1}},
-        "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
-    }}]})
-
-    sh.batch_update({"requests": [{"updateDimensionProperties": {
-        "range": {"sheetId": ws.id, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
-        "properties": {"pixelSize": 50}, "fields": "pixelSize"
-    }}]})
-
-    sh.batch_update({"requests": [{"updateDimensionProperties": {
+        {"updateSheetProperties": {
+            "properties": {"sheetId": ws.id, "gridProperties": {"frozenRowCount": 1, "frozenColumnCount": 1}},
+            "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
+        }},
+        {"updateDimensionProperties": {
+            "range": {"sheetId": ws.id, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
+            "properties": {"pixelSize": 50}, "fields": "pixelSize"
+        }},
+    ] + [{"updateDimensionProperties": {
         "range": {"sheetId": ws.id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
         "properties": {"pixelSize": w}, "fields": "pixelSize"
-    }} for i, w in enumerate(widths)]})
+    }} for i, w in enumerate(widths)]
+    sh.batch_update({"requests": struct_reqs})
 
-    all_out = ws.get_all_values()[1:]
-    reqs    = []
+    # ── Per-row conditional formatting ─────────────────────────────────────
+    # Uses the in-memory `rows` list — no get_all_values() read needed.
+    # Values are Python-native; sf() handles string coercion either way.
+    reqs = []
 
     ACTION_COLORS = {
         "STRONG BUY":  ("00c853", "ffffff"),
@@ -1382,7 +1385,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         except:
             return None
 
-    for i, row in enumerate(all_out):
+    for i, row in enumerate(rows):
         rn  = i + 1
         alt = "f8f9fa" if i % 2 == 0 else "ffffff"
         reqs.append({"repeatCell": {
@@ -1392,28 +1395,28 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             "fields": "userEnteredFormat.backgroundColor"
         }})
 
-        cap       = row[C["cap_type"]].strip() if len(row) > C["cap_type"] else ""
-        action    = row[C["action"]].strip() if len(row) > C["action"] else ""
-        tech_set  = row[C["technical_setup"]].strip() if len(row) > C["technical_setup"] else ""
-        trend_val = row[C["trend"]].strip() if len(row) > C["trend"] else ""
+        cap       = str(row[C["cap_type"]]).strip() if len(row) > C["cap_type"] else ""
+        action    = str(row[C["action"]]).strip() if len(row) > C["action"] else ""
+        tech_set  = str(row[C["technical_setup"]]).strip() if len(row) > C["technical_setup"] else ""
+        trend_val = str(row[C["trend"]]).strip() if len(row) > C["trend"] else ""
 
-        pct    = sf(row, "pct_high")
-        day_chg = sf(row, "day_chg_pct")
-        rsi_v  = sf(row, "rsi")
-        pe_v   = sf(row, "pe")
-        eps_v  = sf(row, "eps")
-        pb_v   = sf(row, "pb")
-        div_v  = sf(row, "div")
-        roe_v  = sf(row, "roe")
-        roa_v  = sf(row, "roa")
-        debt_v = sf(row, "debt_eq")
+        pct      = sf(row, "pct_high")
+        day_chg  = sf(row, "day_chg_pct")
+        rsi_v    = sf(row, "rsi")
+        pe_v     = sf(row, "pe")
+        eps_v    = sf(row, "eps")
+        pb_v     = sf(row, "pb")
+        div_v    = sf(row, "div")
+        roe_v    = sf(row, "roe")
+        roa_v    = sf(row, "roa")
+        debt_v   = sf(row, "debt_eq")
         growth_v = sf(row, "rev_growth")
-        beta_v = sf(row, "beta")
-        vol_v  = sf(row, "vol_spike")
-        q_sc   = sf(row, "quality")
-        v_sc   = sf(row, "valuation")
-        t_sc   = sf(row, "timing")
-        tot_sc = sf(row, "total")
+        beta_v   = sf(row, "beta")
+        vol_v    = sf(row, "vol_spike")
+        q_sc     = sf(row, "quality")
+        v_sc     = sf(row, "valuation")
+        t_sc     = sf(row, "timing")
+        tot_sc   = sf(row, "total")
 
         # ── Cap Type family: Symbol, Mkt Cap Cr, Cap Type ──
         if cap == "Large Cap":       cb, cf = "d9ead3", "0b8043"
@@ -1489,9 +1492,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             elif beta_v <= 1.5:  reqs.append(color_cell_req(ws.id, rn, C["beta"], "fff2cc", "7f4f00"))
             else:                reqs.append(color_cell_req(ws.id, rn, C["beta"], "fde9d9", "c62828"))
 
-        # ── Strengths / Weaknesses — green text for positive, red for
-        # negative, on the same light tint as before. This is the
-        # colored-text look that existed pre-cleanup, restored.
+        # ── Strengths / Weaknesses ──
         reqs.append(color_cell_req(ws.id, rn, C["strengths"], "f1f9f1", "0b8043", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["weaknesses"], "fdf2f2", "c62828", bold=False))
 
@@ -1529,28 +1530,20 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             reqs.append(color_cell_req(ws.id, rn, C["trend"], bg, fg))
 
         # ── AI News columns ────────────────────────────────────────────────
-        # Automatically covers every key present in GITHUB_DATA_COLS that
-        # has a "news_" prefix or is the cmp/updated timestamp column.
-        # Adding a new news column to GITHUB_DATA_COLS is sufficient —
-        # no further formatting wiring needed.
-
         bull_v = sf(row, "bullish_score")
         bear_v = sf(row, "bearish_score")
-        news_sent = row[C["news_sentiment"]].strip() if len(row) > C["news_sentiment"] else ""
+        news_sent = str(row[C["news_sentiment"]]).strip() if len(row) > C["news_sentiment"] else ""
 
-        # Bullish Score  0–10: >=6 green, >=3 yellow, else red
         if bull_v is not None:
             if bull_v >= 6:   reqs.append(color_cell_req(ws.id, rn, C["bullish_score"], "d9ead3", "0b8043"))
             elif bull_v >= 3: reqs.append(color_cell_req(ws.id, rn, C["bullish_score"], "fff2cc", "7f4f00"))
             else:             reqs.append(color_cell_req(ws.id, rn, C["bullish_score"], "fde9d9", "c62828"))
 
-        # Bearish Score  0–10: >=6 red, >=3 yellow, else green
         if bear_v is not None:
             if bear_v >= 6:   reqs.append(color_cell_req(ws.id, rn, C["bearish_score"], "fde9d9", "c62828"))
             elif bear_v >= 3: reqs.append(color_cell_req(ws.id, rn, C["bearish_score"], "fff2cc", "7f4f00"))
             else:             reqs.append(color_cell_req(ws.id, rn, C["bearish_score"], "d9ead3", "0b8043"))
 
-        # News Sentiment: Bullish=green, Bearish=red, Neutral/other=grey
         if news_sent == "Bullish":
             reqs.append(color_cell_req(ws.id, rn, C["news_sentiment"], "d9ead3", "0b8043"))
         elif news_sent == "Bearish":
@@ -1558,15 +1551,11 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         elif news_sent:
             reqs.append(color_cell_req(ws.id, rn, C["news_sentiment"], "f1f1f1", "555555"))
 
-        # News Summary / Reason — light teal tint for readability in wide cells
         reqs.append(color_cell_req(ws.id, rn, C["news_summary"], "e8f5f9", "01579b", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["news_reason"],  "e8f5f9", "01579b", bold=False))
-
-        # News Source / Timestamp — muted slate, non-distracting
         reqs.append(color_cell_req(ws.id, rn, C["news_source"],    "f5f5f5", "757575", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["news_timestamp"], "f5f5f5", "757575", bold=False))
 
-        # CMP — inherit day-change direction (green up / red down)
         cmp_v = sf(row, "cmp")
         if cmp_v is not None and cmp_v > 0:
             if day_chg is not None and day_chg > 0:
@@ -1576,12 +1565,12 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             else:
                 reqs.append(color_cell_req(ws.id, rn, C["cmp"], "f5f5f5", "555555", bold=False))
 
-        # Updated timestamp — neutral grey, low visual weight
         reqs.append(color_cell_req(ws.id, rn, C["updated"], "f5f5f5", "9e9e9e", bold=False))
 
     batch_update_safe(sh, reqs)
-    log.info(f"{tab_name} tab written and formatted")
+    log.info(f"{tab_name} tab written and formatted ({len(rows)} rows)")
     return ws
+
 
 # ══════════════════════════════════════════════
 # WRITE GROWTH SCREENER TAB
