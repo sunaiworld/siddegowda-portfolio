@@ -1827,11 +1827,12 @@ def run_portfolio_update(sh):
 
     # ── News Engine: load cached news for all symbols (Phase A) ──
     try:
-        nc_cache = news_cache.load(sh)
+        nc_cache, nc_row_map, nc_ws = news_cache.load(sh)
         log.info(f"[news_cache] Loaded news for {len(nc_cache)} symbols")
     except Exception as _e:
         log.warning(f"[news_cache] Could not load news cache, skipping: {_e}")
-        nc_cache = {}
+        nc_cache, nc_row_map, nc_ws = {}, {}, None
+    pending_news = {}
 
     holdings, portfolio_live_value = {}, 0.0
     for sym in symbols:   
@@ -1872,12 +1873,12 @@ def run_portfolio_update(sh):
             raw_articles = google_news_rss.fetch(sym, sym)
             result, enriched = classifier.classify(sym, raw_articles)
             try:
-                news_cache.upsert(
-                    sh, sym, result.timestamp, result.summary, enriched,
+                news_cache.stage_upsert(
+                    pending_news, sym, result.timestamp, result.summary, enriched,
                     result.bullish_score, result.bearish_score,
                     result.sentiment, result.reason, result.source
                 )
-                nd = {
+                nc_cache[sym.upper()] = {
                     "last_fetched": result.timestamp,
                     "digest": result.summary,
                     "raw_articles": enriched,
@@ -1911,6 +1912,9 @@ def run_portfolio_update(sh):
         log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}")
 
     top_picks.sort(key=lambda x: x["total"], reverse=True)
+
+    if nc_ws is not None:
+        news_cache.flush(nc_ws, nc_row_map, pending_news)
 
     write_github_data(sh, results, tab_name="GITHUB DATA")
     # Pass nc_cache so watchlist symbols inherit the news signal that was
