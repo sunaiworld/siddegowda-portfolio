@@ -1289,11 +1289,27 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     C = GITHUB_DATA_COLS
     num_cols = len(C)
 
+    import gspread.exceptions as _gse
+
     try:
         ws = sh.worksheet(tab_name)
-        ws.clear()
-    except:
+    except _gse.WorksheetNotFound:
         ws = sh.add_worksheet(tab_name, rows=300, cols=num_cols)
+
+    # Always clear after resolving the worksheet — outside the try so
+    # any transient error here propagates instead of falling through to
+    # add_worksheet() on an already-existing sheet (the root cause of
+    # the "sheet already exists" 400 error).
+    for _attempt in range(3):
+        try:
+            ws.clear()
+            break
+        except _gse.APIError as _e:
+            if "429" in str(_e) and _attempt < 2:
+                time.sleep(20)
+            else:
+                raise
+
 
     # Headers and widths assembled BY KEY from GITHUB_DATA_COLS — the
     # only place column order is ever defined. Nothing else can drift.
@@ -1304,7 +1320,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         widths[idx]  = GITHUB_DATA_COL_WIDTHS.get(key, 70)
 
     # Harden header write against transient 429 quota errors.
-    import gspread.exceptions as _gse
     for _attempt in range(5):
         try:
             ws.append_row(headers)
