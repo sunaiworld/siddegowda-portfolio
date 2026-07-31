@@ -23,15 +23,8 @@ log = logging.getLogger("portfolio")
 
 from config import *
 from score_engine import *
-from sheet_writer import *
 from sheet_formatter import *
-from github_data_builder import *
-from growth_screener_builder import *
-from future_buy_builder import *
-from data_fetcher import *
-from telegram_alerts import *
-from portfolio_builder import *
-
+from sheet_writer import *
 
 
 # ══════════════════════════════════════════════
@@ -251,8 +244,6 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
 
 def clean_row(row):
     return [("" if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v) for v in row]
-
-
 
 def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     C = GITHUB_DATA_COLS
