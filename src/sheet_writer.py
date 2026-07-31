@@ -22,16 +22,6 @@ from news_engine import classifier
 log = logging.getLogger("portfolio")
 
 from config import *
-from score_engine import *
-from sheet_writer import *
-from sheet_formatter import *
-from github_data_builder import *
-from growth_screener_builder import *
-from future_buy_builder import *
-from data_fetcher import *
-from telegram_alerts import *
-from portfolio_builder import *
-
 
 
 # ══════════════════════════════════════════════
@@ -50,8 +40,6 @@ def get_gspread_client():
         json.loads(creds_json), scopes=SCOPES
     )
     return gspread.authorize(creds)
-
-
 
 def batch_update_safe(sh, requests, chunk=30):
     """Send batchUpdate requests in small chunks with retry on 429 quota errors."""
