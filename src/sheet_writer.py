@@ -25,6 +25,11 @@ log = logging.getLogger("portfolio")
 # ══════════════════════════════════════════════
 # GOOGLE SHEETS AUTH
 # ══════════════════════════════════════════════
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
+
 def get_gspread_client():
     creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
     if not creds_json:
@@ -33,6 +38,7 @@ def get_gspread_client():
         json.loads(creds_json), scopes=SCOPES
     )
     return gspread.authorize(creds)
+
 
 
 def batch_update_safe(sh, requests, chunk=30):

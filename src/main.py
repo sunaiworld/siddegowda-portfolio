@@ -74,14 +74,6 @@ log = logging.getLogger(__name__)
 # ══════════════════════════════════════════════
 SHEET_ID         = os.environ.get("SHEET_ID", "")
 
-TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
-
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-
-SCOPES           = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
-]
 
 BATCH_SIZE              = 5
 
