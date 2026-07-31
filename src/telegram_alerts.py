@@ -25,6 +25,10 @@ log = logging.getLogger("portfolio")
 # ══════════════════════════════════════════════
 # TELEGRAM ALERTS
 # ══════════════════════════════════════════════
+
+TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
 def send_telegram(message):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         log.warning("Telegram not configured — skipping alert")
