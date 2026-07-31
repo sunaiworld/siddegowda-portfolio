@@ -13,6 +13,7 @@ import statistics
 import requests
 import math
 from datetime import datetime, date, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import numpy as np
 import pandas as pd
@@ -53,6 +54,8 @@ SLEEP_NEWS_CACHE_WRITE  = 1   # throttle consecutive news_cache.upsert() calls (
 SL_PCT                  = 0.07
 TARGET_PCT              = 0.20
 FUNDAMENTALS_CACHE_DAYS = 7
+TECH_WORKERS            = 4   # bounded pool for fetch_technicals()+fetch_rev_growth() — same yfinance host as prices, stay conservative
+NEWS_WORKERS            = 6   # bounded pool for Google News RSS fetch — different host, more headroom
 
 
 # ══════════════════════════════════════════════
@@ -1813,17 +1816,37 @@ def run_portfolio_update(sh):
     log.info("Fetching prices...")
     prices = fetch_prices_batch(symbols)
 
-    log.info("Fetching fundamentals + technicals...")
-    fund_map, tech_map, rev_map = {}, {}, {}
+    log.info("Fetching fundamentals...")
+    fund_map = {}
     fc_cache = fund_cache.load_cache(sh)
     for sym in symbols:
-        f = fund_cache.get_or_fetch_fundamentals(sym, fc_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
-        fund_map[sym] = f
-        rev_map[sym]  = fetch_rev_growth(sym)
-        log.info(f"  Technicals: {sym}")
-        tech_map[sym] = fetch_technicals(sym)
-        time.sleep(SLEEP_INFO)
+        fund_map[sym] = fund_cache.get_or_fetch_fundamentals(sym, fc_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
     fund_cache.save_cache(sh, fc_cache)
+
+    # Technicals + revenue growth: both hit yfinance directly (no cache layer
+    # like fundamentals has), so this is the biggest per-symbol serial cost
+    # in the pipeline. Bounded ThreadPoolExecutor — same host as prices, so
+    # TECH_WORKERS stays conservative to respect Yahoo's rate limits.
+    # fetch_technicals()/fetch_rev_growth() themselves are unchanged; only
+    # the loop that calls them is now parallel.
+    log.info(f"Fetching technicals + revenue growth ({TECH_WORKERS} workers)...")
+    tech_map, rev_map = {}, {}
+
+    def _fetch_tech_and_growth(sym):
+        return sym, fetch_technicals(sym), fetch_rev_growth(sym)
+
+    with ThreadPoolExecutor(max_workers=TECH_WORKERS) as ex:
+        futures = {ex.submit(_fetch_tech_and_growth, sym): sym for sym in symbols}
+        for fut in as_completed(futures):
+            sym = futures[fut]
+            try:
+                _, tech, rev_gr = fut.result()
+            except Exception as e:
+                log.warning(f"  tech/growth failed {sym}: {e}")
+                tech, rev_gr = {}, None
+            tech_map[sym] = tech
+            rev_map[sym]  = rev_gr
+            log.info(f"  Technicals: {sym}")
 
     # ── News Engine: load cached news for all symbols (Phase A) ──
     try:
@@ -1842,6 +1865,57 @@ def run_portfolio_update(sh):
             holdings[sym] = (qty, cmp, avg_buy)
             portfolio_live_value += qty * cmp
 
+    # ── News refresh pre-pass (threaded, bounded) ──────────────────────────
+    # Google News RSS is a different host than Yahoo/Sheets, so fetching it
+    # in parallel doesn't compound either rate limit. Only the *fetch* is
+    # threaded — classify() is pure CPU, and no Sheets call happens inside
+    # a thread; every write goes through the single flush() below.
+    def _is_fresh(nd):
+        if not nd or not nd.get("last_fetched"):
+            return False
+        try:
+            dt = datetime.fromisoformat(nd["last_fetched"])
+            return (datetime.now(timezone.utc) - dt).total_seconds() / 3600 < 6
+        except Exception:
+            return False
+
+    stale_syms = [s for s in symbols if prices.get(s) and not _is_fresh(nc_cache.get(s.upper(), {}))]
+
+    def _fetch_news(sym):
+        raw_articles = google_news_rss.fetch(sym, sym)
+        result, enriched = classifier.classify(sym, raw_articles)
+        return sym, result, enriched
+
+    if stale_syms:
+        log.info(f"Fetching news for {len(stale_syms)} stale symbols ({NEWS_WORKERS} workers)...")
+        with ThreadPoolExecutor(max_workers=NEWS_WORKERS) as ex:
+            futures = {ex.submit(_fetch_news, sym): sym for sym in stale_syms}
+            for fut in as_completed(futures):
+                sym = futures[fut]
+                try:
+                    _, result, enriched = fut.result()
+                except Exception as e:
+                    log.warning(f"  News fetch failed {sym}: {e}")
+                    continue
+                try:
+                    news_cache.stage_upsert(
+                        pending_news, sym, result.timestamp, result.summary, enriched,
+                        result.bullish_score, result.bearish_score,
+                        result.sentiment, result.reason, result.source
+                    )
+                    nc_cache[sym.upper()] = {
+                        "last_fetched": result.timestamp,
+                        "digest": result.summary,
+                        "raw_articles": enriched,
+                        "bullish_score": result.bullish_score,
+                        "bearish_score": result.bearish_score,
+                        "sentiment": result.sentiment,
+                        "reason": result.reason,
+                        "source": result.source,
+                    }
+                except Exception as e:
+                    log.warning(f"  News stage failed for {sym}: {e}")
+
     results, failed = [], []
     alerts = {"sl_breach": [], "target_hit": [], "strong_buy": [], "sell_watch": []}
     top_picks = []
@@ -1857,41 +1931,6 @@ def run_portfolio_update(sh):
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         xirr_val = get_xirr(sym, trades, cmp)
         nd = nc_cache.get(sym.upper(), {})
-
-        is_fresh = False
-        if "last_fetched" in nd and nd["last_fetched"]:
-            try:
-                dt = datetime.fromisoformat(nd["last_fetched"])
-                age_hours = (datetime.now(timezone.utc) - dt).total_seconds() / 3600
-                if age_hours < 6:
-                    is_fresh = True
-            except Exception:
-                pass
-
-        if not is_fresh:
-            log.info(f"  Fetching news for {sym}...")
-            raw_articles = google_news_rss.fetch(sym, sym)
-            result, enriched = classifier.classify(sym, raw_articles)
-            try:
-                news_cache.stage_upsert(
-                    pending_news, sym, result.timestamp, result.summary, enriched,
-                    result.bullish_score, result.bearish_score,
-                    result.sentiment, result.reason, result.source
-                )
-                nc_cache[sym.upper()] = {
-                    "last_fetched": result.timestamp,
-                    "digest": result.summary,
-                    "raw_articles": enriched,
-                    "bullish_score": result.bullish_score,
-                    "bearish_score": result.bearish_score,
-                    "sentiment": result.sentiment,
-                    "reason": result.reason,
-                    "source": result.source
-                }
-                nc_cache[sym.upper()] = nd
-                time.sleep(SLEEP_NEWS_CACHE_WRITE)
-            except Exception as e:
-                log.warning(f"  News upsert failed for {sym}: {e}")
 
         row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val, news_data=nd)
 
@@ -1915,6 +1954,15 @@ def run_portfolio_update(sh):
 
     if nc_ws is not None:
         news_cache.flush(nc_ws, nc_row_map, pending_news)
+
+    # Belt-and-suspenders: the scoring loop above is sequential over
+    # `symbols`, so `results` is already in original order — but threading
+    # was introduced upstream (technicals/rev-growth/news fetch), so this
+    # guarantees row order in GITHUB DATA / Dashboard / History always
+    # matches the Portfolio tab's symbol order, regardless of future edits
+    # to how `results` gets assembled.
+    _sym_index = {s: i for i, s in enumerate(symbols)}
+    results.sort(key=lambda r: _sym_index.get(r[GITHUB_DATA_COLS["symbol"]], len(symbols)))
 
     write_github_data(sh, results, tab_name="GITHUB DATA")
     # Pass nc_cache so watchlist symbols inherit the news signal that was
