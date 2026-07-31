@@ -1,4 +1,3 @@
-from config import *
 import os
 import json
 import time
@@ -21,6 +20,9 @@ from news_engine.sources import google_news_rss
 from news_engine import classifier
 
 log = logging.getLogger("portfolio")
+
+from config import *
+
 
 
 # ══════════════════════════════════════════════
