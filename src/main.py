@@ -260,7 +260,7 @@ def run_portfolio_update(sh):
     log.info(f"[CHECKPOINT] About to write GITHUB DATA — {len(results)} rows built")
 
     try:
-        portfolio_rows = build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cache=nc_cache)
+        portfolio_rows = build_portfolio(prices)
         write_portfolio(sh, portfolio_rows)
     except Exception as e:
         log.error(f"[CHECKPOINT] Portfolio build/write FAILED: {e}", exc_info=True)
