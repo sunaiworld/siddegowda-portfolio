@@ -258,9 +258,14 @@ def build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cac
 def write_portfolio(sh, portfolio_rows, tab_name="Portfolio"):
     ws = sh.worksheet(tab_name)
     all_rows = ws.get_all_values()
+    log.info(f"[CHECKPOINT] write_portfolio: worksheet={ws.title!r}, sheet rows={len(all_rows)}")
+    log.info(f"[CHECKPOINT] write_portfolio: received {len(portfolio_rows)} portfolio_rows")
+    if portfolio_rows:
+        log.info(f"[CHECKPOINT] write_portfolio: first row = {portfolio_rows[0]}")
     if not all_rows:
         return
     by_symbol = {r["symbol"]: r for r in portfolio_rows}
+    log.info(f"[CHECKPOINT] write_portfolio: by_symbol keys (first 5) = {list(by_symbol.keys())[:5]}")
     headers = ["Avg Buy", "Value", "Invested", "Shares", "P&L", "Return %",
                "Wt %", "Wt Status", "SL Price", "Target", "Buy More@",
                "Signal", "Risk Score", "Risk Level"]
@@ -282,6 +287,9 @@ def write_portfolio(sh, portfolio_rows, tab_name="Portfolio"):
     header_range = f"{gspread.utils.rowcol_to_a1(1, start_col)}:{gspread.utils.rowcol_to_a1(1, end_col)}"
     data_range = f"{gspread.utils.rowcol_to_a1(2, start_col)}:{gspread.utils.rowcol_to_a1(1+len(data_rows), end_col)}"
     existing_header = all_rows[0][start_col-1:start_col-1+len(headers)] if len(all_rows[0]) >= start_col else []
+    log.info(f"[CHECKPOINT] write_portfolio: header_range={header_range}, data_range={data_range}")
+    if data_rows:
+        log.info(f"[CHECKPOINT] write_portfolio: first data row being written = {data_rows[0]}")
     if existing_header != headers:
         ws.update(header_range, [headers])
     if data_rows:
