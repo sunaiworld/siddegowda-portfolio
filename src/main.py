@@ -233,7 +233,12 @@ def run_portfolio_update(sh):
         xirr_val = get_xirr(sym, trades, cmp)
         nd = nc_cache.get(sym.upper(), {})
 
-        row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val, news_data=nd)
+        row, archetype, tot_sc, final_action = build_result_row(try:
+            row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val, news_data=nd)
+        except Exception as e:
+            log.error(f"[CHECKPOINT] build_result_row FAILED for {sym}: {e}", exc_info=True)
+            raise)
+        log.info(f"[CHECKPOINT] Scoring {sym}")
 
         if avg_buy and qty > 0:
             sl_price, tgt_price = avg_buy * (1 - SL_PCT), avg_buy * (1 + TARGET_PCT)
@@ -266,6 +271,7 @@ def run_portfolio_update(sh):
     results.sort(key=lambda r: _sym_index.get(r[GITHUB_DATA_COLS["symbol"]], len(symbols)))
 
     write_github_data(sh, results, tab_name="GITHUB DATA")
+    log.info(f"[CHECKPOINT] About to write GITHUB DATA — {len(results)} rows built")
     portfolio_rows = build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cache=nc_cache)
     write_portfolio(sh, portfolio_rows)
     # Pass nc_cache so watchlist symbols inherit the news signal that was
