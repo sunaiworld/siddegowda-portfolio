@@ -233,11 +233,11 @@ def run_portfolio_update(sh):
         xirr_val = get_xirr(sym, trades, cmp)
         nd = nc_cache.get(sym.upper(), {})
 
-        row, archetype, tot_sc, final_action = build_result_row(try:
+        try:
             row, archetype, tot_sc, final_action = build_result_row(sym, cmp, f, tech, rev_gr, xirr_val=xirr_val, news_data=nd)
         except Exception as e:
             log.error(f"[CHECKPOINT] build_result_row FAILED for {sym}: {e}", exc_info=True)
-            raise)
+            raise
         log.info(f"[CHECKPOINT] Scoring {sym}")
 
         if avg_buy and qty > 0:
