@@ -122,4 +122,26 @@ def get_xirr(sym, trades, current_price):
     if len(cashflows) < 2: return None
     r = compute_xirr(cashflows, dates)
     return round(r*100, 2) if r else None
-
+def get_entry_date(sym, trades):
+    earliest = None
+    for t in trades:
+        if not t[0]:
+            continue
+        if t[0].strip().upper() != sym:
+            continue
+        try:
+            if t[2].strip().upper() != "BUY":
+                continue
+            raw = str(t[1]).strip()
+            dt = None
+            for fmt in ["%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%b-%Y"]:
+                try:
+                    dt = datetime.strptime(raw, fmt).date()
+                    break
+                except ValueError:
+                    pass
+            if dt and (earliest is None or dt < earliest):
+                earliest = dt
+        except Exception:
+            continue
+    return earliest
