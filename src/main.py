@@ -272,8 +272,18 @@ def run_portfolio_update(sh):
 
     write_github_data(sh, results, tab_name="GITHUB DATA")
     log.info(f"[CHECKPOINT] About to write GITHUB DATA — {len(results)} rows built")
-    portfolio_rows = build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cache=nc_cache)
-    write_portfolio(sh, portfolio_rows)
+    portfolio_rows = build_portfolio(try:
+        portfolio_rows = build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cache=nc_cache)
+        write_portfolio(sh, portfolio_rows)
+    except Exception as e:
+        log.error(f"[CHECKPOINT] Portfolio build/write FAILED: {e}", exc_info=True)
+        raise)
+    write_portfolio(try:
+        portfolio_rows = build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cache=nc_cache)
+        write_portfolio(sh, portfolio_rows)
+    except Exception as e:
+        log.error(f"[CHECKPOINT] Portfolio build/write FAILED: {e}", exc_info=True)
+        raise)
     # Pass nc_cache so watchlist symbols inherit the news signal that was
     # already fetched/refreshed for portfolio symbols above. Zero new
     # API calls for symbols that overlap; watchlist-only symbols get {}
