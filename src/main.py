@@ -74,18 +74,6 @@ log = logging.getLogger(__name__)
 # CONFIG
 # ══════════════════════════════════════════════
 
-
-
-
-
-
-
-
-
-
-
-
-
 # ══════════════════════════════════════════════
 # WATCHLISTS
 # Symbol-only categories: no qty/buy-price/date.
@@ -343,8 +331,6 @@ def run_portfolio_update(sh):
         "watchlist_opportunities": watchlist_opportunities,
     }
 
-
-
 def main():
     log.info("═" * 55)
     log.info("SIDDEGOWDA PORTFOLIO — Daily Auto-Update v2.0")
@@ -355,7 +341,12 @@ def main():
     sh = gc.open_by_key(SHEET_ID)
     log.info("Connected to Google Sheets")
 
-    out = run_portfolio_update(sh)
+    try:
+        out = run_portfolio_update(sh)
+    except Exception as e:
+        log.error(f"run_portfolio_update FAILED: {e}", exc_info=True)
+        send_telegram(f"❌ Portfolio update FAILED — {type(e).__name__}: {e}")
+        raise
     if out is None:
         send_telegram("❌ Portfolio update FAILED — no symbols found in Portfolio tab col B")
         return
@@ -379,8 +370,6 @@ def main():
     for r in out["top_picks"][:5]:
         log.info(f"   {r['sym']:<12} Score:{r['total']:>3}  {r['action']}")
     log.info("═" * 55)
-
-
 
 if __name__ == "__main__":
     main()
