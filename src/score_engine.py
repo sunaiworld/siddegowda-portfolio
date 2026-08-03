@@ -611,3 +611,48 @@ def classify_technical_setup(tech, cmp):
 
     return "🟡 Consolidating"
 
+def score_symbol(sym, cmp, f, tech, rev_gr, news_data=None):
+    sector   = f.get("sector", "")
+    industry = f.get("industry", "")
+    archetype = get_archetype(sym, sector, industry)
+
+    rsi         = tech.get("rsi", "")
+    sma200      = tech.get("sma200", "")
+    vol_spike   = tech.get("vol_spike", "")
+    trend       = tech.get("trend", "")
+    cross       = tech.get("cross", "")
+
+    _nd = news_data or {}
+    try:
+        _bull = float(_nd.get("bullish_score", "")) if _nd.get("bullish_score", "") != "" else None
+    except (TypeError, ValueError):
+        _bull = None
+    try:
+        _bear = float(_nd.get("bearish_score", "")) if _nd.get("bearish_score", "") != "" else None
+    except (TypeError, ValueError):
+        _bear = None
+
+    metrics = {
+        "roe": f.get("roe"), "roa": f.get("roa"), "roce": f.get("roce"),
+        "rev_growth": rev_gr, "debt_eq": f.get("debt_eq"),
+        "pe": f.get("pe"), "pb": f.get("pb"), "div": f.get("div"),
+        "rsi": rsi if rsi != "" else None,
+        "sma200": sma200 if sma200 != "" else None,
+        "cmp": cmp,
+        "vol_spike": vol_spike if vol_spike != "" else None,
+        "cross": cross,
+        "news_sentiment": _nd.get("sentiment", ""),
+        "news_bullish_score": _bull,
+        "news_bearish_score": _bear,
+    }
+
+    q_sc, v_sc, t_sc, tot_sc, final_action, strengths, weaknesses = compute_unified_score(
+        sym, archetype, metrics
+    )
+
+    return {
+        "archetype": archetype, "quality": q_sc, "valuation": v_sc,
+        "timing": t_sc, "total": tot_sc, "final_action": final_action,
+        "strengths": strengths, "weaknesses": weaknesses,
+    }
+
