@@ -211,12 +211,31 @@ def compute_risk_score(f, tech, score):
 
 def build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cache=None):
     nc_cache = nc_cache or {}
-    rows = []
+
+    prelim, portfolio_live_value = {}, 0.0
     for sym in symbols:
         avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         cmp = prices.get(sym)
-        if not (qty > 0 and cmp and cmp > 0):
+        if qty > 0 and cmp and cmp > 0:
+            prelim[sym] = (avg_buy, qty, cmp)
+            portfolio_live_value += qty * cmp
+
+    rows = []
+    for sym in symbols:
+        if sym not in prelim:
             continue
+        avg_buy, qty, cmp = prelim[sym]
+
+        invested = round(avg_buy * qty, 2) if avg_buy else None
+        value    = round(cmp * qty, 2)
+        pnl      = round(value - invested, 2) if invested is not None else None
+        ret_pct  = round((pnl / invested) * 100, 2) if invested else None
+        wt_pct   = round((value / portfolio_live_value) * 100, 2) if portfolio_live_value else 0
+        wt_status = "Underweight" if wt_pct < 2 else "Normal" if wt_pct <= 6 else "Overweight"
+
+        sl_price = round(avg_buy * (1 - SL_PCT), 2) if avg_buy else None
+        target   = round(avg_buy * (1 + TARGET_PCT), 2) if avg_buy else None
+        buy_more = round(avg_buy * 0.90, 2) if avg_buy else None
 
         f, tech, rev_gr = fund_map.get(sym, {}), tech_map.get(sym, {}), rev_map.get(sym)
         nd = nc_cache.get(sym.upper(), {})
@@ -225,8 +244,13 @@ def build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cac
 
         rows.append({
             "symbol": sym,
-            "risk_score": risk_score,
-            "risk_level": risk_level,
+            "avg_buy": avg_buy, "shares": qty,
+            "invested": invested, "value": value,
+            "pnl": pnl, "return_pct": ret_pct,
+            "wt_pct": wt_pct, "wt_status": wt_status,
+            "sl_price": sl_price, "target": target, "buy_more": buy_more,
+            "signal": score["final_action"],
+            "risk_score": risk_score, "risk_level": risk_level,
         })
     return rows
 
