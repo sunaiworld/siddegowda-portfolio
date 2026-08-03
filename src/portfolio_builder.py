@@ -260,27 +260,27 @@ def write_portfolio(sh, portfolio_rows, tab_name="Portfolio"):
     all_rows = ws.get_all_values()
     if not all_rows:
         return
-
     by_symbol = {r["symbol"]: r for r in portfolio_rows}
-    headers = ["Risk Score", "Risk Level"]
-    keys = ["risk_score", "risk_level"]
+    headers = ["Avg Buy", "Value", "Invested", "Shares", "P&L", "Return %",
+               "Wt %", "Wt Status", "SL Price", "Target", "Buy More@",
+               "Signal", "Risk Score", "Risk Level"]
+    keys = ["avg_buy", "value", "invested", "shares", "pnl", "return_pct",
+            "wt_pct", "wt_status", "sl_price", "target", "buy_more",
+            "signal", "risk_score", "risk_level"]
     start_col = 3
-
     seen = set()
     data_rows = []
     for row in all_rows[1:]:
         sym = row[1].strip().upper() if len(row) > 1 else ""
         if not sym or sym in seen or sym not in by_symbol:
-            data_rows.append(["", ""])
+            data_rows.append([""] * len(headers))
             continue
         seen.add(sym)
         pr = by_symbol[sym]
-        data_rows.append([pr.get(k, "") for k in keys])
-
+        data_rows.append([pr.get(k, "") if pr.get(k) is not None else "" for k in keys])
     end_col = start_col + len(headers) - 1
     header_range = f"{gspread.utils.rowcol_to_a1(1, start_col)}:{gspread.utils.rowcol_to_a1(1, end_col)}"
     data_range = f"{gspread.utils.rowcol_to_a1(2, start_col)}:{gspread.utils.rowcol_to_a1(1+len(data_rows), end_col)}"
-
     existing_header = all_rows[0][start_col-1:start_col-1+len(headers)] if len(all_rows[0]) >= start_col else []
     if existing_header != headers:
         ws.update(header_range, [headers])
