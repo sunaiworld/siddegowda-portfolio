@@ -209,51 +209,107 @@ def compute_risk_score(f, tech, score):
     return risk_score, risk_level
 
 
-def build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cache=None):
-    nc_cache = nc_cache or {}
+import csv
+import glob
 
-    prelim, portfolio_live_value = {}, 0.0
-    for sym in symbols:
-        avg_buy, qty = get_avg_buy_and_qty(sym, trades)
-        cmp = prices.get(sym)
-        if qty > 0 and cmp and cmp > 0:
-            prelim[sym] = (avg_buy, qty, cmp)
-            portfolio_live_value += qty * cmp
+
+def read_trade_imports(imports_dir="data/imports"):
+    trades = []
+    for path in glob.glob(f"{imports_dir}/*.csv"):
+        with open(path, newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            if not reader.fieldnames:
+                continue
+            field_map = {h.strip().lower(): h for h in reader.fieldnames}
+            def find(*names):
+                for n in names:
+                    if n in field_map:
+                        return field_map[n]
+                return None
+            f_sym    = find("symbol", "stock", "ticker")
+            f_action = find("action", "type", "trade type")
+            f_qty    = find("quantity", "qty")
+            f_price  = find("price", "rate")
+            f_date   = find("date")
+            if not (f_sym and f_action and f_qty and f_price):
+                continue
+            for row in reader:
+                try:
+                    sym   = row.get(f_sym, "").strip().upper()
+                    typ   = row.get(f_action, "").strip().upper()
+                    qty   = float(row.get(f_qty, 0) or 0)
+                    price = float(row.get(f_price, 0) or 0)
+                    if not sym or typ not in ("BUY", "SELL") or qty <= 0:
+                        continue
+                    trades.append({
+                        "symbol": sym, "action": typ,
+                        "qty": qty, "price": price,
+                        "date": row.get(f_date, "").strip() if f_date else "",
+                    })
+                except (TypeError, ValueError):
+                    continue
+    return trades
+
+
+def compute_holdings(trades):
+    book = {}
+    for t in trades:
+        sym = t["symbol"]
+        cost, qty = book.get(sym, (0.0, 0.0))
+        if t["action"] == "BUY":
+            cost += t["qty"] * t["price"]
+            qty  += t["qty"]
+        elif t["action"] == "SELL" and qty > 0:
+            avg = cost / qty
+            cost -= t["qty"] * avg
+            qty  -= t["qty"]
+        book[sym] = (cost, max(qty, 0.0))
+
+    holdings = {}
+    for sym, (cost, qty) in book.items():
+        if qty > 0:
+            holdings[sym] = (round(cost / qty, 2), qty)
+    return holdings
+
+
+def build_portfolio(prices, imports_dir="data/imports"):
+    trades = read_trade_imports(imports_dir)
+    holdings = compute_holdings(trades)
+
+    portfolio_live_value = sum(qty * prices.get(sym, 0) for sym, (_, qty) in holdings.items() if prices.get(sym))
 
     rows = []
-    for sym in symbols:
-        if sym not in prelim:
+    for sym, (avg_buy, qty) in holdings.items():
+        cmp = prices.get(sym)
+        if not cmp or cmp <= 0:
             continue
-        avg_buy, qty, cmp = prelim[sym]
 
-        invested = round(avg_buy * qty, 2) if avg_buy else None
+        invested = round(avg_buy * qty, 2)
         value    = round(cmp * qty, 2)
-        pnl      = round(value - invested, 2) if invested is not None else None
-        ret_pct  = round((pnl / invested) * 100, 2) if invested else None
+        pnl      = round(value - invested, 2)
+        ret_pct  = round((pnl / invested) * 100, 2) if invested else 0
         wt_pct   = round((value / portfolio_live_value) * 100, 2) if portfolio_live_value else 0
         wt_status = "Underweight" if wt_pct < 2 else "Normal" if wt_pct <= 6 else "Overweight"
 
-        sl_price = round(avg_buy * (1 - SL_PCT), 2) if avg_buy else None
-        target   = round(avg_buy * (1 + TARGET_PCT), 2) if avg_buy else None
-        buy_more = round(avg_buy * 0.90, 2) if avg_buy else None
+        sl_price = round(avg_buy * (1 - SL_PCT), 2)
+        target   = round(avg_buy * (1 + TARGET_PCT), 2)
+        buy_more = round(avg_buy * 0.90, 2)
 
-        f, tech, rev_gr = fund_map.get(sym, {}), tech_map.get(sym, {}), rev_map.get(sym)
-        nd = nc_cache.get(sym.upper(), {})
-        score = score_symbol(sym, cmp, f, tech, rev_gr, news_data=nd)
-        risk_score, risk_level = compute_risk_score(f, tech, score)
-
-        log.info(f"[CHECKPOINT] {sym}: avg_buy={avg_buy} qty={qty} cmp={cmp} "
-                 f"invested={invested} value={value} final_action={score.get('final_action')}")
+        if cmp <= sl_price:
+            signal = "SELL - SL HIT"
+        elif cmp >= target:
+            signal = "TARGET HIT - TRIM"
+        elif cmp <= buy_more:
+            signal = "BUY MORE"
+        else:
+            signal = "HOLD"
 
         rows.append({
-            "symbol": sym,
-            "avg_buy": avg_buy, "shares": qty,
-            "invested": invested, "value": value,
-            "pnl": pnl, "return_pct": ret_pct,
+            "symbol": sym, "shares": qty, "avg_buy": avg_buy, "cmp": cmp,
+            "invested": invested, "value": value, "pnl": pnl, "return_pct": ret_pct,
             "wt_pct": wt_pct, "wt_status": wt_status,
             "sl_price": sl_price, "target": target, "buy_more": buy_more,
-            "signal": score["final_action"],
-            "risk_score": risk_score, "risk_level": risk_level,
+            "signal": signal,
         })
     return rows
 
