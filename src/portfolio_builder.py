@@ -242,6 +242,9 @@ def build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cac
         score = score_symbol(sym, cmp, f, tech, rev_gr, news_data=nd)
         risk_score, risk_level = compute_risk_score(f, tech, score)
 
+        log.info(f"[CHECKPOINT] {sym}: avg_buy={avg_buy} qty={qty} cmp={cmp} "
+                 f"invested={invested} value={value} final_action={score.get('final_action')}")
+
         rows.append({
             "symbol": sym,
             "avg_buy": avg_buy, "shares": qty,
