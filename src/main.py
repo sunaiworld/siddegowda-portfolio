@@ -266,6 +266,8 @@ def run_portfolio_update(sh):
     results.sort(key=lambda r: _sym_index.get(r[GITHUB_DATA_COLS["symbol"]], len(symbols)))
 
     write_github_data(sh, results, tab_name="GITHUB DATA")
+    portfolio_rows = build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cache=nc_cache)
+    write_portfolio(sh, portfolio_rows)
     # Pass nc_cache so watchlist symbols inherit the news signal that was
     # already fetched/refreshed for portfolio symbols above. Zero new
     # API calls for symbols that overlap; watchlist-only symbols get {}
