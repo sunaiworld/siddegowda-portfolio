@@ -214,8 +214,21 @@ import glob
 
 
 def read_trade_imports(imports_dir="data/imports"):
+    import os as _os
+    candidates = [
+        imports_dir,
+        _os.path.join(_os.getcwd(), imports_dir),
+        _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), imports_dir),
+        _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), imports_dir),
+    ]
+    resolved = imports_dir
+    for c in candidates:
+        if glob.glob(_os.path.join(c, "*.csv")):
+            resolved = c
+            break
+
     trades = []
-    for path in glob.glob(f"{imports_dir}/*.csv"):
+    for path in glob.glob(_os.path.join(resolved, "*.csv")):
         with open(path, newline="", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
             if not reader.fieldnames:
@@ -237,13 +250,12 @@ def read_trade_imports(imports_dir="data/imports"):
                 try:
                     sym   = row.get(f_sym, "").strip().upper()
                     typ   = row.get(f_action, "").strip().upper()
-                    qty   = float(row.get(f_qty, 0) or 0)
-                    price = float(row.get(f_price, 0) or 0)
+                    qty   = float(str(row.get(f_qty, 0) or 0).replace(",", ""))
+                    price = float(str(row.get(f_price, 0) or 0).replace(",", "").replace("₹", ""))
                     if not sym or typ not in ("BUY", "SELL") or qty <= 0:
                         continue
                     trades.append({
-                        "symbol": sym, "action": typ,
-                        "qty": qty, "price": price,
+                        "symbol": sym, "action": typ, "qty": qty, "price": price,
                         "date": row.get(f_date, "").strip() if f_date else "",
                     })
                 except (TypeError, ValueError):
@@ -276,7 +288,9 @@ def build_portfolio(prices, imports_dir="data/imports"):
     trades = read_trade_imports(imports_dir)
     holdings = compute_holdings(trades)
 
-    portfolio_live_value = sum(qty * prices.get(sym, 0) for sym, (_, qty) in holdings.items() if prices.get(sym))
+    portfolio_live_value = sum(
+        qty * prices.get(sym, 0) for sym, (_, qty) in holdings.items() if prices.get(sym)
+    )
 
     rows = []
     for sym, (avg_buy, qty) in holdings.items():
@@ -317,21 +331,16 @@ def build_portfolio(prices, imports_dir="data/imports"):
 def write_portfolio(sh, portfolio_rows, tab_name="Portfolio"):
     ws = sh.worksheet(tab_name)
     all_rows = ws.get_all_values()
-    log.info(f"[CHECKPOINT] write_portfolio: worksheet={ws.title!r}, sheet rows={len(all_rows)}")
-    log.info(f"[CHECKPOINT] write_portfolio: received {len(portfolio_rows)} portfolio_rows")
-    if portfolio_rows:
-        log.info(f"[CHECKPOINT] write_portfolio: first row = {portfolio_rows[0]}")
     if not all_rows:
         return
+
     by_symbol = {r["symbol"]: r for r in portfolio_rows}
-    log.info(f"[CHECKPOINT] write_portfolio: by_symbol keys (first 5) = {list(by_symbol.keys())[:5]}")
-    headers = ["Avg Buy", "Value", "Invested", "Shares", "P&L", "Return %",
-               "Wt %", "Wt Status", "SL Price", "Target", "Buy More@",
-               "Signal", "Risk Score", "Risk Level"]
-    keys = ["avg_buy", "value", "invested", "shares", "pnl", "return_pct",
-            "wt_pct", "wt_status", "sl_price", "target", "buy_more",
-            "signal", "risk_score", "risk_level"]
+    headers = ["Shares", "Avg Buy", "CMP", "Invested", "Value", "P&L", "Return %",
+               "Wt %", "Wt Status", "Stop Loss", "Target", "Buy More@", "Signal"]
+    keys = ["shares", "avg_buy", "cmp", "invested", "value", "pnl", "return_pct",
+            "wt_pct", "wt_status", "sl_price", "target", "buy_more", "signal"]
     start_col = 3
+
     seen = set()
     data_rows = []
     for row in all_rows[1:]:
@@ -341,15 +350,12 @@ def write_portfolio(sh, portfolio_rows, tab_name="Portfolio"):
             continue
         seen.add(sym)
         pr = by_symbol[sym]
-        data_rows.append([pr.get(k, "") if pr.get(k) is not None else "" for k in keys])
+        data_rows.append([pr.get(k, "") for k in keys])
+
     end_col = start_col + len(headers) - 1
     header_range = f"{gspread.utils.rowcol_to_a1(1, start_col)}:{gspread.utils.rowcol_to_a1(1, end_col)}"
     data_range = f"{gspread.utils.rowcol_to_a1(2, start_col)}:{gspread.utils.rowcol_to_a1(1+len(data_rows), end_col)}"
-    existing_header = all_rows[0][start_col-1:start_col-1+len(headers)] if len(all_rows[0]) >= start_col else []
-    log.info(f"[CHECKPOINT] write_portfolio: header_range={header_range}, data_range={data_range}")
-    if data_rows:
-        log.info(f"[CHECKPOINT] write_portfolio: first data row being written = {data_rows[0]}")
-    if existing_header != headers:
-        ws.update(header_range, [headers])
+
+    ws.update(header_range, [headers])
     if data_rows:
         ws.update(data_range, data_rows, value_input_option="RAW")
