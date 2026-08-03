@@ -260,8 +260,7 @@ def run_portfolio_update(sh):
 
     if nc_ws is not None:
         news_cache.flush(nc_ws, nc_row_map, pending_news)
-
-    # Belt-and-suspenders: the scoring loop above is sequential over
+# Belt-and-suspenders: the scoring loop above is sequential over
     # `symbols`, so `results` is already in original order — but threading
     # was introduced upstream (technicals/rev-growth/news fetch), so this
     # guarantees row order in GITHUB DATA / Dashboard / History always
@@ -269,21 +268,16 @@ def run_portfolio_update(sh):
     # to how `results` gets assembled.
     _sym_index = {s: i for i, s in enumerate(symbols)}
     results.sort(key=lambda r: _sym_index.get(r[GITHUB_DATA_COLS["symbol"]], len(symbols)))
-
     write_github_data(sh, results, tab_name="GITHUB DATA")
     log.info(f"[CHECKPOINT] About to write GITHUB DATA — {len(results)} rows built")
-    portfolio_rows = build_portfolio(try:
+
+    try:
         portfolio_rows = build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cache=nc_cache)
         write_portfolio(sh, portfolio_rows)
     except Exception as e:
         log.error(f"[CHECKPOINT] Portfolio build/write FAILED: {e}", exc_info=True)
-        raise)
-    write_portfolio(try:
-        portfolio_rows = build_portfolio(symbols, trades, prices, fund_map, tech_map, rev_map, nc_cache=nc_cache)
-        write_portfolio(sh, portfolio_rows)
-    except Exception as e:
-        log.error(f"[CHECKPOINT] Portfolio build/write FAILED: {e}", exc_info=True)
-        raise)
+        raise
+
     # Pass nc_cache so watchlist symbols inherit the news signal that was
     # already fetched/refreshed for portfolio symbols above. Zero new
     # API calls for symbols that overlap; watchlist-only symbols get {}
