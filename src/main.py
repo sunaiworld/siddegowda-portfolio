@@ -99,7 +99,14 @@ def run_portfolio_update(sh):
         log.error("No symbols found.")
         return None
 
-    trades = read_trades(sh)
+    # Real trades live in data/imports/{zerodha,groww} now, not the legacy
+    # "Trade Log" sheet tab (which is empty/unused) — load_all_trades()
+    # reads both broker exports via the existing import_zerodha.py /
+    # import_groww.py importers, and trades_to_legacy_rows() adapts them
+    # into the row shape get_avg_buy_and_qty/get_xirr/get_entry_date
+    # already expect, so nothing downstream (Dashboard holdings dict,
+    # SL/target alerts, per-symbol XIRR) needs to change.
+    trades = trades_to_legacy_rows(load_all_trades())
     log.info(f"Found {len(symbols)} symbols")
 
     log.info("Fetching prices...")
@@ -154,7 +161,7 @@ def run_portfolio_update(sh):
             holdings[sym] = (qty, cmp, avg_buy)
             portfolio_live_value += qty * cmp
 
-    # ── News refresh pre-pass (threaded, bounded) ──────────────────────────
+    # ── News refresh pre-pass (threaded, bounded) ───────────────────────────────────────────────
     # Google News RSS is a different host than Yahoo/Sheets, so fetching it
     # in parallel doesn't compound either rate limit. Only the *fetch* is
     # threaded — classify() is pure CPU, and no Sheets call happens inside
@@ -272,7 +279,7 @@ def run_portfolio_update(sh):
     # and their news columns stay blank until added to the portfolio.
     watchlist_results = process_all_watchlists(sh, nc_cache=nc_cache)
 
-    # ── Watchlist Opportunity Digest ───────────────────────────────────────
+    # ── Watchlist Opportunity Digest ───────────────────────────────────────────────
     # Identify watchlist stocks that have crossed into an attractive entry
     # window (score >= 50) and are NOT already held in the portfolio.
     # Uses data already computed above — no new API calls.
@@ -303,14 +310,6 @@ def run_portfolio_update(sh):
                     "rsi": rsi, "trend": trend, "setup": setup, "news": news_s,
                 })
     watchlist_opportunities.sort(key=lambda x: x["score"], reverse=True)
-    # ── TEMP DEBUG LOGGING — remove after root cause confirmed ──
-    log.info(f"[DEBUG] len(symbols)={len(symbols)} len(results)={len(results)} "
-              f"len(holdings)={len(holdings)} len(fund_map)={len(fund_map)} len(prices)={len(prices)}")
-    log.info(f"[DEBUG] holdings keys (first 5): {list(holdings.keys())[:5]}")
-    log.info(f"[DEBUG] results symbols (first 5): {[r[GITHUB_DATA_COLS['symbol']] for r in results[:5]]}")
-    log.info(f"[DEBUG] fund_map keys (first 5): {list(fund_map.keys())[:5]}")
-    log.info(f"[DEBUG] trades row count: {len(trades)}, first trade row: {trades[0] if trades else 'EMPTY'}")
-    # ── END TEMP DEBUG LOGGING ──
 
     changes = history_tracker.compute_todays_changes(sh, results)
     prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)

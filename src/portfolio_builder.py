@@ -49,12 +49,41 @@ def read_symbols(sh):
 
 # ══════════════════════════════════════════════
 # READ TRADES
+#
+# read_trades() below reads the legacy "Trade Log" sheet tab. That tab is
+# no longer how trades get into this system — real trades live in
+# data/imports/{zerodha,groww} and are loaded via load_all_trades()
+# further down this file. read_trades() is kept only because other code
+# may still reference it; nothing in the daily pipeline should call it
+# for portfolio math anymore. trades_to_legacy_rows() bridges the two:
+# it converts load_all_trades()'s master-schema dicts into the same
+# [symbol, date, type, qty, price] row shape read_trades() used to
+# produce, so get_avg_buy_and_qty()/get_xirr()/get_entry_date() (and
+# everything in main.py that depends on them — the Dashboard holdings
+# dict, SL/target alerts, per-symbol XIRR) keep working unchanged and
+# now source from the real trade data instead of the empty Trade Log tab.
 # ══════════════════════════════════════════════
 def read_trades(sh):
     try:
         return sh.worksheet("Trade Log").get_all_values()[1:]
     except:
         return []
+
+
+def trades_to_legacy_rows(trades):
+    """Adapts load_all_trades()'s master-schema dicts (symbol/date/action/
+    quantity/price/...) into the legacy [symbol, date, type, qty, price]
+    row list that get_avg_buy_and_qty/get_xirr/get_entry_date expect."""
+    rows = []
+    for t in trades:
+        rows.append([
+            t.get("symbol", ""),
+            t.get("date", ""),
+            t.get("action", ""),
+            t.get("quantity", ""),
+            t.get("price", ""),
+        ])
+    return rows
 
 
 def get_avg_buy_and_qty(sym, trades):
