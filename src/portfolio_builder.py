@@ -7,6 +7,7 @@ import requests
 import math
 import csv
 import glob
+import importlib.util
 from datetime import datetime, date, timezone
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import numpy as np
@@ -211,83 +212,114 @@ def compute_risk_score(f, tech, score):
     return risk_score, risk_level
 
 
-import csv
-import glob
+# ══════════════════════════════════════════════
+# TRADE IMPORTS (data/imports/zerodha/*.csv + data/imports/groww/*.xlsx)
+#
+# Reuses the broker-specific importers that already live next to the raw
+# exports (data/imports/zerodha/import_zerodha.py, data/imports/groww/
+# import_groww.py) instead of re-parsing the files with a second, ad-hoc
+# CSV reader. Those importers were already fixed/verified against the real
+# Zerodha CSV headers (trade_date/trade_type/quantity/price) and the real
+# Groww XLSX layout (5 metadata rows, header on row 6) — this file no
+# longer duplicates that parsing logic, it just calls it.
+#
+# They live outside the src/ package (under data/imports/<broker>/), so
+# they're loaded by absolute file path rather than a normal import — this
+# works regardless of the process's cwd or sys.path, the same way the old
+# read_trade_imports() resolved its directory.
+# ══════════════════════════════════════════════
+def _load_broker_importer(module_name, relative_path):
+    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    mod_path = os.path.join(repo_root, relative_path)
+    spec = importlib.util.spec_from_file_location(module_name, mod_path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
-def read_trade_imports(imports_dir="data/imports"):
-    import os as _os
+def _resolve_imports_root(imports_dir):
+    """Mirror the old read_trade_imports() cwd-independent path resolution:
+    try the given path as-is, then relative to cwd, then relative to this
+    file's directory and its parent (repo root)."""
     candidates = [
         imports_dir,
-        _os.path.join(_os.getcwd(), imports_dir),
-        _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), imports_dir),
-        _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), imports_dir),
+        os.path.join(os.getcwd(), imports_dir),
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), imports_dir),
+        os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), imports_dir),
     ]
-    resolved = imports_dir
     for c in candidates:
-        if glob.glob(_os.path.join(c, "*.csv")):
-            resolved = c
-            break
+        if os.path.isdir(os.path.join(c, "zerodha")) or os.path.isdir(os.path.join(c, "groww")):
+            return c
+    return imports_dir
+
+
+def load_all_trades(imports_dir="data/imports"):
+    """Loads every Zerodha CSV and Groww XLSX under data/imports/{zerodha,groww}
+    via the existing broker-specific importers and returns the combined list
+    of master-schema trade dicts (symbol/action/quantity/price/...)."""
+    imports_root = _resolve_imports_root(imports_dir)
+    zerodha_dir = os.path.join(imports_root, "zerodha")
+    groww_dir   = os.path.join(imports_root, "groww")
 
     trades = []
-    for path in glob.glob(_os.path.join(resolved, "*.csv")):
-        with open(path, newline="", encoding="utf-8") as fh:
-            reader = csv.DictReader(fh)
-            if not reader.fieldnames:
-                continue
-            field_map = {h.strip().lower(): h for h in reader.fieldnames}
-            def find(*names):
-                for n in names:
-                    if n in field_map:
-                        return field_map[n]
-                return None
-            f_sym    = find("symbol", "stock", "ticker")
-            f_action = find("action", "type", "trade type")
-            f_qty    = find("quantity", "qty")
-            f_price  = find("price", "rate")
-            f_date   = find("date")
-            if not (f_sym and f_action and f_qty and f_price):
-                continue
-            for row in reader:
-                try:
-                    sym   = row.get(f_sym, "").strip().upper()
-                    typ   = row.get(f_action, "").strip().upper()
-                    qty   = float(str(row.get(f_qty, 0) or 0).replace(",", ""))
-                    price = float(str(row.get(f_price, 0) or 0).replace(",", "").replace("₹", ""))
-                    if not sym or typ not in ("BUY", "SELL") or qty <= 0:
-                        continue
-                    trades.append({
-                        "symbol": sym, "action": typ, "qty": qty, "price": price,
-                        "date": row.get(f_date, "").strip() if f_date else "",
-                    })
-                except (TypeError, ValueError):
-                    continue
+
+    if os.path.isdir(zerodha_dir):
+        zerodha_mod = _load_broker_importer(
+            "_zerodha_importer", os.path.join(zerodha_dir, "import_zerodha.py")
+        )
+        for path in sorted(glob.glob(os.path.join(zerodha_dir, "*.csv"))):
+            try:
+                trades.extend(zerodha_mod.import_zerodha(path))
+            except Exception as e:
+                log.warning(f"  Zerodha import failed for {os.path.basename(path)}: {e}")
+
+    if os.path.isdir(groww_dir):
+        groww_mod = _load_broker_importer(
+            "_groww_importer", os.path.join(groww_dir, "import_groww.py")
+        )
+        for path in sorted(glob.glob(os.path.join(groww_dir, "*.xlsx"))):
+            try:
+                trades.extend(groww_mod.import_groww(path))
+            except Exception as e:
+                log.warning(f"  Groww import failed for {os.path.basename(path)}: {e}")
+
+    log.info(f"Loaded {len(trades)} raw trade rows from data/imports (Zerodha + Groww)")
     return trades
 
 
 def compute_holdings(trades):
     book = {}
     for t in trades:
-        sym = t["symbol"]
+        sym = str(t.get("symbol", "")).strip().upper()
+        if not sym:
+            continue
+        try:
+            action = str(t.get("action", "")).strip().upper()
+            t_qty   = float(t.get("quantity", 0) or 0)
+            t_price = float(t.get("price", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if t_qty <= 0:
+            continue
         cost, qty = book.get(sym, (0.0, 0.0))
-        if t["action"] == "BUY":
-            cost += t["qty"] * t["price"]
-            qty  += t["qty"]
-        elif t["action"] == "SELL" and qty > 0:
+        if action == "BUY":
+            cost += t_qty * t_price
+            qty  += t_qty
+        elif action == "SELL" and qty > 0:
             avg = cost / qty
-            cost -= t["qty"] * avg
-            qty  -= t["qty"]
+            cost -= t_qty * avg
+            qty  -= t_qty
         book[sym] = (cost, max(qty, 0.0))
 
     holdings = {}
     for sym, (cost, qty) in book.items():
-        if qty > 0:
-            holdings[sym] = (round(cost / qty, 2), qty)
+        if qty > 1e-6:
+            holdings[sym] = (round(cost / qty, 2), round(qty, 4))
     return holdings
 
 
 def build_portfolio(prices, imports_dir="data/imports"):
-    trades = read_trade_imports(imports_dir)
+    trades = load_all_trades(imports_dir)
     holdings = compute_holdings(trades)
 
     portfolio_live_value = sum(
