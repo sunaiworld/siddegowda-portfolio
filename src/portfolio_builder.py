@@ -18,6 +18,8 @@ from google.oauth2.service_account import Credentials
 import fund_cache
 import history_tracker
 import portfolio_analytics
+import sheet_formatter
+import sheet_writer
 import news_engine.news_cache as news_cache
 from news_engine.sources import google_news_rss
 from news_engine import classifier
@@ -436,3 +438,35 @@ def write_portfolio(sh, portfolio_rows, tab_name="Portfolio"):
     ws.update(header_range, [headers])
     if data_rows:
         ws.update(data_range, data_rows, value_input_option="RAW")
+
+    num_rows = len(data_rows)
+    # The Portfolio sheet has headers up to end_col.
+    # Col A (0), Col B (1) are pre-existing. We format the whole width (end_col).
+    reqs = sheet_formatter.get_structural_format_reqs(ws.id, num_rows, end_col, widths=None, freeze_rows=1, freeze_cols=2)
+
+    # 0-indexed columns for currency: Avg Buy (3), CMP (4), Invested (5), Value (6), P&L (7), Stop Loss (11), Target (12), Buy More@ (13)
+    for col in [3, 4, 5, 6, 7, 11, 12, 13]:
+        reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, num_rows + 1, col, col + 1)
+
+    # 0-indexed columns for percentage: Return % (8), Wt % (9)
+    for col in [8, 9]:
+        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, num_rows + 1, col, col + 1)
+
+    # Per-row conditional formatting
+    for i, row in enumerate(data_rows):
+        rn = i + 1
+
+        pnl = row[keys.index("pnl")]
+        req_pnl = sheet_formatter.color_positive_negative(ws.id, rn, 7, pnl)
+        if req_pnl: reqs.append(req_pnl)
+
+        ret = row[keys.index("return_pct")]
+        req_ret = sheet_formatter.color_positive_negative(ws.id, rn, 8, ret)
+        if req_ret: reqs.append(req_ret)
+
+        signal = str(row[keys.index("signal")]).strip()
+        req_sig = sheet_formatter.color_action_signal(ws.id, rn, 14, signal)
+        if req_sig: reqs.append(req_sig)
+
+    if reqs:
+        sheet_writer.batch_update_safe(sh, reqs)

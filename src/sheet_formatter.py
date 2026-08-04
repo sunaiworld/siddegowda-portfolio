@@ -93,3 +93,105 @@ def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
         }
     }
 
+
+def get_structural_format_reqs(ws_id, num_rows, num_cols, widths=None, freeze_rows=1, freeze_cols=1):
+    reqs = []
+    # Header format
+    reqs.append({
+        "repeatCell": {
+            "range": {"sheetId": ws_id, "startRowIndex": 0, "endRowIndex": 1,
+                      "startColumnIndex": 0, "endColumnIndex": num_cols},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": hex_rgb("0d1b2a"),
+                "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
+                "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"
+            }},
+            "fields": "userEnteredFormat"
+        }
+    })
+    # Freeze row/col
+    reqs.append({
+        "updateSheetProperties": {
+            "properties": {"sheetId": ws_id, "gridProperties": {"frozenRowCount": freeze_rows, "frozenColumnCount": freeze_cols}},
+            "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
+        }
+    })
+    # Row height
+    reqs.append({
+        "updateDimensionProperties": {
+            "range": {"sheetId": ws_id, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
+            "properties": {"pixelSize": 50}, "fields": "pixelSize"
+        }
+    })
+    # Column widths
+    if widths:
+        reqs += [{"updateDimensionProperties": {
+            "range": {"sheetId": ws_id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
+            "properties": {"pixelSize": w}, "fields": "pixelSize"
+        }} for i, w in enumerate(widths)]
+
+    # Alternating row colors
+    for i in range(num_rows):
+        rn = i + 1
+        alt = "f8f9fa" if i % 2 == 0 else "ffffff"
+        reqs.append({"repeatCell": {
+            "range": {"sheetId": ws_id, "startRowIndex": rn, "endRowIndex": rn + 1,
+                      "startColumnIndex": 0, "endColumnIndex": num_cols},
+            "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
+            "fields": "userEnteredFormat.backgroundColor"
+        }})
+    return reqs
+
+def get_currency_format_reqs(ws_id, start_row, end_row, start_col, end_col):
+    return [{
+        "repeatCell": {
+            "range": {"sheetId": ws_id, "startRowIndex": start_row, "endRowIndex": end_row,
+                      "startColumnIndex": start_col, "endColumnIndex": end_col},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "CURRENCY", "pattern": '"₹"#,##0.00'}}},
+            "fields": "userEnteredFormat.numberFormat"
+        }
+    }]
+
+def get_percentage_format_reqs(ws_id, start_row, end_row, start_col, end_col):
+    return [{
+        "repeatCell": {
+            "range": {"sheetId": ws_id, "startRowIndex": start_row, "endRowIndex": end_row,
+                      "startColumnIndex": start_col, "endColumnIndex": end_col},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": '0.00"%"'}}},
+            "fields": "userEnteredFormat.numberFormat"
+        }
+    }]
+
+def color_positive_negative(ws_id, rn, col_idx, val):
+    try:
+        val_f = float(val)
+        if val_f > 0:
+            return color_cell_req(ws_id, rn, col_idx, "d9ead3", "0b8043")
+        elif val_f < 0:
+            return color_cell_req(ws_id, rn, col_idx, "fde9d9", "c62828")
+        else:
+            return color_cell_req(ws_id, rn, col_idx, "f1f1f1", "666666")
+    except:
+        return None
+
+def color_action_signal(ws_id, rn, col_idx, action):
+    # Combines GITHUB DATA Final Action colors and Portfolio Signal colors
+    ACTION_COLORS = {
+        # GITHUB DATA
+        "STRONG BUY":  ("00c853", "ffffff"),
+        "BUY":         ("0b8043", "ffffff"),
+        "ACCUMULATE":  ("d9ead3", "0b8043"),
+        "HOLD":        ("fff2cc", "7f4f00"),
+        "WATCH":       ("fce8b2", "7f4f00"),
+        "AVOID":       ("fde9d9", "c62828"),
+        "SELL":        ("cc0000", "ffffff"),
+        # Portfolio Signals
+        "BUY MORE":          ("0b8043", "ffffff"),
+        "TARGET HIT - TRIM": ("d9ead3", "0b8043"),
+        "SELL - SL HIT":     ("cc0000", "ffffff"),
+    }
+    if action in ACTION_COLORS:
+        bg, fg = ACTION_COLORS[action]
+        return color_cell_req(ws_id, rn, col_idx, bg, fg)
+    return None
+

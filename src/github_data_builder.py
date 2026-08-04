@@ -51,10 +51,7 @@ GITHUB_DATA_COLS = {
     "bearish_score":  33,
     "news_sentiment": 34,
     "news_reason":    35,
-    "news_timestamp": 36,
-    "news_source":    37,
-    "cmp":            38,
-    "updated":        39,
+    "news_source":    36,
 }
 
 
@@ -81,10 +78,7 @@ GITHUB_DATA_HEADER_NAMES = {
     "bearish_score":  "Bearish Score",
     "news_sentiment": "News Sentiment",
     "news_reason":    "News Reason",
-    "news_timestamp": "News Timestamp",
     "news_source":    "News Source",
-    "cmp":            "CMP",
-    "updated":        "Updated",
 }
 
 
@@ -109,10 +103,7 @@ GITHUB_DATA_COL_WIDTHS = {
     "bearish_score":   55,
     "news_sentiment":  80,
     "news_reason":    180,
-    "news_timestamp":  90,
     "news_source":     80,
-    "cmp":             60,
-    "updated":        140,
 }
 
 
@@ -235,10 +226,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["bearish_score"]]  = nd.get("bearish_score", "")
     row[C["news_sentiment"]] = nd.get("sentiment", "")
     row[C["news_reason"]]    = nd.get("reason", "")
-    row[C["news_timestamp"]] = nd.get("last_fetched", "")
     row[C["news_source"]]    = nd.get("source", "")
-    row[C["cmp"]]            = cmp
-    row[C["updated"]]        = datetime.now(timezone.utc).isoformat()
 
     return row, archetype, tot_sc, final_action
 
@@ -296,36 +284,11 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         ws.append_rows(rows)
 
     # ── Structural formatting: header, freeze, row height, column widths ──
-    # Consolidated into a single batch_update (was 4 separate calls).
-    struct_reqs = [
-        {"repeatCell": {
-            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1,
-                      "startColumnIndex": 0, "endColumnIndex": num_cols},
-            "cell": {"userEnteredFormat": {
-                "backgroundColor": hex_rgb("0d1b2a"),
-                "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
-                "verticalAlignment": "MIDDLE", "wrapStrategy": "WRAP"
-            }},
-            "fields": "userEnteredFormat"
-        }},
-        {"updateSheetProperties": {
-            "properties": {"sheetId": ws.id, "gridProperties": {"frozenRowCount": 1, "frozenColumnCount": 1}},
-            "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
-        }},
-        {"updateDimensionProperties": {
-            "range": {"sheetId": ws.id, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
-            "properties": {"pixelSize": 50}, "fields": "pixelSize"
-        }},
-    ] + [{"updateDimensionProperties": {
-        "range": {"sheetId": ws.id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
-        "properties": {"pixelSize": w}, "fields": "pixelSize"
-    }} for i, w in enumerate(widths)]
-    sh.batch_update({"requests": struct_reqs})
+    # Consolidated into a single batch_update.
+    struct_reqs = get_structural_format_reqs(ws.id, len(rows), num_cols, widths, freeze_rows=1, freeze_cols=1)
+    
+    reqs = struct_reqs
 
-    # ── Per-row conditional formatting ─────────────────────────────────────
-    # Uses the in-memory `rows` list — no get_all_values() read needed.
-    # Values are Python-native; sf() handles string coercion either way.
-    reqs = []
 
     ACTION_COLORS = {
         "STRONG BUY":  ("00c853", "ffffff"),
@@ -347,13 +310,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 
     for i, row in enumerate(rows):
         rn  = i + 1
-        alt = "f8f9fa" if i % 2 == 0 else "ffffff"
-        reqs.append({"repeatCell": {
-            "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn + 1,
-                      "startColumnIndex": 0, "endColumnIndex": num_cols},
-            "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
-            "fields": "userEnteredFormat.backgroundColor"
-        }})
 
         cap       = str(row[C["cap_type"]]).strip() if len(row) > C["cap_type"] else ""
         action    = str(row[C["action"]]).strip() if len(row) > C["action"] else ""
@@ -514,18 +470,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         reqs.append(color_cell_req(ws.id, rn, C["news_summary"], "e8f5f9", "01579b", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["news_reason"],  "e8f5f9", "01579b", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["news_source"],    "f5f5f5", "757575", bold=False))
-        reqs.append(color_cell_req(ws.id, rn, C["news_timestamp"], "f5f5f5", "757575", bold=False))
-
-        cmp_v = sf(row, "cmp")
-        if cmp_v is not None and cmp_v > 0:
-            if day_chg is not None and day_chg > 0:
-                reqs.append(color_cell_req(ws.id, rn, C["cmp"], "d9ead3", "0b8043"))
-            elif day_chg is not None and day_chg < 0:
-                reqs.append(color_cell_req(ws.id, rn, C["cmp"], "fde9d9", "c62828"))
-            else:
-                reqs.append(color_cell_req(ws.id, rn, C["cmp"], "f5f5f5", "555555", bold=False))
-
-        reqs.append(color_cell_req(ws.id, rn, C["updated"], "f5f5f5", "9e9e9e", bold=False))
 
     batch_update_safe(sh, reqs)
     log.info(f"{tab_name} tab written and formatted ({len(rows)} rows)")
