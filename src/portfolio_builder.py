@@ -325,6 +325,7 @@ def load_all_trades(imports_dir="data/imports"):
                 log.warning(f"  Groww import failed for {os.path.basename(path)}: {e}")
 
     log.info(f"Loaded {len(trades)} raw trade rows from data/imports (Zerodha + Groww)")
+    trades.sort(key=lambda t: str(t.get("date", "")))
     return trades
 
 
