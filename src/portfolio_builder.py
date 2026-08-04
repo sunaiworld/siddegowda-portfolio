@@ -99,12 +99,16 @@ def get_avg_buy_and_qty(sym, trades):
                 total_cost += qty * price
                 total_qty  += qty
             elif typ == "SELL" and total_qty > 0:
+                # Clamp sell to available qty — older broker exports may start
+                # mid-stream (sells before tracked buys), which would otherwise
+                # produce negative total_qty and corrupt subsequent cost basis.
+                sell_qty = min(qty, total_qty)
                 avg = total_cost / total_qty
-                total_cost -= qty * avg
-                total_qty  -= qty
+                total_cost -= sell_qty * avg
+                total_qty  -= sell_qty
         except:
             continue
-    total_qty = max(total_qty, 0)
+    total_qty = max(total_qty, 0.0)
     avg_buy   = round(total_cost / total_qty, 2) if total_qty > 0 else None
     return avg_buy, total_qty
 
@@ -128,7 +132,7 @@ def compute_xirr(cashflows, dates):
 
 
 def get_xirr(sym, trades, current_price):
-    cashflows, dates, total_qty = [], [], 0
+    cashflows, dates, running_qty = [], [], 0.0
     for t in trades:
         if not t[0]: continue
         if t[0].strip().upper() != sym: continue
@@ -143,17 +147,23 @@ def get_xirr(sym, trades, current_price):
             qty   = float(t[3])
             price = float(t[4])
             if typ == "BUY":
-                cashflows.append(-qty*price); dates.append(dt); total_qty += qty
+                cashflows.append(-qty * price); dates.append(dt)
+                running_qty += qty
             elif typ == "SELL":
-                cashflows.append(qty*price);  dates.append(dt); total_qty -= qty
+                # Clamp sell to available qty — prevents negative terminal value
+                # when exports start mid-stream with sells before tracked buys.
+                sell_qty = min(qty, running_qty) if running_qty > 0 else 0.0
+                if sell_qty > 0:
+                    cashflows.append(sell_qty * price); dates.append(dt)
+                running_qty = max(running_qty - qty, 0.0)
         except:
             continue
-    if total_qty > 0 and current_price:
-        cashflows.append(total_qty * current_price)
+    if running_qty > 0 and current_price:
+        cashflows.append(running_qty * current_price)
         dates.append(date.today())
     if len(cashflows) < 2: return None
     r = compute_xirr(cashflows, dates)
-    return round(r*100, 2) if r else None
+    return round(r * 100, 2) if r else None
 def get_entry_date(sym, trades):
     earliest = None
     for t in trades:
@@ -335,9 +345,13 @@ def compute_holdings(trades):
             cost += t_qty * t_price
             qty  += t_qty
         elif action == "SELL" and qty > 0:
+            # Clamp sell to available qty — older broker exports may start
+            # mid-stream (sells before tracked buys), which would otherwise
+            # produce negative qty/cost and corrupt the running avg cost basis.
+            sell_qty = min(t_qty, qty)
             avg = cost / qty
-            cost -= t_qty * avg
-            qty  -= t_qty
+            cost -= sell_qty * avg
+            qty  -= sell_qty
         book[sym] = (cost, max(qty, 0.0))
 
     holdings = {}
