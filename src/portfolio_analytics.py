@@ -75,7 +75,7 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
     trades: raw Trade Log rows — from read_trades(sh)
     portfolio_live_value: float — from run_portfolio_update()
     """
-    from main import compute_xirr  # lazy import — avoids circular import with main.py
+    from portfolio_builder import compute_xirr  # avoids circular import: portfolio_builder doesn't import portfolio_analytics
 
     log.info(f"[DEBUG] compute_portfolio_dashboard: holdings received = {len(holdings)}")
 
@@ -174,7 +174,7 @@ def compute_portfolio_health(results, holdings, fund_map, dash):
       (from compute_portfolio_dashboard() — not recomputed here)
     No new fetches, no new pass over raw data beyond what's given.
     """
-    from main import GITHUB_DATA_COLS  # lazy import — avoids circular import with main.py
+    from github_data_builder import GITHUB_DATA_COLS  # avoids circular import: github_data_builder doesn't import portfolio_analytics
 
     row_by_sym = {}
     for row in results:
