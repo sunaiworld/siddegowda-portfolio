@@ -168,13 +168,14 @@ def run_portfolio_update(sh):
     holdings, portfolio_live_value = {}, 0.0
     for sym in list(symbols) + extra_syms:
         if sym in all_held:
-            avg_buy, qty = all_held[sym]
+            avg_buy, qty, _cost = all_held[sym]
         else:
             avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         cmp = prices.get(sym)
         if qty > 0 and cmp and cmp > 0:
             holdings[sym] = (qty, cmp, avg_buy)
             portfolio_live_value += qty * cmp
+
 
 
     # ── News refresh pre-pass (threaded, bounded) ───────────────────────────────────────────────
