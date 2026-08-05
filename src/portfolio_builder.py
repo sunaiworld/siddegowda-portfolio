@@ -360,7 +360,9 @@ def compute_holdings(trades):
     holdings = {}
     for sym, (cost, qty) in book.items():
         if qty > 1e-6:
-            holdings[sym] = (round(cost / qty, 2), round(qty, 4))
+            # Return raw cost alongside avg_buy so callers can use the true
+            # invested amount for P&L/Return% without re-rounding errors.
+            holdings[sym] = (round(cost / qty, 2), round(qty, 4), round(cost, 2))
     return holdings
 
 
@@ -369,16 +371,18 @@ def build_portfolio(prices, imports_dir="data/imports"):
     holdings = compute_holdings(trades)
 
     portfolio_live_value = sum(
-        qty * prices.get(sym, 0) for sym, (_, qty) in holdings.items() if prices.get(sym)
+        qty * prices.get(sym, 0) for sym, (_, qty, _cost) in holdings.items() if prices.get(sym)
     )
 
     rows = []
-    for sym, (avg_buy, qty) in holdings.items():
+    for sym, (avg_buy, qty, invested_raw) in holdings.items():
         cmp = prices.get(sym)
         if not cmp or cmp <= 0:
             continue
 
-        invested = round(avg_buy * qty, 2)
+        # Use the true total cost (not avg_buy * qty) so rounding of avg_buy
+        # does not distort Invested, P&L, and Return %.
+        invested = round(invested_raw, 2)
         value    = round(cmp * qty, 2)
         pnl      = round(value - invested, 2)
         ret_pct  = round((pnl / invested) * 100, 2) if invested else 0
