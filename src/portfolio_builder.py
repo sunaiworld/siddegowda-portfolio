@@ -421,6 +421,25 @@ def write_portfolio(sh, portfolio_rows, tab_name="Portfolio"):
             "wt_pct", "wt_status", "sl_price", "target", "buy_more", "signal"]
     start_col = 3
 
+    # ── Auto-append rows for symbols that exist in computed holdings but are
+    #    not yet present in the sheet's column B.  This happens automatically
+    #    when a new symbol first appears in the broker import files.
+    existing_syms = set()
+    for row in all_rows[1:]:
+        sym = row[1].strip().upper() if len(row) > 1 else ""
+        if sym:
+            existing_syms.add(sym)
+
+    new_syms = [sym for sym in by_symbol if sym not in existing_syms]
+    if new_syms:
+        log.info(f"write_portfolio: appending {len(new_syms)} new symbol(s) from broker imports: {new_syms}")
+        append_rows = [[sym, sym] + [""] * (len(all_rows[0]) - 2 if all_rows[0] else 13) for sym in new_syms]
+        # Append just col A (blank) and col B (symbol) — the rest will be filled below
+        ws.append_rows([[sym] for sym in new_syms], value_input_option="RAW",
+                       table_range=f"B{len(all_rows) + 1}")
+        # Re-fetch after appending so row indices are correct
+        all_rows = ws.get_all_values()
+
     seen = set()
     data_rows = []
     for row in all_rows[1:]:
@@ -439,6 +458,7 @@ def write_portfolio(sh, portfolio_rows, tab_name="Portfolio"):
     ws.update(header_range, [headers])
     if data_rows:
         ws.update(data_range, data_rows, value_input_option="RAW")
+
 
     num_rows = len(data_rows)
     # The Portfolio sheet has headers up to end_col.

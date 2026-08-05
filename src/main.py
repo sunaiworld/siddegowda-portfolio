@@ -153,13 +153,29 @@ def run_portfolio_update(sh):
         nc_cache, nc_row_map, nc_ws = {}, {}, None
     pending_news = {}
 
+    # Build holdings for every symbol with active broker holdings — not only
+    # watchlist symbols.  This ensures a stock first bought in a new broker
+    # import file (not yet in the Portfolio sheet's col B) is captured in
+    # the holdings dict and written to Portfolio on the next run.
+    from portfolio_builder import compute_holdings
+    all_held = compute_holdings(load_all_trades())          # {sym: (avg_buy, qty)}
+    extra_syms = [s for s in all_held if s not in set(symbols)]
+    if extra_syms:
+        log.info(f"Fetching prices for {len(extra_syms)} holdings-only symbol(s): {extra_syms}")
+        extra_prices = fetch_prices_batch(extra_syms)
+        prices.update(extra_prices)
+
     holdings, portfolio_live_value = {}, 0.0
-    for sym in symbols:   
-        avg_buy, qty = get_avg_buy_and_qty(sym, trades)
+    for sym in list(symbols) + extra_syms:
+        if sym in all_held:
+            avg_buy, qty = all_held[sym]
+        else:
+            avg_buy, qty = get_avg_buy_and_qty(sym, trades)
         cmp = prices.get(sym)
         if qty > 0 and cmp and cmp > 0:
             holdings[sym] = (qty, cmp, avg_buy)
             portfolio_live_value += qty * cmp
+
 
     # ── News refresh pre-pass (threaded, bounded) ───────────────────────────────────────────────
     # Google News RSS is a different host than Yahoo/Sheets, so fetching it
