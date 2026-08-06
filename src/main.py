@@ -9,6 +9,7 @@ from future_buy_builder import *
 from data_fetcher import *
 from telegram_alerts import *
 from portfolio_builder import *
+import mutual_fund_builder
 
 #!/usr/bin/env python3
 """
@@ -375,6 +376,13 @@ def main():
     if len(msg) > 4000:
         msg = msg[:4000] + "\n\n<i>...truncated</i>"
     send_telegram(msg)
+
+    # ── Mutual Fund update (isolated — never breaks stock pipeline) ───
+    try:
+        mutual_fund_builder.run_mutual_fund_update(sh)
+    except Exception as mf_e:
+        log.error(f"Mutual Fund update FAILED: {mf_e}", exc_info=True)
+        send_telegram(f"⚠️ Mutual Fund update failed — {type(mf_e).__name__}: {mf_e}")
 
     log.info("═" * 55)
     log.info(f"✅ {len(out['results'])} stocks updated | ❌ Failed: {out['failed'] or 'None'}")
