@@ -33,6 +33,7 @@ import gspread
 import sheet_formatter
 import sheet_writer
 from config import *
+import mf_data_fetcher
 
 log = logging.getLogger(__name__)
 
@@ -149,14 +150,21 @@ def compute_mf_holdings(trades):
                 isin_name_map[isin] = name
 
     # Build reverse keyword→ISIN map for fuzzy matching no-ISIN trades (Groww)
-    # Key tokens: first 3 significant words of the fund name
     def _keywords(name):
-        stop = {"fund", "direct", "plan", "growth", "the", "india", "and", "&",
-                "of", "a", "an", "cap", "small", "mid", "large", "flexi"}
+        stop = {"fund", "direct", "plan", "growth", "the", "and", "&",
+                "of", "a", "an", "regular", "idcw", "option"}
         words = re.sub(r"[^a-z0-9\s]", " ", name.lower()).split()
         return set(w for w in words if w not in stop and len(w) > 2)
 
+    # First, build keyword map from our own Zerodha trades
     isin_keywords = {isin: _keywords(nm) for isin, nm in isin_name_map.items()}
+
+    # Next, augment with AMFI data if available, to ensure we can map names to ISINs
+    # even if Zerodha hasn't seen that fund yet.
+    amfi_data = mf_data_fetcher.fetch_amfi_data()
+    for isin, info in amfi_data.items():
+        if isin not in isin_keywords:
+            isin_keywords[isin] = _keywords(info["name"])
 
     def _resolve_isin(name):
         """Match a no-ISIN name to the best ISIN via keyword overlap."""
@@ -248,17 +256,38 @@ def compute_mf_holdings(trades):
 
 # COMPUTE TAX HARVEST
 
-def compute_tax_harvest(holdings, current_navs=None, ltcg_booked=LTCG_BOOKED_THIS_FY):
+def compute_tax_harvest(holdings, current_navs=None, ltcg_booked=None):
     if current_navs is None:
         current_navs = {}
     today            = _today()
+    
+    # Calculate dynamically booked LTCG this FY if not provided explicitly
+    if ltcg_booked is None:
+        # Determine current financial year start (April 1st)
+        if today.month >= 4:
+            fy_start = date(today.year, 4, 1)
+        else:
+            fy_start = date(today.year - 1, 4, 1)
+        
+        # We don't have historical sell tracking easily accessible here for realized LTCG.
+        # A true dynamic system would store this in a "Realized Gains" tab. 
+        # For now, default to the config value.
+        ltcg_booked = LTCG_BOOKED_THIS_FY
+
     remaining_exempt = max(LTCG_EXEMPTION_LIMIT - ltcg_booked, 0)
     results          = {}
+
+    amfi_data = mf_data_fetcher.fetch_amfi_data()
 
     for key, h in holdings.items():
         lots        = h["lots"]
         avg_nav     = h["avg_nav"]
-        curr_nav    = float(current_navs.get(key, 0) or avg_nav)
+        isin        = h["isin"]
+        
+        # Prefer user's sheet NAV, then AMFI live NAV, then fallback to avg_nav
+        amfi_nav = amfi_data.get(isin, {}).get("nav", 0) if isin else 0
+        curr_nav = float(current_navs.get(key, 0) or amfi_nav or avg_nav)
+        
         oldest_date = None
         ltcg_units = ltcg_cost = ltcg_value = 0.0
         stcg_units = stcg_cost = stcg_value = 0.0
@@ -282,6 +311,8 @@ def compute_tax_harvest(holdings, current_navs=None, ltcg_booked=LTCG_BOOKED_THI
         total_gain    = total_value - h["total_invested"]
         ltcg_gain     = max(ltcg_value - ltcg_cost, 0) if ltcg_units > 0 else 0.0
         harvestable   = min(ltcg_gain, remaining_exempt)
+        
+        harvestable_units = (harvestable / curr_nav) if curr_nav > 0 and harvestable > 0 else 0.0
 
         if ltcg_units > 0 and stcg_units > 0:
             tax_type = "Mixed"
@@ -313,8 +344,11 @@ def compute_tax_harvest(holdings, current_navs=None, ltcg_booked=LTCG_BOOKED_THI
             "unrealised_gain": round(total_gain, 2),
             "ltcg_gain":       round(ltcg_gain, 2),
             "harvestable":     round(harvestable, 2),
+            "ltcg_units":      round(ltcg_units, 3),
+            "harvest_units":   round(harvestable_units, 3),
             "recommendation":  recommendation,
             "reason":          reason,
+            "amfi_nav":        amfi_nav
         }
 
     log.info(f"compute_tax_harvest: {len(results)} funds analysed")
@@ -330,7 +364,8 @@ _EXISTING_HEADERS = [
 ]
 _NEW_HEADERS = [
     "Holding Days", "Tax Type", "Unrealised Gain",
-    "Harvestable", "Recommendation", "Reason",
+    "Harvestable", "LTCG Units", "Harvestable Units",
+    "Recommendation", "Reason",
 ]
 _ALL_HEADERS = _EXISTING_HEADERS + _NEW_HEADERS
 
@@ -384,7 +419,10 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         avg_nav   = h["avg_nav"]
         units     = h["total_units"]
         invested  = h["total_invested"]
-        curr_nav  = existing_nav.get(fn, 0) or avg_nav
+        
+        # Current NAV: Use Sheet's manual entry, fallback to AMFI, fallback to Avg NAV
+        curr_nav  = existing_nav.get(fn, 0) or tx.get("amfi_nav", 0) or avg_nav
+        
         curr_val  = round(units * curr_nav, 2)
         pnl       = round(curr_val - invested, 2)
         ret_pct   = round((pnl / invested) * 100, 2) if invested else 0
@@ -410,6 +448,8 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
             "tax_type":     tx.get("tax_type", ""),
             "unrealised":   tx.get("unrealised_gain", ""),
             "harvestable":  tx.get("harvestable", ""),
+            "ltcg_units":   tx.get("ltcg_units", ""),
+            "harvest_units": tx.get("harvest_units", ""),
             "rec":          tx.get("recommendation", ""),
             "reason":       tx.get("reason", ""),
         })
@@ -426,6 +466,7 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
             r["units"], r["invested"], r["curr_val"], r["pnl"], r["ret_pct"],
             r["dg"], r["dgp"], r["wt"], r["signal"],
             r["holding_days"], r["tax_type"], r["unrealised"], r["harvestable"],
+            r["ltcg_units"], r["harvest_units"],
             r["rec"], r["reason"],
         ])
 
@@ -436,7 +477,7 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         "TOTAL", "", "", "", "",
         round(total_invested, 2), round(total_value, 2), tot_pnl, tot_ret,
         "", "", 100.0, "",
-        "", "", tot_pnl, "", "", "",
+        "", "", tot_pnl, "", "", "", "", "",
     ])
 
     ws.clear()
@@ -446,7 +487,7 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
     # Formatting
     nc = len(_ALL_HEADERS)
     widths = [280, 140, 100, 100, 80, 110, 110, 100, 80, 90, 80, 70, 90,
-              90, 80, 110, 100, 120, 220]
+              90, 80, 110, 100, 100, 110, 100, 220]
     reqs = sheet_formatter.get_structural_format_reqs(
         ws.id, n + 1, nc, widths=widths, freeze_rows=1, freeze_cols=1)
 
@@ -456,6 +497,13 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
     # Percent cols (0-indexed): Return%(8), DayGain%(10), Weight%(11)
     for col in [8, 10, 11]:
         reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, n + 2, col, col + 1)
+    # 3 decimal precision for Units (4), LTCG Units (17), Harvest Units (18)
+    for col in [4, 17, 18]:
+        reqs += [{"repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": n + 2, "startColumnIndex": col, "endColumnIndex": col + 1},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.000"}}},
+            "fields": "userEnteredFormat.numberFormat"
+        }}]
 
     for i, r in enumerate(rows_out):
         rn = i + 1
@@ -464,10 +512,12 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         req = sheet_formatter.color_positive_negative(ws.id, rn, 8, r["ret_pct"])
         if req: reqs.append(req)
         rec = str(r["rec"])
-        if   rec == "HARVEST": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 17, "0f9d58", "ffffff"))
-        elif rec == "WAIT":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 17, "fce8b2", "7f4f00"))
-        elif rec == "HOLD":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 17, "e8eaf6", "3949ab"))
+        # Rec column index is 19
+        if   rec == "HARVEST": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "0f9d58", "ffffff"))
+        elif rec == "WAIT":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "fce8b2", "7f4f00"))
+        elif rec == "HOLD":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "e8eaf6", "3949ab"))
         tt = str(r["tax_type"])
+        # Tax type index is 14
         if   tt == "LTCG":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "d9ead3", "0b8043", bold=False))
         elif tt == "STCG":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "fde9d9", "c62828", bold=False))
         elif tt == "Mixed": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "fff2cc", "7f4f00", bold=False))
