@@ -1,0 +1,495 @@
+"""
+mutual_fund_builder.py
+──────────────────────────────────────────────────────────────────────────────
+Mutual Fund pipeline — mirrors portfolio_builder.py for the "Mutual Funds" tab.
+
+Pipeline:
+    data/imports/mutual_funds/*.csv         Zerodha MF tradebooks
+    data/imports/groww/Mutual_Funds_*.xlsx  Groww MF order history
+           down
+    load_all_mf_trades()
+           down
+    compute_mf_holdings()  per-fund holdings (all lots retained, FIFO sells)
+           down
+    compute_tax_harvest()  LTCG/STCG analysis per fund
+           down
+    write_mutual_funds()   updates "Mutual Funds" sheet
+                           (existing 13 columns untouched, 6 new columns appended)
+
+Tax rules (India equity MF):
+    Held > 365 days: LTCG  (exempt up to Rs.1.25L per FY, taxed @12.5% above)
+    Held <= 365 days: STCG  (taxed @20%)
+"""
+
+import os
+import re
+import glob
+import logging
+import importlib.util
+from datetime import datetime, date, timedelta
+
+import gspread
+
+import sheet_formatter
+import sheet_writer
+from config import *
+
+log = logging.getLogger(__name__)
+
+# Tax constants
+LTCG_EXEMPTION_LIMIT  = 125_000   # Rs.1.25L per FY (Budget 2024)
+LTCG_BOOKED_THIS_FY   = 0         # Update if gains already realised this FY
+EQUITY_MF_LTCG_DAYS   = 365       # >365 days held = LTCG for equity MFs
+
+
+def _resolve_imports_root(imports_dir="data/imports"):
+    here = os.path.dirname(os.path.abspath(__file__))
+    candidate = os.path.join(here, "..", imports_dir)
+    if os.path.isdir(candidate):
+        return os.path.normpath(candidate)
+    if os.path.isdir(imports_dir):
+        return os.path.normpath(imports_dir)
+    raise FileNotFoundError(f"Cannot locate imports root: {imports_dir}")
+
+
+def _load_importer(module_name, filepath):
+    spec = importlib.util.spec_from_file_location(module_name, filepath)
+    mod  = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _today():
+    return date.today()
+
+
+def _parse_date(d):
+    if isinstance(d, date):
+        return d
+    try:
+        return datetime.strptime(str(d)[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None
+
+
+def _normalise_fund_name(name):
+    return re.sub(r"\s+", " ", name.lower().strip())
+
+
+def _infer_category(name):
+    n = name.upper()
+    if "SMALL CAP" in n:                     return "Small Cap"
+    if "MID CAP" in n or "MIDCAP" in n:      return "Mid Cap"
+    if "LARGE CAP" in n or "BLUECHIP" in n:  return "Large Cap"
+    if "FLEXI" in n:                          return "Flexi Cap"
+    if "INFRA" in n:                          return "Sectoral/Thematic"
+    if "BFSI" in n or "BANKING" in n:         return "Sectoral/Thematic"
+    if "DIGITAL" in n or "PSU" in n:          return "Sectoral/Thematic"
+    if "HYBRID" in n:                         return "Hybrid"
+    if "DEBT" in n or "LIQUID" in n:          return "Debt"
+    return "Other"
+
+
+# LOAD ALL MF TRADES
+
+def load_all_mf_trades(imports_dir="data/imports"):
+    root      = _resolve_imports_root(imports_dir)
+    mf_dir    = os.path.join(root, "mutual_funds")
+    groww_dir = os.path.join(root, "groww")
+    trades    = []
+
+    if os.path.isdir(mf_dir):
+        importer_path = os.path.join(mf_dir, "import_mf_zerodha.py")
+        if os.path.isfile(importer_path):
+            z_mod = _load_importer("_import_mf_zerodha", importer_path)
+            # Zerodha MF tradebooks live in data/imports/zerodha/tradebook-*-MF_*.csv
+            zerodha_dir = os.path.join(root, "zerodha")
+            for path in sorted(glob.glob(os.path.join(zerodha_dir, "tradebook-*-MF_*.csv"))):
+                try:
+                    rows = z_mod.import_mf_zerodha(path)
+                    trades.extend(rows)
+                    log.info(f"  MF Zerodha {os.path.basename(path)}: {len(rows)} rows")
+                except Exception as e:
+                    log.warning(f"  MF Zerodha import failed for {os.path.basename(path)}: {e}")
+        else:
+            log.warning("import_mf_zerodha.py not found in mutual_funds/")
+
+    if os.path.isdir(groww_dir):
+        g_importer = os.path.join(mf_dir, "import_mf_groww.py") if os.path.isdir(mf_dir) else ""
+        if g_importer and os.path.isfile(g_importer):
+            g_mod = _load_importer("_import_mf_groww", g_importer)
+            for path in sorted(glob.glob(os.path.join(groww_dir, "Mutual_Funds_*.xlsx"))):
+                try:
+                    rows = g_mod.import_mf_groww(path)
+                    trades.extend(rows)
+                    log.info(f"  MF Groww {os.path.basename(path)}: {len(rows)} rows")
+                except Exception as e:
+                    log.warning(f"  MF Groww import failed for {os.path.basename(path)}: {e}")
+        else:
+            log.warning("import_mf_groww.py not found")
+
+    trades.sort(key=lambda t: str(t.get("date", "")))
+    log.info(f"Loaded {len(trades)} total MF transactions")
+    return trades
+
+
+# COMPUTE MF HOLDINGS (FIFO)
+
+def compute_mf_holdings(trades):
+    raw_buckets = {}
+    key_meta    = {}
+
+    # Build ISIN→name lookup from trades that have an ISIN (Zerodha)
+    isin_name_map = {}   # isin → canonical name (longest seen)
+    for t in trades:
+        isin = str(t.get("isin", "")).strip()
+        name = str(t.get("fund_name", "")).strip()
+        if isin:
+            if isin not in isin_name_map or len(name) > len(isin_name_map[isin]):
+                isin_name_map[isin] = name
+
+    # Build reverse keyword→ISIN map for fuzzy matching no-ISIN trades (Groww)
+    # Key tokens: first 3 significant words of the fund name
+    def _keywords(name):
+        stop = {"fund", "direct", "plan", "growth", "the", "india", "and", "&",
+                "of", "a", "an", "cap", "small", "mid", "large", "flexi"}
+        words = re.sub(r"[^a-z0-9\s]", " ", name.lower()).split()
+        return set(w for w in words if w not in stop and len(w) > 2)
+
+    isin_keywords = {isin: _keywords(nm) for isin, nm in isin_name_map.items()}
+
+    def _resolve_isin(name):
+        """Match a no-ISIN name to the best ISIN via keyword overlap."""
+        query = _keywords(name)
+        if not query:
+            return None
+        best_isin, best_score = None, 0
+        for isin, kws in isin_keywords.items():
+            score = len(query & kws)
+            if score > best_score:
+                best_isin, best_score = isin, score
+        # Require at least 2 keyword overlaps to avoid false positives
+        return best_isin if best_score >= 2 else None
+
+    for t in trades:
+        isin = str(t.get("isin", "")).strip()
+        name = str(t.get("fund_name", "")).strip()
+        if not isin:
+            # Try to resolve via keyword match
+            resolved = _resolve_isin(name)
+            if resolved:
+                isin = resolved
+                log.debug(f"  Resolved no-ISIN '{name}' → ISIN {isin}")
+        key  = isin if isin else _normalise_fund_name(name)
+        if key not in raw_buckets:
+            raw_buckets[key] = []
+            key_meta[key]    = {"fund_name": name, "isin": isin}
+        raw_buckets[key].append(t)
+        if len(name) > len(key_meta[key]["fund_name"]):
+            key_meta[key]["fund_name"] = name
+        if isin and not key_meta[key]["isin"]:
+            key_meta[key]["isin"] = isin
+
+
+    holdings = {}
+    for key, txns in raw_buckets.items():
+        lots = []
+        for t in txns:
+            action = str(t.get("action", "")).strip().lower()
+            units  = float(t.get("units", 0) or 0)
+            nav    = float(t.get("nav",   0) or 0)
+            amount = float(t.get("amount", units * nav))
+            d      = _parse_date(t.get("date"))
+            broker = t.get("broker", "")
+            if units <= 0:
+                continue
+            if action == "buy":
+                lots.append({"date": d, "units": units, "nav": nav,
+                             "amount": amount, "broker": broker})
+            elif action in ("sell", "redemption"):
+                remaining = units
+                new_lots  = []
+                for lot in lots:
+                    if remaining <= 0:
+                        new_lots.append(lot)
+                        continue
+                    if lot["units"] <= remaining:
+                        remaining -= lot["units"]
+                    else:
+                        frac = (lot["units"] - remaining) / lot["units"]
+                        new_lots.append({"date": lot["date"],
+                                         "units":  lot["units"] - remaining,
+                                         "nav":    lot["nav"],
+                                         "amount": lot["amount"] * frac,
+                                         "broker": lot["broker"]})
+                        remaining = 0
+                lots = new_lots
+
+        if not lots:
+            continue
+
+        total_units    = sum(l["units"]  for l in lots)
+        total_invested = sum(l["amount"] for l in lots)
+        avg_nav        = total_invested / total_units if total_units > 0 else 0
+
+        holdings[key] = {
+            "fund_name":      key_meta[key]["fund_name"],
+            "isin":           key_meta[key]["isin"],
+            "category":       _infer_category(key_meta[key]["fund_name"]),
+            "lots":           lots,
+            "total_units":    round(total_units, 6),
+            "total_invested": round(total_invested, 2),
+            "avg_nav":        round(avg_nav, 4),
+        }
+
+    log.info(f"compute_mf_holdings: {len(holdings)} active funds")
+    return holdings
+
+
+# COMPUTE TAX HARVEST
+
+def compute_tax_harvest(holdings, current_navs=None, ltcg_booked=LTCG_BOOKED_THIS_FY):
+    if current_navs is None:
+        current_navs = {}
+    today            = _today()
+    remaining_exempt = max(LTCG_EXEMPTION_LIMIT - ltcg_booked, 0)
+    results          = {}
+
+    for key, h in holdings.items():
+        lots        = h["lots"]
+        avg_nav     = h["avg_nav"]
+        curr_nav    = float(current_navs.get(key, 0) or avg_nav)
+        oldest_date = None
+        ltcg_units = ltcg_cost = ltcg_value = 0.0
+        stcg_units = stcg_cost = stcg_value = 0.0
+
+        for lot in lots:
+            ld = lot["date"]
+            if ld is None:
+                continue
+            days = (today - ld).days
+            lv   = lot["units"] * curr_nav
+            lc   = lot["amount"]
+            if oldest_date is None or ld < oldest_date:
+                oldest_date = ld
+            if days > EQUITY_MF_LTCG_DAYS:
+                ltcg_units += lot["units"]; ltcg_cost += lc; ltcg_value += lv
+            else:
+                stcg_units += lot["units"]; stcg_cost += lc; stcg_value += lv
+
+        holding_days  = (today - oldest_date).days if oldest_date else 0
+        total_value   = ltcg_value + stcg_value
+        total_gain    = total_value - h["total_invested"]
+        ltcg_gain     = max(ltcg_value - ltcg_cost, 0) if ltcg_units > 0 else 0.0
+        harvestable   = min(ltcg_gain, remaining_exempt)
+
+        if ltcg_units > 0 and stcg_units > 0:
+            tax_type = "Mixed"
+        elif ltcg_units > 0:
+            tax_type = "LTCG"
+        else:
+            tax_type = "STCG"
+
+        if ltcg_gain >= 1000 and harvestable >= 500 and remaining_exempt > 0:
+            recommendation = "HARVEST"
+            reason = f"LTCG Rs.{ltcg_gain:,.0f} eligible; harvest Rs.{harvestable:,.0f} within exemption"
+        elif tax_type == "STCG":
+            recommendation = "WAIT"
+            reason = "All lots STCG — wait for LTCG"
+        elif ltcg_gain < 1000:
+            recommendation = "HOLD"
+            reason = "LTCG gain too small to harvest"
+        elif remaining_exempt <= 0:
+            recommendation = "HOLD"
+            reason = "LTCG exemption fully used this FY"
+        else:
+            recommendation = "HOLD"
+            reason = ""
+
+        results[key] = {
+            "holding_days":    holding_days,
+            "tax_type":        tax_type,
+            "current_value":   round(total_value, 2),
+            "unrealised_gain": round(total_gain, 2),
+            "ltcg_gain":       round(ltcg_gain, 2),
+            "harvestable":     round(harvestable, 2),
+            "recommendation":  recommendation,
+            "reason":          reason,
+        }
+
+    log.info(f"compute_tax_harvest: {len(results)} funds analysed")
+    return results
+
+
+# WRITE MUTUAL FUNDS SHEET
+
+_EXISTING_HEADERS = [
+    "Fund Name", "Category", "Avg Buy NAV", "Current NAV",
+    "Units", "Invested", "Current Value", "P&L", "Return%",
+    "Day Gain Rs", "Day Gain%", "Weight%", "Signal",
+]
+_NEW_HEADERS = [
+    "Holding Days", "Tax Type", "Unrealised Gain",
+    "Harvestable", "Recommendation", "Reason",
+]
+_ALL_HEADERS = _EXISTING_HEADERS + _NEW_HEADERS
+
+
+def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
+    try:
+        ws = sh.worksheet(tab_name)
+    except Exception:
+        log.warning(f"'{tab_name}' sheet not found — creating")
+        ws = sh.add_worksheet(title=tab_name, rows=200, cols=25)
+
+    # Preserve user-entered Current NAV and Day Gain values from existing sheet
+    existing = ws.get_all_values()
+    existing_nav  = {}
+    existing_gain = {}
+    if len(existing) > 1:
+        try:
+            hdr = [str(c).strip() for c in existing[0]]
+            fn_col  = 0
+            nav_col = next((i for i, h in enumerate(hdr) if "Current NAV" in h), 3)
+            dg_col  = next((i for i, h in enumerate(hdr) if "Day Gain" in h and "%" not in h), 9)
+            dgp_col = next((i for i, h in enumerate(hdr) if "Day Gain" in h and "%" in h), 10)
+            for row in existing[1:]:
+                fn = str(row[fn_col]).strip() if len(row) > fn_col else ""
+                if not fn or fn == "TOTAL":
+                    continue
+                try:
+                    existing_nav[fn] = float(str(row[nav_col]).replace(",", "")) if len(row) > nav_col else 0
+                except Exception:
+                    pass
+                try:
+                    dg  = float(str(row[dg_col]).replace(",", ""))  if len(row) > dg_col  else 0
+                    dgp = float(str(row[dgp_col]).replace(",", "")) if len(row) > dgp_col else 0
+                    existing_gain[fn] = [dg, dgp]
+                except Exception:
+                    existing_gain[fn] = [0, 0]
+        except Exception as e:
+            log.warning(f"Could not read existing MF values: {e}")
+
+    rows_out       = []
+    total_invested = 0.0
+    total_value    = 0.0
+    sorted_keys    = sorted(holdings.keys(),
+                            key=lambda k: holdings[k]["total_invested"], reverse=True)
+
+    for key in sorted_keys:
+        h      = holdings[key]
+        tx     = tax_data.get(key, {})
+        fn     = h["fund_name"]
+        cat    = h["category"]
+        avg_nav   = h["avg_nav"]
+        units     = h["total_units"]
+        invested  = h["total_invested"]
+        curr_nav  = existing_nav.get(fn, 0) or avg_nav
+        curr_val  = round(units * curr_nav, 2)
+        pnl       = round(curr_val - invested, 2)
+        ret_pct   = round((pnl / invested) * 100, 2) if invested else 0
+        dg, dgp   = existing_gain.get(fn, [0, 0])
+        total_invested += invested
+        total_value    += curr_val
+
+        if   ret_pct >= 100: signal = "STAR"
+        elif ret_pct >= 50:  signal = "MULTI"
+        elif ret_pct >= 20:  signal = "PROFIT"
+        elif ret_pct >= 0:   signal = "HOLD"
+        elif ret_pct >= -10: signal = "REVIEW"
+        else:                signal = "EXIT"
+
+        wt = 0.0  # placeholder; recalculated after all rows known
+
+        rows_out.append({
+            "fn": fn, "cat": cat, "avg_nav": avg_nav, "curr_nav": curr_nav,
+            "units": round(units, 3), "invested": invested, "curr_val": curr_val,
+            "pnl": pnl, "ret_pct": ret_pct, "dg": dg, "dgp": dgp, "wt": wt,
+            "signal": signal,
+            "holding_days": tx.get("holding_days", ""),
+            "tax_type":     tx.get("tax_type", ""),
+            "unrealised":   tx.get("unrealised_gain", ""),
+            "harvestable":  tx.get("harvestable", ""),
+            "rec":          tx.get("recommendation", ""),
+            "reason":       tx.get("reason", ""),
+        })
+
+    # Recalculate weight%
+    for r in rows_out:
+        r["wt"] = round((r["curr_val"] / total_value) * 100, 2) if total_value else 0
+
+    # Build flat lists for sheet
+    all_data = [_ALL_HEADERS]
+    for r in rows_out:
+        all_data.append([
+            r["fn"], r["cat"], r["avg_nav"], r["curr_nav"],
+            r["units"], r["invested"], r["curr_val"], r["pnl"], r["ret_pct"],
+            r["dg"], r["dgp"], r["wt"], r["signal"],
+            r["holding_days"], r["tax_type"], r["unrealised"], r["harvestable"],
+            r["rec"], r["reason"],
+        ])
+
+    n = len(rows_out)
+    tot_pnl = round(total_value - total_invested, 2)
+    tot_ret = round((tot_pnl / total_invested) * 100, 2) if total_invested else 0
+    all_data.append([
+        "TOTAL", "", "", "", "",
+        round(total_invested, 2), round(total_value, 2), tot_pnl, tot_ret,
+        "", "", 100.0, "",
+        "", "", tot_pnl, "", "", "",
+    ])
+
+    ws.clear()
+    ws.update("A1", all_data, value_input_option="RAW")
+    log.info(f"write_mutual_funds: wrote {n} funds + TOTAL to '{tab_name}'")
+
+    # Formatting
+    nc = len(_ALL_HEADERS)
+    widths = [280, 140, 100, 100, 80, 110, 110, 100, 80, 90, 80, 70, 90,
+              90, 80, 110, 100, 120, 220]
+    reqs = sheet_formatter.get_structural_format_reqs(
+        ws.id, n + 1, nc, widths=widths, freeze_rows=1, freeze_cols=1)
+
+    # Currency cols (0-indexed): AvgNAV(2), CurrNAV(3), Invested(5), CurrVal(6), PnL(7), DayGainRs(9), Unrealised(15), Harvestable(16)
+    for col in [2, 3, 5, 6, 7, 9, 15, 16]:
+        reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, n + 2, col, col + 1)
+    # Percent cols (0-indexed): Return%(8), DayGain%(10), Weight%(11)
+    for col in [8, 10, 11]:
+        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, n + 2, col, col + 1)
+
+    for i, r in enumerate(rows_out):
+        rn = i + 1
+        req = sheet_formatter.color_positive_negative(ws.id, rn, 7, r["pnl"])
+        if req: reqs.append(req)
+        req = sheet_formatter.color_positive_negative(ws.id, rn, 8, r["ret_pct"])
+        if req: reqs.append(req)
+        rec = str(r["rec"])
+        if   rec == "HARVEST": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 17, "0f9d58", "ffffff"))
+        elif rec == "WAIT":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 17, "fce8b2", "7f4f00"))
+        elif rec == "HOLD":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 17, "e8eaf6", "3949ab"))
+        tt = str(r["tax_type"])
+        if   tt == "LTCG":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "d9ead3", "0b8043", bold=False))
+        elif tt == "STCG":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "fde9d9", "c62828", bold=False))
+        elif tt == "Mixed": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "fff2cc", "7f4f00", bold=False))
+
+    # TOTAL row dark header
+    reqs.append(sheet_formatter.color_cell_req(ws.id, n + 1, 0, "0d1b2a", "ffffff"))
+    sheet_writer.batch_update_safe(sh, reqs)
+    log.info(f"write_mutual_funds: {len(reqs)} format requests applied")
+
+
+# MAIN ENTRY POINT
+
+def run_mutual_fund_update(sh, imports_dir="data/imports"):
+    log.info("Mutual Fund update starting")
+    trades   = load_all_mf_trades(imports_dir)
+    if not trades:
+        log.warning("No MF trades loaded — skipping")
+        return
+    holdings = compute_mf_holdings(trades)
+    if not holdings:
+        log.warning("No active MF holdings — skipping write")
+        return
+    tax_data = compute_tax_harvest(holdings)
+    write_mutual_funds(sh, holdings, tax_data)
+    log.info(f"Mutual Fund update complete: {len(holdings)} funds")
