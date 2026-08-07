@@ -59,13 +59,13 @@ def build_alert_message(alerts, portfolio_value, top_results, watchlist_opps=Non
 
     if alerts["sl_breach"]:
         msg += "<b>🔴 STOP LOSS BREACHED</b>\n"
-        for a in alerts["sl_breach"]:
+        for a in alerts["sl_breach"][:5]:
             msg += f"  {a['sym']} — CMP ₹{a['cmp']} | SL ₹{a['sl']}\n"
         msg += "\n"
 
     if alerts["target_hit"]:
         msg += "<b>🎯 TARGET HIT</b>\n"
-        for a in alerts["target_hit"]:
+        for a in alerts["target_hit"][:5]:
             msg += f"  {a['sym']} — CMP ₹{a['cmp']} | Target ₹{a['tgt']}\n"
         msg += "\n"
 
@@ -95,4 +95,3 @@ def build_alert_message(alerts, portfolio_value, top_results, watchlist_opps=Non
 
     msg += "\n<i>via GitHub Actions + yfinance</i>"
     return msg
-
