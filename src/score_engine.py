@@ -125,6 +125,21 @@ SECTOR_ARCHETYPE_MAP = {
     "agricultural inputs": "COMMODITY_CYCLICAL",
 }
 
+# ══════════════════════════════════════════════
+# ARCHETYPE RISK PROFILE MAP
+# (Risk Level, Economic Sensitivity, Investor Role)
+# ══════════════════════════════════════════════
+ARCHETYPE_RISK_MAP = {
+    "COMMODITY_CYCLICAL": ("Very High", "High", "Cyclical"),
+    "INDUSTRIAL_CAPEX": ("High", "High", "Cyclical"),
+    "CONSUMER_DISCRETIONARY": ("Medium-High", "High", "Growth/Cyclical"),
+    "CONSUMER_STAPLES": ("Low", "Low", "Defensive"),
+    "FINANCIAL_BANK": ("Medium", "Medium-High", "Financial"),
+    "FINANCIAL_NBFC": ("Medium-High", "Medium-High", "Financial/Growth"),
+    "FINANCIAL_CAPITAL_MARKETS": ("High", "High", "Market-sensitive"),
+    "FINANCIAL_INSURANCE": ("Low-Medium", "Low", "Defensive"),
+    "QUALITY_GROWTH": ("Medium", "Low-Medium", "Long-term Growth"),
+}
 
 # Symbol-level overrides for stocks that yfinance misclassifies
 SYMBOL_ARCHETYPE_OVERRIDE = {
@@ -369,6 +384,13 @@ def get_archetype(sym, sector, industry):
         if key in SECTOR_ARCHETYPE_MAP:
             return SECTOR_ARCHETYPE_MAP[key]
     return "DEFAULT"
+
+def get_archetype_risk_profile(archetype):
+    """
+    Returns (Risk Level, Economic Sensitivity, Investor Role) 
+    based on the assigned archetype.
+    """
+    return ARCHETYPE_RISK_MAP.get(archetype, ("", "", ""))
 
 
 # ══════════════════════════════════════════════

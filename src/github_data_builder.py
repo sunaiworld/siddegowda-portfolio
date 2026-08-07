@@ -34,32 +34,31 @@ from sheet_writer import *
 # ══════════════════════════════════════════════
 GITHUB_DATA_COLS = {
     "symbol": 0, "sector": 1, "industry": 2, "archetype": 3,
-    "low52": 4, "high52": 5, "day_chg_pct": 6, "pct_high": 7,
-    "pe": 8, "eps": 9, "bv": 10, "pb": 11,
-    "div": 12,
-    "rsi": 13,
-    "roe": 14, "roa": 15, "debt_eq": 16,
-    "rev_growth": 17, "beta": 18,
-    "strengths": 19, "weaknesses": 20, "technical_setup": 21,
-    "action": 22, "trend": 23,
-    "quality": 24, "valuation": 25, "timing": 26, "total": 27,
-    "vol_spike": 28,
-    "mcap": 29, "cap_type": 30,
+    "risk_level": 4, "econ_sens": 5, "inv_role": 6,
+    "low52": 7, "high52": 8, "day_chg_pct": 9, "pct_high": 10,
+    "pe": 11, "eps": 12, "bv": 13, "pb": 14,
+    "div": 15,
+    "rsi": 16,
+    "roe": 17, "roa": 18, "debt_eq": 19,
+    "rev_growth": 20, "beta": 21,
+    "strengths": 22, "weaknesses": 23, "technical_setup": 24,
+    "action": 25, "trend": 26,
+    "quality": 27, "valuation": 28, "timing": 29, "total": 30,
+    "vol_spike": 31,
+    "mcap": 32, "cap_type": 33,
     # ── News Engine columns (Phase A) ──────────────────────
-    "news_summary":   31,
-    "bullish_score":  32,
-    "bearish_score":  33,
-    "news_sentiment": 34,
-    "news_reason":    35,
-    "news_source":    36,
+    "news_summary":   34,
+    "bullish_score":  35,
+    "bearish_score":  36,
+    "news_sentiment": 37,
+    "news_reason":    38,
+    "news_source":    39,
 }
 
-
-# Header text per column key — headers[] is built FROM this dict via
-# GITHUB_DATA_COLS's own indices in write_github_data(), so header
-# position can never drift out of sync with the row layout again.
+# Header text per column key
 GITHUB_DATA_HEADER_NAMES = {
     "symbol": "Symbol", "sector": "Sector", "industry": "Industry", "archetype": "Archetype",
+    "risk_level": "Risk Level", "econ_sens": "Economic Sensitivity", "inv_role": "Investor Role",
     "low52": "52W Low", "high52": "52W High", "day_chg_pct": "Day Chg%", "pct_high": "Buy 20% Less",
     "pe": "PE", "eps": "EPS", "bv": "Book Value", "pb": "P/B",
     "div": "Div Yield%",
@@ -81,10 +80,10 @@ GITHUB_DATA_HEADER_NAMES = {
     "news_source":    "News Source",
 }
 
-
-# Column pixel width per key — same self-syncing pattern as headers.
+# Column pixel width per key
 GITHUB_DATA_COL_WIDTHS = {
     "symbol": 70, "sector": 75, "industry": 90, "archetype": 80,
+    "risk_level": 90, "econ_sens": 130, "inv_role": 130,
     "low52": 55, "high52": 55, "day_chg_pct": 60, "pct_high": 65,
     "pe": 45, "eps": 45, "bv": 55, "pb": 45,
     "div": 50,
@@ -122,6 +121,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     mcap_cr  = f.get("mcap_cr")
 
     archetype = get_archetype(sym, sector, industry)
+    risk_level, econ_sens, inv_role = get_archetype_risk_profile(archetype)
 
     cap_type = ""
     if mcap_cr:
@@ -191,6 +191,9 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["sector"]]          = sector
     row[C["industry"]]        = industry
     row[C["archetype"]]       = archetype
+    row[C["risk_level"]]      = risk_level
+    row[C["econ_sens"]]       = econ_sens
+    row[C["inv_role"]]        = inv_role
     row[C["low52"]]           = low52 or ""
     row[C["high52"]]          = high52 or ""
     row[C["day_chg_pct"]]     = day_chg_pct
@@ -315,6 +318,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         action    = str(row[C["action"]]).strip() if len(row) > C["action"] else ""
         tech_set  = str(row[C["technical_setup"]]).strip() if len(row) > C["technical_setup"] else ""
         trend_val = str(row[C["trend"]]).strip() if len(row) > C["trend"] else ""
+        risk_val  = str(row[C["risk_level"]]).strip() if len(row) > C["risk_level"] else ""
 
         pct      = sf(row, "pct_high")
         day_chg  = sf(row, "day_chg_pct")
@@ -412,13 +416,19 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         reqs.append(color_cell_req(ws.id, rn, C["strengths"], "f1f9f1", "0b8043", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["weaknesses"], "fdf2f2", "c62828", bold=False))
 
-        # ── Technical Setup / Final Action ──
+        # ── Technical Setup / Final Action / Risk Level ──
         if tech_set in TECHNICAL_SETUP_COLORS:
             bg, fg = TECHNICAL_SETUP_COLORS[tech_set]
             reqs.append(color_cell_req(ws.id, rn, C["technical_setup"], bg, fg))
         if action in ACTION_COLORS:
             bg_a, fg_a = ACTION_COLORS[action]
             reqs.append(color_cell_req(ws.id, rn, C["action"], bg_a, fg_a))
+        
+        if risk_val:
+            if risk_val == "Very High": reqs.append(color_cell_req(ws.id, rn, C["risk_level"], "fde9d9", "c62828"))
+            elif risk_val in ("Medium-High", "High"): reqs.append(color_cell_req(ws.id, rn, C["risk_level"], "ffe599", "7f4f00"))
+            elif risk_val == "Medium": reqs.append(color_cell_req(ws.id, rn, C["risk_level"], "fff2cc", "7f4f00"))
+            elif risk_val in ("Low", "Low-Medium"): reqs.append(color_cell_req(ws.id, rn, C["risk_level"], "d9ead3", "0b8043"))
 
         # ── Quality / Valuation / Timing / Total ──
         if q_sc is not None:
