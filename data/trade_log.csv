@@ -1,5 +1,0 @@
-trade_id,date,symbol,exchange,segment,action,quantity,price,gross_amount,brokerage,taxes_charges,net_amount,broker,broker_order_id,currency,import_source,notes
-1,10-01-2025,HDFCBANK,NSE,EQ,BUY,10,1400.0,14000.0,20.0,5.0,14025.0,Zerodha,12345,INR,manual,
-2,15-01-2025,HDFCBANK,NSE,EQ,BUY,5,1420.0,7100.0,20.0,2.5,7122.5,Zerodha,12346,INR,manual,
-3,20-01-2025,HDFCBANK,NSE,EQ,SELL,5,1500.0,7500.0,20.0,2.5,7477.5,Zerodha,12347,INR,manual,
-4,05-02-2025,KOTAKBANK,NSE,EQ,BUY,20,1800.0,36000.0,20.0,10.0,36030.0,Zerodha,12348,INR,manual,
