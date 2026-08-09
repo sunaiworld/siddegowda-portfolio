@@ -24,6 +24,7 @@ log = logging.getLogger("portfolio")
 from config import *
 from sheet_formatter import *
 from score_engine import *
+from data_fetcher import fetch_prices_batch, fetch_technicals, fetch_rev_growth
 
 
 
@@ -35,20 +36,59 @@ from score_engine import *
 # DATA are independent here and never touch holdings
 # or portfolio-value calculations.
 # ══════════════════════════════════════════════
-def process_watchlist_tab(sh, tab_name, symbols, nc_cache=None):
-    """
-    nc_cache: the in-memory news cache dict already built by
-    run_portfolio_update() (keyed by symbol.upper()). When provided,
-    watchlist symbols read news from it at zero cost — no extra fetch.
-    When None (e.g. standalone call), news columns are left blank.
-    """
+def process_watchlist_tab(sh, tab_name, symbols, nc_cache=None, shared_prices=None, shared_fund=None, shared_tech=None, shared_rev=None):
     if not symbols:
         log.warning(f"{tab_name}: no symbols configured, skipping")
         return []
 
-    log.info(f"{tab_name}: fetching prices for {len(symbols)} symbols...")
-    prices = fetch_prices_batch(symbols)
+    shared_prices = shared_prices or {}
+    shared_fund = shared_fund or {}
+    shared_tech = shared_tech or {}
+    shared_rev = shared_rev or {}
+
+    missing_syms = [s for s in symbols if s not in shared_prices]
+    prices = shared_prices.copy()
+    if missing_syms:
+        log.info(f"{tab_name}: fetching prices for {len(missing_syms)} new symbols...")
+        prices.update(fetch_prices_batch(missing_syms))
+
     wl_cache = fund_cache.load_cache(sh)
+    
+    missing_fund = [s for s in symbols if s not in shared_fund]
+    fund_map = shared_fund.copy()
+    if missing_fund:
+        log.info(f"{tab_name}: fetching fundamentals for {len(missing_fund)} new symbols...")
+        def _fetch_fund(sym):
+            return sym, fund_cache.get_or_fetch_fundamentals(sym, wl_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
+        with ThreadPoolExecutor(max_workers=TECH_WORKERS) as ex:
+            futures = {ex.submit(_fetch_fund, sym): sym for sym in missing_fund}
+            for fut in as_completed(futures):
+                sym = futures[fut]
+                try:
+                    _, data = fut.result()
+                    fund_map[sym] = data
+                except Exception as e:
+                    fund_map[sym] = {}
+        fund_cache.save_cache(sh, wl_cache)
+
+    missing_tech = [s for s in symbols if s not in shared_tech]
+    tech_map = shared_tech.copy()
+    rev_map = shared_rev.copy()
+    if missing_tech:
+        log.info(f"{tab_name}: fetching tech/growth for {len(missing_tech)} new symbols...")
+        def _fetch_tech(sym):
+            return sym, fetch_technicals(sym), fetch_rev_growth(sym)
+        with ThreadPoolExecutor(max_workers=TECH_WORKERS) as ex:
+            futures = {ex.submit(_fetch_tech, sym): sym for sym in missing_tech}
+            for fut in as_completed(futures):
+                sym = futures[fut]
+                try:
+                    _, tech, rev = fut.result()
+                    tech_map[sym] = tech
+                    rev_map[sym] = rev
+                except Exception as e:
+                    tech_map[sym] = {}
+                    rev_map[sym] = None
 
     rows = []
     for sym in symbols:
@@ -57,18 +97,10 @@ def process_watchlist_tab(sh, tab_name, symbols, nc_cache=None):
             log.warning(f"  SKIP {sym} ({tab_name}) — no price")
             continue
 
-        f      = fund_cache.get_or_fetch_fundamentals(sym, wl_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
-        rev_gr = fetch_rev_growth(sym)
-        tech   = fetch_technicals(sym)
-        time.sleep(SLEEP_INFO)
+        f = fund_map.get(sym, {})
+        tech = tech_map.get(sym, {})
+        rev_gr = rev_map.get(sym)
 
-        # Read news from the shared cache (built in run_portfolio_update).
-        # Watchlist symbols that weren't in the portfolio won't have a
-        # cache entry yet — nd will be {} and news columns stay blank.
-        # No new fetch is triggered here: the 6-hour refresh cycle is
-        # handled exclusively by run_portfolio_update() for portfolio
-        # symbols; watchlist-only symbols pick up news on the next run
-        # after they enter the portfolio, or can be added separately.
         nd = (nc_cache or {}).get(sym.upper(), {})
 
         row, archetype, tot_sc, final_action = build_result_row(
@@ -78,25 +110,19 @@ def process_watchlist_tab(sh, tab_name, symbols, nc_cache=None):
         news_tag = f" | News:{nd.get('sentiment','')}" if nd.get('sentiment') else ""
         log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}{news_tag}")
 
-    fund_cache.save_cache(sh, wl_cache)
     write_github_data(sh, rows, tab_name=tab_name)
     return rows
 
 
-def process_all_watchlists(sh, nc_cache=None):
-    """
-    Run every watchlist tab and return a dict:
-      {tab_name: [row, ...]}  (same row layout as GITHUB DATA)
-    Tabs with errors return [] so the caller can still use the rest.
-
-    nc_cache: pass the news cache dict from run_portfolio_update() so
-    watchlist symbols receive populated news columns and the news timing
-    modifier without any additional API calls.
-    """
+def process_all_watchlists(sh, nc_cache=None, shared_prices=None, shared_fund=None, shared_tech=None, shared_rev=None):
     all_rows = {}
     for tab_name, symbols in WATCHLISTS.items():
         try:
-            rows = process_watchlist_tab(sh, tab_name, symbols, nc_cache=nc_cache)
+            rows = process_watchlist_tab(
+                sh, tab_name, symbols, nc_cache=nc_cache,
+                shared_prices=shared_prices, shared_fund=shared_fund,
+                shared_tech=shared_tech, shared_rev=shared_rev
+            )
             all_rows[tab_name] = rows
         except Exception as e:
             log.error(f"Watchlist '{tab_name}' failed (existing tabs unaffected): {e}")

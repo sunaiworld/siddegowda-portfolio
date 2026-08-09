@@ -456,12 +456,22 @@ def write_portfolio(sh, portfolio_rows, tab_name="Portfolio"):
         data_rows.append([pr.get(k, "") for k in keys])
 
     end_col = start_col + len(headers) - 1
-    header_range = f"{gspread.utils.rowcol_to_a1(1, start_col)}:{gspread.utils.rowcol_to_a1(1, end_col)}"
-    data_range = f"{gspread.utils.rowcol_to_a1(2, start_col)}:{gspread.utils.rowcol_to_a1(1+len(data_rows), end_col)}"
-
-    ws.update(header_range, [headers])
-    if data_rows:
-        ws.update(data_range, data_rows, value_input_option="RAW")
+    full_range = f"{gspread.utils.rowcol_to_a1(1, start_col)}:{gspread.utils.rowcol_to_a1(1+len(data_rows), end_col)}"
+    
+    full_data = [headers] + data_rows
+    
+    import gspread.exceptions as _gse
+    for _attempt in range(5):
+        try:
+            ws.update(values=full_data, range_name=full_range, value_input_option="RAW")
+            break
+        except _gse.APIError as _e:
+            if "429" in str(_e):
+                _wait = 15 * (2 ** _attempt)
+                log.warning(f"[write_portfolio] 429 on ws.update, waiting {_wait}s (attempt {_attempt+1}/5)")
+                time.sleep(_wait)
+            else:
+                raise
 
 
     num_rows = len(data_rows)
