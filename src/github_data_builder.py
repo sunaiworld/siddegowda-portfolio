@@ -34,31 +34,31 @@ from sheet_writer import *
 # ══════════════════════════════════════════════
 GITHUB_DATA_COLS = {
     "symbol": 0, "sector": 1, "industry": 2, "archetype": 3,
-    "risk_level": 4, "econ_sens": 5, "inv_role": 6,
-    "low52": 7, "high52": 8, "day_chg_pct": 9, "pct_high": 10,
-    "pe": 11, "eps": 12, "bv": 13, "pb": 14,
-    "div": 15,
-    "rsi": 16,
-    "roe": 17, "roa": 18, "debt_eq": 19,
-    "rev_growth": 20, "beta": 21,
-    "strengths": 22, "weaknesses": 23, "technical_setup": 24,
-    "action": 25, "trend": 26,
-    "quality": 27, "valuation": 28, "timing": 29, "total": 30,
-    "vol_spike": 31,
-    "mcap": 32, "cap_type": 33,
+    "econ_sens": 4, "inv_role": 5,
+    "low52": 6, "high52": 7, "day_chg_pct": 8, "pct_high": 9,
+    "pe": 10, "eps": 11, "bv": 12, "pb": 13,
+    "div": 14,
+    "rsi": 15,
+    "roe": 16, "roa": 17, "debt_eq": 18,
+    "rev_growth": 19, "beta": 20,
+    "strengths": 21, "weaknesses": 22, "technical_setup": 23,
+    "action": 24, "trend": 25,
+    "quality": 26, "valuation": 27, "timing": 28, "total": 29,
+    "vol_spike": 30,
+    "mcap": 31, "cap_type": 32,
     # ── News Engine columns (Phase A) ──────────────────────
-    "news_summary":   34,
-    "bullish_score":  35,
-    "bearish_score":  36,
-    "news_sentiment": 37,
-    "news_reason":    38,
-    "news_source":    39,
+    "news_summary":   33,
+    "bullish_score":  34,
+    "bearish_score":  35,
+    "news_sentiment": 36,
+    "news_reason":    37,
+    "news_source":    38,
 }
 
 # Header text per column key
 GITHUB_DATA_HEADER_NAMES = {
     "symbol": "Symbol", "sector": "Sector", "industry": "Industry", "archetype": "Archetype",
-    "risk_level": "Risk Level", "econ_sens": "Economic Sensitivity", "inv_role": "Investor Role",
+    "econ_sens": "Economic Sensitivity", "inv_role": "Investor Role",
     "low52": "52W Low", "high52": "52W High", "day_chg_pct": "Day Chg%", "pct_high": "Buy 20% Less",
     "pe": "PE", "eps": "EPS", "bv": "Book Value", "pb": "P/B",
     "div": "Div Yield%",
@@ -83,7 +83,7 @@ GITHUB_DATA_HEADER_NAMES = {
 # Column pixel width per key
 GITHUB_DATA_COL_WIDTHS = {
     "symbol": 70, "sector": 75, "industry": 90, "archetype": 80,
-    "risk_level": 90, "econ_sens": 130, "inv_role": 130,
+    "econ_sens": 130, "inv_role": 130,
     "low52": 55, "high52": 55, "day_chg_pct": 60, "pct_high": 65,
     "pe": 45, "eps": 45, "bv": 55, "pb": 45,
     "div": 50,
@@ -121,7 +121,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     mcap_cr  = f.get("mcap_cr")
 
     archetype = get_archetype(sym, sector, industry)
-    risk_level, econ_sens, inv_role = get_archetype_risk_profile(archetype)
+    econ_sens, inv_role = get_archetype_risk_profile(archetype)
 
     cap_type = ""
     if mcap_cr:
@@ -191,7 +191,6 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["sector"]]          = sector
     row[C["industry"]]        = industry
     row[C["archetype"]]       = archetype
-    row[C["risk_level"]]      = risk_level
     row[C["econ_sens"]]       = econ_sens
     row[C["inv_role"]]        = inv_role
     row[C["low52"]]           = low52 or ""
@@ -318,7 +317,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         action    = str(row[C["action"]]).strip() if len(row) > C["action"] else ""
         tech_set  = str(row[C["technical_setup"]]).strip() if len(row) > C["technical_setup"] else ""
         trend_val = str(row[C["trend"]]).strip() if len(row) > C["trend"] else ""
-        risk_val  = str(row[C["risk_level"]]).strip() if len(row) > C["risk_level"] else ""
+        risk_val  = str(row[C["econ_sens"]]).strip() if len(row) > C["econ_sens"] else ""
 
         pct      = sf(row, "pct_high")
         day_chg  = sf(row, "day_chg_pct")
@@ -425,10 +424,10 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             reqs.append(color_cell_req(ws.id, rn, C["action"], bg_a, fg_a))
         
         if risk_val:
-            if risk_val == "Very High": reqs.append(color_cell_req(ws.id, rn, C["risk_level"], "fde9d9", "c62828"))
-            elif risk_val in ("Medium-High", "High"): reqs.append(color_cell_req(ws.id, rn, C["risk_level"], "ffe599", "7f4f00"))
-            elif risk_val == "Medium": reqs.append(color_cell_req(ws.id, rn, C["risk_level"], "fff2cc", "7f4f00"))
-            elif risk_val in ("Low", "Low-Medium"): reqs.append(color_cell_req(ws.id, rn, C["risk_level"], "d9ead3", "0b8043"))
+            if risk_val == "Very High": reqs.append(color_cell_req(ws.id, rn, C["econ_sens"], "fde9d9", "c62828"))
+            elif risk_val in ("Medium-High", "High"): reqs.append(color_cell_req(ws.id, rn, C["econ_sens"], "ffe599", "7f4f00"))
+            elif risk_val == "Medium": reqs.append(color_cell_req(ws.id, rn, C["econ_sens"], "fff2cc", "7f4f00"))
+            elif risk_val in ("Low", "Low-Medium"): reqs.append(color_cell_req(ws.id, rn, C["econ_sens"], "d9ead3", "0b8043"))
 
         # ── Quality / Valuation / Timing / Total ──
         if q_sc is not None:

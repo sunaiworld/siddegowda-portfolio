@@ -127,18 +127,18 @@ SECTOR_ARCHETYPE_MAP = {
 
 # ══════════════════════════════════════════════
 # ARCHETYPE RISK PROFILE MAP
-# (Risk Level, Economic Sensitivity, Investor Role)
+# (Economic Sensitivity, Investor Role)
 # ══════════════════════════════════════════════
 ARCHETYPE_RISK_MAP = {
-    "COMMODITY_CYCLICAL": ("Very High", "High", "Cyclical"),
-    "INDUSTRIAL_CAPEX": ("High", "High", "Cyclical"),
-    "CONSUMER_DISCRETIONARY": ("Medium-High", "High", "Growth/Cyclical"),
-    "CONSUMER_STAPLES": ("Low", "Low", "Defensive"),
-    "FINANCIAL_BANK": ("Medium", "Medium-High", "Financial"),
-    "FINANCIAL_NBFC": ("Medium-High", "Medium-High", "Financial/Growth"),
-    "FINANCIAL_CAPITAL_MARKETS": ("High", "High", "Market-sensitive"),
-    "FINANCIAL_INSURANCE": ("Low-Medium", "Low", "Defensive"),
-    "QUALITY_GROWTH": ("Medium", "Low-Medium", "Long-term Growth"),
+    "COMMODITY_CYCLICAL": ("Very High", "Cyclical"),
+    "INDUSTRIAL_CAPEX": ("High", "Cyclical"),
+    "CONSUMER_DISCRETIONARY": ("Medium-High", "Growth/Cyclical"),
+    "CONSUMER_STAPLES": ("Low", "Defensive"),
+    "FINANCIAL_BANK": ("Medium", "Financial"),
+    "FINANCIAL_NBFC": ("Medium-High", "Financial/Growth"),
+    "FINANCIAL_CAPITAL_MARKETS": ("High", "Market-sensitive"),
+    "FINANCIAL_INSURANCE": ("Low-Medium", "Defensive"),
+    "QUALITY_GROWTH": ("Medium", "Long-term Growth"),
 }
 
 # Symbol-level overrides for stocks that yfinance misclassifies
@@ -387,10 +387,10 @@ def get_archetype(sym, sector, industry):
 
 def get_archetype_risk_profile(archetype):
     """
-    Returns (Risk Level, Economic Sensitivity, Investor Role) 
+    Returns (Economic Sensitivity, Investor Role) 
     based on the assigned archetype.
     """
-    return ARCHETYPE_RISK_MAP.get(archetype, ("", "", ""))
+    return ARCHETYPE_RISK_MAP.get(archetype, ("", ""))
 
 
 # ══════════════════════════════════════════════
