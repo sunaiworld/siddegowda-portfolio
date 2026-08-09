@@ -5,7 +5,7 @@ import os
 # ══════════════════════════════════════════════
 SHEET_ID         = os.environ.get("SHEET_ID", "")
 
-BATCH_SIZE              = 5
+BATCH_SIZE              = 50
 SLEEP_BATCH             = 8
 SLEEP_INFO              = 3
 SLEEP_NEWS_CACHE_WRITE  = 1   # throttle consecutive news_cache.upsert() calls (429 guard)

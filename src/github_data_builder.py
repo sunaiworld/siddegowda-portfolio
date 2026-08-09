@@ -269,21 +269,22 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         headers[idx] = GITHUB_DATA_HEADER_NAMES.get(key, key)
         widths[idx]  = GITHUB_DATA_COL_WIDTHS.get(key, 70)
 
-    # Harden header write against transient 429 quota errors.
+    data = [headers]
+    if rows:
+        data.extend([clean_row(r) for r in rows])
+
+    # Harden header/data write against transient 429 quota errors.
     for _attempt in range(5):
         try:
-            ws.append_row(headers)
+            ws.update(data)
             break
         except _gse.APIError as _e:
             if "429" in str(_e):
                 _wait = 15 * (2 ** _attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
-                log.warning(f"[write_github_data] 429 on append_row(headers), waiting {_wait}s (attempt {_attempt+1}/5)")
+                log.warning(f"[write_github_data] 429 on ws.update, waiting {_wait}s (attempt {_attempt+1}/5)")
                 time.sleep(_wait)
             else:
                 raise
-    if rows:
-        rows = [clean_row(r) for r in rows]
-        ws.append_rows(rows)
 
     # ── Structural formatting: header, freeze, row height, column widths ──
     # Consolidated into a single batch_update.

@@ -116,8 +116,21 @@ def run_portfolio_update(sh):
     log.info("Fetching fundamentals...")
     fund_map = {}
     fc_cache = fund_cache.load_cache(sh)
-    for sym in symbols:
-        fund_map[sym] = fund_cache.get_or_fetch_fundamentals(sym, fc_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
+    
+    def _fetch_fund(sym):
+        return sym, fund_cache.get_or_fetch_fundamentals(sym, fc_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
+
+    with ThreadPoolExecutor(max_workers=TECH_WORKERS) as ex:
+        futures = {ex.submit(_fetch_fund, sym): sym for sym in symbols}
+        for fut in as_completed(futures):
+            sym = futures[fut]
+            try:
+                _, data = fut.result()
+                fund_map[sym] = data
+            except Exception as e:
+                log.warning(f"  fundamentals failed {sym}: {e}")
+                fund_map[sym] = {}
+                
     fund_cache.save_cache(sh, fc_cache)
 
     # Technicals + revenue growth: both hit yfinance directly (no cache layer
@@ -295,7 +308,11 @@ def run_portfolio_update(sh):
     # already fetched/refreshed for portfolio symbols above. Zero new
     # API calls for symbols that overlap; watchlist-only symbols get {}
     # and their news columns stay blank until added to the portfolio.
-    watchlist_results = process_all_watchlists(sh, nc_cache=nc_cache)
+    watchlist_results = process_all_watchlists(
+        sh, nc_cache=nc_cache,
+        shared_prices=prices, shared_fund=fund_map,
+        shared_tech=tech_map, shared_rev=rev_map
+    )
 
     # ── Watchlist Opportunity Digest ───────────────────────────────────────────────
     # Identify watchlist stocks that have crossed into an attractive entry
