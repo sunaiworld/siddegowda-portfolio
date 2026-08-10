@@ -172,7 +172,21 @@ def run_portfolio_update(sh):
     # import file (not yet in the Portfolio sheet's col B) is captured in
     # the holdings dict and written to Portfolio on the next run.
     from portfolio_builder import compute_holdings
-    all_held = compute_holdings(load_all_trades())          # {sym: (avg_buy, qty)}
+    raw_held = compute_holdings(load_all_trades())
+    
+    all_held = {}
+    for key, h in raw_held.items():
+        sym = h["symbol"]
+        if sym not in all_held:
+            all_held[sym] = {"qty": 0.0, "cost": 0.0}
+        all_held[sym]["qty"] += h["qty"]
+        all_held[sym]["cost"] += h["cost"]
+        
+    for sym in all_held:
+        q = all_held[sym]["qty"]
+        c = all_held[sym]["cost"]
+        all_held[sym] = (c / q if q else 0.0, q, c)
+
     extra_syms = [s for s in all_held if s not in set(symbols)]
     if extra_syms:
         log.info(f"Fetching prices for {len(extra_syms)} holdings-only symbol(s): {extra_syms}")
