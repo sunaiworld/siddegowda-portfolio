@@ -2,7 +2,6 @@ import os
 import glob
 import pandas as pd
 import logging
-from config import PROJECT_ROOT
 
 log = logging.getLogger(__name__)
 
@@ -11,6 +10,7 @@ def process_dividends(prices, fund_map):
     Reads Zerodha dividend CSVs, merges with fundamental/price data,
     computes scores, and returns a list of rows for the 'Dividends' tab.
     """
+    PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     div_dir = os.path.join(PROJECT_ROOT, "data", "imports", "Dividend_Zerodha")
     csv_files = glob.glob(os.path.join(div_dir, "*.csv"))
     
