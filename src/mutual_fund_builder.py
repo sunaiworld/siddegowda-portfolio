@@ -34,6 +34,7 @@ import sheet_formatter
 import sheet_writer
 from config import *
 import mf_data_fetcher
+import mf_analyzer
 
 log = logging.getLogger(__name__)
 
@@ -182,16 +183,18 @@ def compute_mf_holdings(trades):
     for t in trades:
         isin = str(t.get("isin", "")).strip()
         name = str(t.get("fund_name", "")).strip()
+        broker = str(t.get("broker", "")).strip()
         if not isin:
             # Try to resolve via keyword match
             resolved = _resolve_isin(name)
             if resolved:
                 isin = resolved
                 log.debug(f"  Resolved no-ISIN '{name}' → ISIN {isin}")
-        key  = isin if isin else _normalise_fund_name(name)
+        base_key  = isin if isin else _normalise_fund_name(name)
+        key = f"{broker}:{base_key}"
         if key not in raw_buckets:
             raw_buckets[key] = []
-            key_meta[key]    = {"fund_name": name, "isin": isin}
+            key_meta[key]    = {"fund_name": name, "isin": isin, "broker": broker}
         raw_buckets[key].append(t)
         if len(name) > len(key_meta[key]["fund_name"]):
             key_meta[key]["fund_name"] = name
@@ -243,6 +246,7 @@ def compute_mf_holdings(trades):
         holdings[key] = {
             "fund_name":      key_meta[key]["fund_name"],
             "isin":           key_meta[key]["isin"],
+            "broker":         key_meta[key]["broker"],
             "category":       _infer_category(key_meta[key]["fund_name"]),
             "lots":           lots,
             "total_units":    round(total_units, 6),
@@ -322,19 +326,25 @@ def compute_tax_harvest(holdings, current_navs=None, ltcg_booked=None):
             tax_type = "STCG"
 
         if ltcg_gain >= 1000 and harvestable >= 500 and remaining_exempt > 0:
-            recommendation = "HARVEST"
+            recommendation = "YES"
             reason = f"LTCG Rs.{ltcg_gain:,.0f} eligible; harvest Rs.{harvestable:,.0f} within exemption"
+        elif ltcg_gain < 0 and abs(ltcg_gain) >= 1000:
+            recommendation = "YES"
+            reason = f"Long-term loss of Rs.{abs(ltcg_gain):,.0f} available to offset gains"
+        elif tax_type == "Mixed":
+            recommendation = "REVIEW"
+            reason = "Mixed STCG/LTCG lots"
         elif tax_type == "STCG":
-            recommendation = "WAIT"
-            reason = "All lots STCG — wait for LTCG"
-        elif ltcg_gain < 1000:
-            recommendation = "HOLD"
+            recommendation = "NO"
+            reason = "All lots STCG"
+        elif ltcg_gain < 1000 and ltcg_gain >= 0:
+            recommendation = "NO"
             reason = "LTCG gain too small to harvest"
         elif remaining_exempt <= 0:
-            recommendation = "HOLD"
+            recommendation = "NO"
             reason = "LTCG exemption fully used this FY"
         else:
-            recommendation = "HOLD"
+            recommendation = "NO"
             reason = ""
 
         results[key] = {
@@ -365,9 +375,13 @@ _EXISTING_HEADERS = [
 _NEW_HEADERS = [
     "Holding Days", "Tax Type", "Unrealised Gain",
     "Harvestable", "LTCG Units", "Harvestable Units",
-    "Recommendation", "Reason",
+    "Tax Harvesting", "Reason",
 ]
-_ALL_HEADERS = _EXISTING_HEADERS + _NEW_HEADERS
+_DECISION_HEADERS = [
+    "1Y Ret%", "3Y Ret%", "5Y Ret%",
+    "MF Score", "Trend", "AI Decision", "Decision Reason",
+]
+_ALL_HEADERS = _EXISTING_HEADERS + _NEW_HEADERS + _DECISION_HEADERS
 
 
 def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
@@ -405,11 +419,14 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         except Exception as e:
             log.warning(f"Could not read existing MF values: {e}")
 
-    rows_out       = []
-    total_invested = 0.0
-    total_value    = 0.0
-    sorted_keys    = sorted(holdings.keys(),
-                            key=lambda k: holdings[k]["total_invested"], reverse=True)
+    groww_rows = []
+    zerodha_rows = []
+    total_invested_g = 0.0
+    total_value_g = 0.0
+    total_invested_z = 0.0
+    total_value_z = 0.0
+
+    sorted_keys = sorted(holdings.keys(), key=lambda k: holdings[k]["total_invested"], reverse=True)
 
     for key in sorted_keys:
         h      = holdings[key]
@@ -419,16 +436,13 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         avg_nav   = h["avg_nav"]
         units     = h["total_units"]
         invested  = h["total_invested"]
-        
-        # Current NAV: Use Sheet's manual entry, fallback to AMFI, fallback to Avg NAV
+        broker    = h.get("broker", "")
+
         curr_nav  = existing_nav.get(fn, 0) or tx.get("amfi_nav", 0) or avg_nav
-        
         curr_val  = round(units * curr_nav, 2)
         pnl       = round(curr_val - invested, 2)
         ret_pct   = round((pnl / invested) * 100, 2) if invested else 0
         dg, dgp   = existing_gain.get(fn, [0, 0])
-        total_invested += invested
-        total_value    += curr_val
 
         if   ret_pct >= 100: signal = "STAR"
         elif ret_pct >= 50:  signal = "MULTI"
@@ -437,9 +451,23 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         elif ret_pct >= -10: signal = "REVIEW"
         else:                signal = "EXIT"
 
-        wt = 0.0  # placeholder; recalculated after all rows known
+        wt = 0.0
 
-        rows_out.append({
+        # AI Decision Support
+        isin = h.get("isin")
+        analysis = mf_analyzer.analyze_fund(isin) if isin else None
+        if analysis:
+            ret_1y = f"{analysis['ret_1y']*100:.2f}%" if analysis['ret_1y'] is not None else ""
+            ret_3y = f"{analysis['ret_3y']*100:.2f}%" if analysis['ret_3y'] is not None else ""
+            ret_5y = f"{analysis['ret_5y']*100:.2f}%" if analysis['ret_5y'] is not None else ""
+            mf_score = round(analysis['overall_score']) if analysis['overall_score'] is not None else ""
+            trend = analysis['trend']
+            ai_decision = analysis['decision']
+            ai_reason = analysis['reason']
+        else:
+            ret_1y = ret_3y = ret_5y = mf_score = trend = ai_decision = ai_reason = ""
+
+        row_dict = {
             "fn": fn, "cat": cat, "avg_nav": avg_nav, "curr_nav": curr_nav,
             "units": round(units, 3), "invested": invested, "curr_val": curr_val,
             "pnl": pnl, "ret_pct": ret_pct, "dg": dg, "dgp": dgp, "wt": wt,
@@ -452,78 +480,144 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
             "harvest_units": tx.get("harvest_units", ""),
             "rec":          tx.get("recommendation", ""),
             "reason":       tx.get("reason", ""),
-        })
+            "ret_1y": ret_1y, "ret_3y": ret_3y, "ret_5y": ret_5y,
+            "mf_score": mf_score, "trend": trend, "ai_decision": ai_decision, "ai_reason": ai_reason
+        }
+
+        if broker.lower() == "groww":
+            groww_rows.append(row_dict)
+            total_invested_g += invested
+            total_value_g += curr_val
+        else:
+            zerodha_rows.append(row_dict)
+            total_invested_z += invested
+            total_value_z += curr_val
 
     # Recalculate weight%
-    for r in rows_out:
-        r["wt"] = round((r["curr_val"] / total_value) * 100, 2) if total_value else 0
+    for r in groww_rows:
+        r["wt"] = round((r["curr_val"] / total_value_g) * 100, 2) if total_value_g else 0
+    for r in zerodha_rows:
+        r["wt"] = round((r["curr_val"] / total_value_z) * 100, 2) if total_value_z else 0
 
-    # Build flat lists for sheet
     all_data = [_ALL_HEADERS]
-    for r in rows_out:
-        all_data.append([
-            r["fn"], r["cat"], r["avg_nav"], r["curr_nav"],
-            r["units"], r["invested"], r["curr_val"], r["pnl"], r["ret_pct"],
-            r["dg"], r["dgp"], r["wt"], r["signal"],
-            r["holding_days"], r["tax_type"], r["unrealised"], r["harvestable"],
-            r["ltcg_units"], r["harvest_units"],
-            r["rec"], r["reason"],
-        ])
+    
+    header_indices = []
+    subtotal_indices = []
 
-    n = len(rows_out)
+    def _add_section(title, rows, tot_inv, tot_val):
+        header_indices.append(len(all_data) + 1)
+        all_data.append([title] + [""] * (len(_ALL_HEADERS) - 1))
+        
+        for r in rows:
+            all_data.append([
+                r["fn"], r["cat"], r["avg_nav"], r["curr_nav"],
+                r["units"], r["invested"], r["curr_val"], r["pnl"], r["ret_pct"],
+                r["dg"], r["dgp"], r["wt"], r["signal"],
+                r["holding_days"], r["tax_type"], r["unrealised"], r["harvestable"],
+                r["ltcg_units"], r["harvest_units"],
+                r["rec"], r["reason"],
+                r["ret_1y"], r["ret_3y"], r["ret_5y"],
+                r["mf_score"], r["trend"], r["ai_decision"], r["ai_reason"]
+            ])
+            
+        subtotal_indices.append(len(all_data) + 1)
+        tpnl = round(tot_val - tot_inv, 2)
+        tret = round((tpnl / tot_inv) * 100, 2) if tot_inv else 0
+        all_data.append([
+            f"{title} SUBTOTAL", "", "", "", "",
+            round(tot_inv, 2), round(tot_val, 2), tpnl, tret,
+            "", "", 100.0, "",
+            "", "", tpnl, "", "", "", "", "",
+            "", "", "", "", "", "", ""
+        ])
+        all_data.append([""] * len(_ALL_HEADERS))
+
+    if groww_rows:
+        _add_section("GROWW - DAD", groww_rows, total_invested_g, total_value_g)
+    if zerodha_rows:
+        _add_section("ZERODHA - SELF", zerodha_rows, total_invested_z, total_value_z)
+
+    # TOTAL / TAX HARVESTING
+    header_indices.append(len(all_data) + 1)
+    all_data.append(["TOTAL / TAX HARVESTING"] + [""] * (len(_ALL_HEADERS) - 1))
+    
+    subtotal_indices.append(len(all_data) + 1)
+    total_invested = total_invested_g + total_invested_z
+    total_value = total_value_g + total_value_z
     tot_pnl = round(total_value - total_invested, 2)
     tot_ret = round((tot_pnl / total_invested) * 100, 2) if total_invested else 0
     all_data.append([
-        "TOTAL", "", "", "", "",
+        "COMBINED TOTAL", "", "", "", "",
         round(total_invested, 2), round(total_value, 2), tot_pnl, tot_ret,
         "", "", 100.0, "",
         "", "", tot_pnl, "", "", "", "", "",
+        "", "", "", "", "", "", ""
     ])
 
     ws.clear()
     ws.update("A1", all_data, value_input_option="RAW")
-    log.info(f"write_mutual_funds: wrote {n} funds + TOTAL to '{tab_name}'")
+    log.info(f"write_mutual_funds: wrote {len(all_data)} rows to '{tab_name}'")
 
     # Formatting
     nc = len(_ALL_HEADERS)
     widths = [280, 140, 100, 100, 80, 110, 110, 100, 80, 90, 80, 70, 90,
-              90, 80, 110, 100, 100, 110, 100, 220]
+              90, 80, 110, 100, 100, 110, 100, 220, 
+              80, 80, 80, 80, 100, 110, 250]
     reqs = sheet_formatter.get_structural_format_reqs(
-        ws.id, n + 1, nc, widths=widths, freeze_rows=1, freeze_cols=1)
+        ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=1)
 
     # Currency cols (0-indexed): AvgNAV(2), CurrNAV(3), Invested(5), CurrVal(6), PnL(7), DayGainRs(9), Unrealised(15), Harvestable(16)
     for col in [2, 3, 5, 6, 7, 9, 15, 16]:
-        reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, n + 2, col, col + 1)
+        reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, len(all_data), col, col + 1)
     # Percent cols (0-indexed): Return%(8), DayGain%(10), Weight%(11)
     for col in [8, 10, 11]:
-        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, n + 2, col, col + 1)
+        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col, col + 1)
     # 3 decimal precision for Units (4), LTCG Units (17), Harvest Units (18)
     for col in [4, 17, 18]:
         reqs += [{"repeatCell": {
-            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": n + 2, "startColumnIndex": col, "endColumnIndex": col + 1},
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": len(all_data), "startColumnIndex": col, "endColumnIndex": col + 1},
             "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.000"}}},
             "fields": "userEnteredFormat.numberFormat"
         }}]
 
-    for i, r in enumerate(rows_out):
+    for i, row in enumerate(all_data):
         rn = i + 1
-        req = sheet_formatter.color_positive_negative(ws.id, rn, 7, r["pnl"])
-        if req: reqs.append(req)
-        req = sheet_formatter.color_positive_negative(ws.id, rn, 8, r["ret_pct"])
-        if req: reqs.append(req)
-        rec = str(r["rec"])
-        # Rec column index is 19
-        if   rec == "HARVEST": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "0f9d58", "ffffff"))
-        elif rec == "WAIT":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "fce8b2", "7f4f00"))
-        elif rec == "HOLD":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "e8eaf6", "3949ab"))
-        tt = str(r["tax_type"])
-        # Tax type index is 14
+        if i == 0 or len(row) <= 1 or row[0] == "" or "SUBTOTAL" in row[0] or "TOTAL" in row[0] or "GROWW" in row[0] or "ZERODHA" in row[0]:
+            continue
+
+        try:
+            pnl = float(row[7]) if row[7] else 0.0
+            req = sheet_formatter.color_positive_negative(ws.id, rn, 7, pnl)
+            if req: reqs.append(req)
+        except: pass
+        
+        try:
+            ret_pct = float(row[8]) if row[8] else 0.0
+            req = sheet_formatter.color_positive_negative(ws.id, rn, 8, ret_pct)
+            if req: reqs.append(req)
+        except: pass
+
+        rec = str(row[19])
+        if   rec == "YES":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "0f9d58", "ffffff"))
+        elif rec == "REVIEW": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "fce8b2", "7f4f00"))
+        elif rec == "NO":     reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "e8eaf6", "3949ab"))
+        
+        tt = str(row[14])
         if   tt == "LTCG":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "d9ead3", "0b8043", bold=False))
         elif tt == "STCG":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "fde9d9", "c62828", bold=False))
         elif tt == "Mixed": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "fff2cc", "7f4f00", bold=False))
 
-    # TOTAL row dark header
-    reqs.append(sheet_formatter.color_cell_req(ws.id, n + 1, 0, "0d1b2a", "ffffff"))
+        ai_dec = str(row[26]) if len(row) > 26 else ""
+        if   ai_dec == "BUY / ADD":       reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 26, "d9ead3", "0b8043", bold=True))
+        elif ai_dec == "HOLD":            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 26, "e8eaf6", "3949ab", bold=True))
+        elif ai_dec == "WATCH":           reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 26, "fff2cc", "f57f17", bold=True))
+        elif ai_dec == "REVIEW / REDUCE": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 26, "fce8b2", "d32f2f", bold=True))
+
+    for h_idx in header_indices:
+        reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, 0, "0d1b2a", "ffffff"))
+    for s_idx in subtotal_indices:
+        reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, 0, "37474f", "ffffff"))
+
     sheet_writer.batch_update_safe(sh, reqs)
     log.info(f"write_mutual_funds: {len(reqs)} format requests applied")
 
