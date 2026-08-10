@@ -333,6 +333,7 @@ def compute_holdings(trades):
     book = {}
     for t in trades:
         sym = str(t.get("symbol", "")).strip().upper()
+        broker = str(t.get("broker", "")).strip()
         if not sym:
             continue
         try:
@@ -343,7 +344,8 @@ def compute_holdings(trades):
             continue
         if t_qty <= 0:
             continue
-        cost, qty = book.get(sym, (0.0, 0.0))
+        key = f"{broker}:{sym}"
+        cost, qty = book.get(key, (0.0, 0.0))
         if action == "BUY":
             cost += t_qty * t_price
             qty  += t_qty
@@ -355,14 +357,24 @@ def compute_holdings(trades):
             avg = cost / qty
             cost -= sell_qty * avg
             qty  -= sell_qty
-        book[sym] = (cost, max(qty, 0.0))
+        book[key] = (cost, max(qty, 0.0))
 
     holdings = {}
-    for sym, (cost, qty) in book.items():
+    for key, (cost, qty) in book.items():
         if qty > 1e-6:
+            parts = key.split(":", 1)
+            broker = parts[0]
+            sym = parts[1] if len(parts) > 1 else key
+            
             # Return raw cost alongside avg_buy so callers can use the true
             # invested amount for P&L/Return% without re-rounding errors.
-            holdings[sym] = (round(cost / qty, 2), round(qty, 4), round(cost, 2))
+            holdings[key] = {
+                "symbol": sym,
+                "broker": broker,
+                "avg_buy": round(cost / qty, 2),
+                "qty": round(qty, 4),
+                "cost": round(cost, 2)
+            }
     return holdings
 
 
@@ -370,12 +382,21 @@ def build_portfolio(prices, imports_dir="data/imports"):
     trades = load_all_trades(imports_dir)
     holdings = compute_holdings(trades)
 
-    portfolio_live_value = sum(
-        qty * prices.get(sym, 0) for sym, (_, qty, _cost) in holdings.items() if prices.get(sym)
+    portfolio_live_value_g = sum(
+        h["qty"] * prices.get(h["symbol"], 0) for h in holdings.values() if prices.get(h["symbol"]) and h["broker"].lower() == "groww"
+    )
+    portfolio_live_value_z = sum(
+        h["qty"] * prices.get(h["symbol"], 0) for h in holdings.values() if prices.get(h["symbol"]) and h["broker"].lower() == "zerodha"
     )
 
     rows = []
-    for sym, (avg_buy, qty, invested_raw) in holdings.items():
+    for key, h in holdings.items():
+        sym = h["symbol"]
+        broker = h["broker"]
+        avg_buy = h["avg_buy"]
+        qty = h["qty"]
+        invested_raw = h["cost"]
+
         cmp = prices.get(sym)
         if not cmp or cmp <= 0:
             continue
@@ -386,7 +407,9 @@ def build_portfolio(prices, imports_dir="data/imports"):
         value    = round(cmp * qty, 2)
         pnl      = round(value - invested, 2)
         ret_pct  = round((pnl / invested) * 100, 2) if invested else 0
-        wt_pct   = round((value / portfolio_live_value) * 100, 2) if portfolio_live_value else 0
+        
+        live_val = portfolio_live_value_g if broker.lower() == "groww" else portfolio_live_value_z
+        wt_pct   = round((value / live_val) * 100, 2) if live_val else 0
         wt_status = "Underweight" if wt_pct < 2 else "Normal" if wt_pct <= 6 else "Overweight"
 
         sl_price = round(avg_buy * (1 - SL_PCT), 2)
@@ -403,105 +426,182 @@ def build_portfolio(prices, imports_dir="data/imports"):
             signal = "HOLD"
 
         rows.append({
+            "key": key,
+            "broker": broker,
             "symbol": sym, "shares": qty, "avg_buy": avg_buy, "cmp": cmp,
             "invested": invested, "value": value, "pnl": pnl, "return_pct": ret_pct,
             "wt_pct": wt_pct, "wt_status": wt_status,
             "sl_price": sl_price, "target": target, "buy_more": buy_more,
             "signal": signal,
         })
-    return rows
+    # Separate by broker
+    groww_rows = [r for r in rows if r["broker"].lower() == "groww"]
+    zerodha_rows = [r for r in rows if r["broker"].lower() == "zerodha"]
+
+    # Compute combined
+    combined_dict = {}
+    for r in rows:
+        sym = r["symbol"]
+        if sym not in combined_dict:
+            combined_dict[sym] = {
+                "symbol": sym,
+                "shares": 0,
+                "invested": 0.0,
+                "value": 0.0,
+                "avg_buy": 0.0,
+                "cmp": r["cmp"],
+            }
+        combined_dict[sym]["shares"] += r["shares"]
+        combined_dict[sym]["invested"] += r["invested"]
+        combined_dict[sym]["value"] += r["value"]
+
+    combined_rows = []
+    portfolio_live_value_c = sum(r["value"] for r in combined_dict.values())
+    for sym, c in combined_dict.items():
+        if c["shares"] <= 0: continue
+        c["avg_buy"] = round(c["invested"] / c["shares"], 2)
+        c["pnl"] = round(c["value"] - c["invested"], 2)
+        c["return_pct"] = round((c["pnl"] / c["invested"]) * 100, 2) if c["invested"] else 0
+        c["wt_pct"] = round((c["value"] / portfolio_live_value_c) * 100, 2) if portfolio_live_value_c else 0
+        c["wt_status"] = "Underweight" if c["wt_pct"] < 2 else "Normal" if c["wt_pct"] <= 6 else "Overweight"
+        
+        c["sl_price"] = round(c["avg_buy"] * (1 - SL_PCT), 2)
+        c["target"] = round(c["avg_buy"] * (1 + TARGET_PCT), 2)
+        c["buy_more"] = round(c["avg_buy"] * 0.90, 2)
+
+        if c["cmp"] <= c["sl_price"]:
+            c["signal"] = "SELL - SL HIT"
+        elif c["cmp"] >= c["target"]:
+            c["signal"] = "TARGET HIT - TRIM"
+        elif c["cmp"] <= c["buy_more"]:
+            c["signal"] = "BUY MORE"
+        else:
+            c["signal"] = "HOLD"
+            
+        combined_rows.append(c)
+
+    return {"groww": groww_rows, "zerodha": zerodha_rows, "combined": combined_rows}
 
 
-def write_portfolio(sh, portfolio_rows, tab_name="Portfolio"):
+def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     ws = sh.worksheet(tab_name)
-    all_rows = ws.get_all_values()
-    if not all_rows:
-        return
+    existing_rows = ws.get_all_values()
+    
+    # Extract names for symbols to preserve Column A (Company Name)
+    sym_name_map = {}
+    if existing_rows:
+        for row in existing_rows[1:]:
+            name = row[0].strip() if len(row) > 0 else ""
+            sym = row[1].strip().upper() if len(row) > 1 else ""
+            if sym and sym not in sym_name_map and "SUBTOTAL" not in name and "TOTAL" not in name and name != "COMBINED TOTAL":
+                sym_name_map[sym] = name
 
-    by_symbol = {r["symbol"]: r for r in portfolio_rows}
-    headers = ["Shares", "Avg Buy", "CMP", "Invested", "Value", "P&L", "Return %",
+    headers = ["Name", "Symbol", "Shares", "Avg Buy", "CMP", "Invested", "Value", "P&L", "Return %",
                "Wt %", "Wt Status", "Stop Loss", "Target", "Buy More@", "Signal"]
     keys = ["shares", "avg_buy", "cmp", "invested", "value", "pnl", "return_pct",
             "wt_pct", "wt_status", "sl_price", "target", "buy_more", "signal"]
-    start_col = 3
 
-    # ── Auto-append rows for symbols that exist in computed holdings but are
-    #    not yet present in the sheet's column B.  This happens automatically
-    #    when a new symbol first appears in the broker import files.
-    existing_syms = set()
-    for row in all_rows[1:]:
-        sym = row[1].strip().upper() if len(row) > 1 else ""
-        if sym:
-            existing_syms.add(sym)
+    all_data = [headers]
+    header_indices = []
+    subtotal_indices = []
 
-    new_syms = [sym for sym in by_symbol if sym not in existing_syms]
-    if new_syms:
-        log.info(f"write_portfolio: appending {len(new_syms)} new symbol(s) from broker imports: {new_syms}")
-        append_rows = [[sym, sym] + [""] * (len(all_rows[0]) - 2 if all_rows[0] else 13) for sym in new_syms]
-        # Append just col A (blank) and col B (symbol) — the rest will be filled below
-        ws.append_rows([[sym] for sym in new_syms], value_input_option="RAW",
-                       table_range=f"B{len(all_rows) + 1}")
-        # Re-fetch after appending so row indices are correct
-        all_rows = ws.get_all_values()
+    def _add_section(title, rows_list, tot_inv, tot_val):
+        header_indices.append(len(all_data) + 1)
+        all_data.append([title] + [""] * (len(headers) - 1))
+        
+        for r in rows_list:
+            sym = r["symbol"]
+            name = sym_name_map.get(sym, sym)
+            row_data = [name, sym] + [r.get(k, "") for k in keys]
+            all_data.append(row_data)
+            
+        subtotal_indices.append(len(all_data) + 1)
+        tpnl = round(tot_val - tot_inv, 2)
+        tret = round((tpnl / tot_inv) * 100, 2) if tot_inv else 0
+        all_data.append([
+            f"{title} SUBTOTAL", "", "", "", "",
+            round(tot_inv, 2), round(tot_val, 2), tpnl, tret,
+            "", "", "", "", "", ""
+        ])
+        all_data.append([""] * len(headers))
 
-    seen = set()
-    data_rows = []
-    for row in all_rows[1:]:
-        sym = row[1].strip().upper() if len(row) > 1 else ""
-        if not sym or sym in seen or sym not in by_symbol:
-            data_rows.append([""] * len(headers))
-            continue
-        seen.add(sym)
-        pr = by_symbol[sym]
-        data_rows.append([pr.get(k, "") for k in keys])
+    groww_rows = portfolio_dict.get("groww", [])
+    zerodha_rows = portfolio_dict.get("zerodha", [])
+    combined_rows = portfolio_dict.get("combined", [])
 
-    end_col = start_col + len(headers) - 1
-    full_range = f"{gspread.utils.rowcol_to_a1(1, start_col)}:{gspread.utils.rowcol_to_a1(1+len(data_rows), end_col)}"
+    if groww_rows:
+        inv = sum(r["invested"] for r in groww_rows)
+        val = sum(r["value"] for r in groww_rows)
+        _add_section("GROWW - DAD", groww_rows, inv, val)
+
+    if zerodha_rows:
+        inv = sum(r["invested"] for r in zerodha_rows)
+        val = sum(r["value"] for r in zerodha_rows)
+        _add_section("ZERODHA - SELF", zerodha_rows, inv, val)
+
+    header_indices.append(len(all_data) + 1)
+    all_data.append(["COMBINED - PORTFOLIO VIEW ONLY"] + [""] * (len(headers) - 1))
     
-    full_data = [headers] + data_rows
-    
-    import gspread.exceptions as _gse
-    for _attempt in range(5):
-        try:
-            ws.update(values=full_data, range_name=full_range, value_input_option="RAW")
-            break
-        except _gse.APIError as _e:
-            if "429" in str(_e):
-                _wait = 15 * (2 ** _attempt)
-                log.warning(f"[write_portfolio] 429 on ws.update, waiting {_wait}s (attempt {_attempt+1}/5)")
-                time.sleep(_wait)
-            else:
-                raise
+    if combined_rows:
+        for r in combined_rows:
+            sym = r["symbol"]
+            name = sym_name_map.get(sym, sym)
+            row_data = [name, sym] + [r.get(k, "") for k in keys]
+            all_data.append(row_data)
+            
+    subtotal_indices.append(len(all_data) + 1)
+    tot_inv = sum(r["invested"] for r in combined_rows)
+    tot_val = sum(r["value"] for r in combined_rows)
+    tot_pnl = round(tot_val - tot_inv, 2)
+    tot_ret = round((tot_pnl / tot_inv) * 100, 2) if tot_inv else 0
+    all_data.append([
+        "COMBINED TOTAL", "", "", "", "",
+        round(tot_inv, 2), round(tot_val, 2), tot_pnl, tot_ret,
+        "", "", "", "", "", ""
+    ])
 
+    ws.clear()
+    ws.update("A1", all_data, value_input_option="RAW")
+    log.info(f"write_portfolio: wrote {len(all_data)} rows to '{tab_name}'")
 
-    num_rows = len(data_rows)
-    # The Portfolio sheet has headers up to end_col.
-    # Col A (0), Col B (1) are pre-existing. We format the whole width (end_col).
-    reqs = sheet_formatter.get_structural_format_reqs(ws.id, num_rows, end_col, widths=None, freeze_rows=1, freeze_cols=2)
+    nc = len(headers)
+    widths = [200, 100, 80, 80, 80, 100, 100, 100, 80, 70, 100, 90, 90, 90, 150]
+    reqs = sheet_formatter.get_structural_format_reqs(
+        ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=2)
 
-    # 0-indexed columns for currency: Avg Buy (3), CMP (4), Invested (5), Value (6), P&L (7), Stop Loss (11), Target (12), Buy More@ (13)
+    # cols 0-indexed: Avg Buy(3), CMP(4), Invested(5), Value(6), P&L(7), Stop Loss(11), Target(12), Buy More@(13)
     for col in [3, 4, 5, 6, 7, 11, 12, 13]:
-        reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, num_rows + 1, col, col + 1)
+        reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, len(all_data), col, col + 1)
 
-    # 0-indexed columns for percentage: Return % (8), Wt % (9)
+    # Return %(8), Wt %(9)
     for col in [8, 9]:
-        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, num_rows + 1, col, col + 1)
+        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col, col + 1)
 
-    # Per-row conditional formatting
-    for i, row in enumerate(data_rows):
+    for i, row in enumerate(all_data):
         rn = i + 1
+        if i == 0 or len(row) <= 1 or row[0] == "" or "SUBTOTAL" in row[0] or "TOTAL" in row[0] or "GROWW" in row[0] or "ZERODHA" in row[0] or "COMBINED" in row[0]:
+            continue
 
-        pnl = row[keys.index("pnl")]
-        req_pnl = sheet_formatter.color_positive_negative(ws.id, rn, 7, pnl)
-        if req_pnl: reqs.append(req_pnl)
-
-        ret = row[keys.index("return_pct")]
-        req_ret = sheet_formatter.color_positive_negative(ws.id, rn, 8, ret)
-        if req_ret: reqs.append(req_ret)
-
-        signal = str(row[keys.index("signal")]).strip()
+        try:
+            pnl = float(row[7]) if row[7] else 0.0
+            req = sheet_formatter.color_positive_negative(ws.id, rn, 7, pnl)
+            if req: reqs.append(req)
+        except: pass
+        
+        try:
+            ret_pct = float(row[8]) if row[8] else 0.0
+            req = sheet_formatter.color_positive_negative(ws.id, rn, 8, ret_pct)
+            if req: reqs.append(req)
+        except: pass
+        
+        signal = str(row[14]).strip()
         req_sig = sheet_formatter.color_action_signal(ws.id, rn, 14, signal)
         if req_sig: reqs.append(req_sig)
+
+    for h_idx in header_indices:
+        reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, 0, "0d1b2a", "ffffff"))
+    for s_idx in subtotal_indices:
+        reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, 0, "37474f", "ffffff"))
 
     if reqs:
         sheet_writer.batch_update_safe(sh, reqs)
