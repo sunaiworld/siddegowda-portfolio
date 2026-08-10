@@ -122,6 +122,11 @@ def fetch_fundamentals(sym, retries=3):
                 "roce":     roce,
                 "debt_eq":  round(info.get("debtToEquity", 0), 2)      if info.get("debtToEquity")  else None,
                 "beta":     round(info.get("beta", 0), 2)               if info.get("beta")          else None,
+                "payout_ratio": round(info.get("payoutRatio", 0) * 100, 2) if info.get("payoutRatio") else None,
+                "div_yield_5y": round(info.get("fiveYearAvgDividendYield", 0), 2) if info.get("fiveYearAvgDividendYield") else None,
+                "div_rate": info.get("dividendRate") or None,
+                "fcf": info.get("freeCashflow") or None,
+                "ocf": info.get("operatingCashflow") or None,
             }
         except Exception as e:
             if "429" in str(e) or "Too Many" in str(e):

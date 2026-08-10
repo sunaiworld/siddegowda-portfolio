@@ -10,6 +10,7 @@ from data_fetcher import *
 from telegram_alerts import *
 from portfolio_builder import *
 import mutual_fund_builder
+import dividend_builder
 
 #!/usr/bin/env python3
 """
@@ -370,6 +371,14 @@ def run_portfolio_update(sh):
     history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
 
     portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
+
+    try:
+        log.info("Building Dividends tab...")
+        div_headers, div_rows = dividend_builder.process_dividends(prices, fund_map)
+        if div_rows:
+            dividend_builder.write_dividends_tab(sh, div_headers, div_rows)
+    except Exception as e:
+        log.error(f"Dividend tab build/write FAILED: {e}", exc_info=True)
 
     return {
         "results": results, "alerts": alerts,
