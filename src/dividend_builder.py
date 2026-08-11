@@ -92,7 +92,20 @@ def process_dividends(fund_map):
         r = [sym] + [row[y] for y in years] + [row['Total Dividend']]
         sum_rows.append(r)
         
-    return tx_rows, sum_rows
+    import math
+    
+    def _json_safe(val):
+        if pd.isna(val):
+            return ""
+        if isinstance(val, float):
+            if math.isnan(val) or math.isinf(val):
+                return ""
+        return val
+
+    safe_tx_rows = [[_json_safe(v) for v in row] for row in tx_rows]
+    safe_sum_rows = [[_json_safe(v) for v in row] for row in sum_rows]
+    
+    return safe_tx_rows, safe_sum_rows
 
 
 def write_dividends_tab(sh, tx_rows, sum_rows):
