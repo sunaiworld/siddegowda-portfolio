@@ -155,18 +155,19 @@ def run_portfolio_update(sh):
     def _fetch_tech_and_growth(sym):
         return sym, fetch_technicals(sym), fetch_rev_growth(sym)
 
-    with ThreadPoolExecutor(max_workers=TECH_WORKERS) as ex:
-        futures = {ex.submit(_fetch_tech_and_growth, sym): sym for sym in symbols}
-        for fut in as_completed(futures):
-            sym = futures[fut]
-            try:
-                _, tech, rev_gr = fut.result()
-            except Exception as e:
-                log.warning(f"  tech/growth failed {sym}: {e}")
-                tech, rev_gr = {}, None
-            tech_map[sym] = tech
-            rev_map[sym]  = rev_gr
-            log.info(f"  Technicals: {sym}")
+    with profiler.stage("[13] yfinance technicals & growth", category="Yahoo/yfinance"):
+        with ThreadPoolExecutor(max_workers=TECH_WORKERS) as ex:
+            futures = {ex.submit(_fetch_tech_and_growth, sym): sym for sym in symbols}
+            for fut in as_completed(futures):
+                sym = futures[fut]
+                try:
+                    _, tech, rev_gr = fut.result()
+                except Exception as e:
+                    log.warning(f"  tech/growth failed {sym}: {e}")
+                    tech, rev_gr = {}, None
+                tech_map[sym] = tech
+                rev_map[sym]  = rev_gr
+                log.info(f"  Technicals: {sym}")
 
     # ── News Engine: load cached news for all symbols (Phase A) ──
     try:
@@ -239,33 +240,34 @@ def run_portfolio_update(sh):
 
     if stale_syms:
         log.info(f"Fetching news for {len(stale_syms)} stale symbols ({NEWS_WORKERS} workers)...")
-        with ThreadPoolExecutor(max_workers=NEWS_WORKERS) as ex:
-            futures = {ex.submit(_fetch_news, sym): sym for sym in stale_syms}
-            for fut in as_completed(futures):
-                sym = futures[fut]
-                try:
-                    _, result, enriched = fut.result()
-                except Exception as e:
-                    log.warning(f"  News fetch failed {sym}: {e}")
-                    continue
-                try:
-                    news_cache.stage_upsert(
-                        pending_news, sym, result.timestamp, result.summary, enriched,
-                        result.bullish_score, result.bearish_score,
-                        result.sentiment, result.reason, result.source
-                    )
-                    nc_cache[sym.upper()] = {
-                        "last_fetched": result.timestamp,
-                        "digest": result.summary,
-                        "raw_articles": enriched,
-                        "bullish_score": result.bullish_score,
-                        "bearish_score": result.bearish_score,
-                        "sentiment": result.sentiment,
-                        "reason": result.reason,
-                        "source": result.source,
-                    }
-                except Exception as e:
-                    log.warning(f"  News stage failed for {sym}: {e}")
+        with profiler.stage("[14] Google News fetch", category="Python processing"):
+            with ThreadPoolExecutor(max_workers=NEWS_WORKERS) as ex:
+                futures = {ex.submit(_fetch_news, sym): sym for sym in stale_syms}
+                for fut in as_completed(futures):
+                    sym = futures[fut]
+                    try:
+                        _, result, enriched = fut.result()
+                    except Exception as e:
+                        log.warning(f"  News fetch failed {sym}: {e}")
+                        continue
+                    try:
+                        news_cache.stage_upsert(
+                            pending_news, sym, result.timestamp, result.summary, enriched,
+                            result.bullish_score, result.bearish_score,
+                            result.sentiment, result.reason, result.source
+                        )
+                        nc_cache[sym.upper()] = {
+                            "last_fetched": result.timestamp,
+                            "digest": result.summary,
+                            "raw_articles": enriched,
+                            "bullish_score": result.bullish_score,
+                            "bearish_score": result.bearish_score,
+                            "sentiment": result.sentiment,
+                            "reason": result.reason,
+                            "source": result.source,
+                        }
+                    except Exception as e:
+                        log.warning(f"  News stage failed for {sym}: {e}")
 
     profiler.start_stage("[07] Portfolio calculations")
     results, failed = [], []
@@ -337,11 +339,12 @@ def run_portfolio_update(sh):
     # already fetched/refreshed for portfolio symbols above. Zero new
     # API calls for symbols that overlap; watchlist-only symbols get {}
     # and their news columns stay blank until added to the portfolio.
-    watchlist_results = process_all_watchlists(
-        sh, nc_cache=nc_cache,
-        shared_prices=prices, shared_fund=fund_map,
-        shared_tech=tech_map, shared_rev=rev_map
-    )
+    with profiler.stage("[15] Watchlist processing", category="Python processing"):
+        watchlist_results = process_all_watchlists(
+            sh, nc_cache=nc_cache,
+            shared_prices=prices, shared_fund=fund_map,
+            shared_tech=tech_map, shared_rev=rev_map
+        )
 
     # ── Watchlist Opportunity Digest ───────────────────────────────────────────────
     # Identify watchlist stocks that have crossed into an attractive entry
