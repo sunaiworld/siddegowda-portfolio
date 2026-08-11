@@ -378,16 +378,17 @@ def run_portfolio_update(sh):
                 })
     watchlist_opportunities.sort(key=lambda x: x["score"], reverse=True)
 
-    changes = history_tracker.compute_todays_changes(sh, results)
-    prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
+    with profiler.stage("[16] History & Analytics write", category="Google Sheets"):
+        changes = history_tracker.compute_todays_changes(sh, results)
+        prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
 
-    dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
-    health = portfolio_analytics.compute_portfolio_health(results, holdings, fund_map, dash)
-    health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
+        dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
+        health = portfolio_analytics.compute_portfolio_health(results, holdings, fund_map, dash)
+        health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
 
-    history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
+        history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
 
-    portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
+        portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
 
     try:
         log.info("Building Dividends tab...")
