@@ -139,6 +139,15 @@ def process_dividends(fund_map):
         market_yield = (fund_map or {}).get(sym, {}).get("div")
         if market_yield in (None, ""):
             market_yield = ""
+        else:
+            try:
+                my_val = float(market_yield)
+                # The value stored in fund_map is formatted for GITHUB DATA (e.g. 4.03).
+                # Google Sheets genuine percentage format (0.00%) requires a decimal fraction.
+                # So we normalize exactly once here: 4.03 -> 0.0403
+                market_yield = my_val / 100.0
+            except (ValueError, TypeError):
+                pass
 
         r = [sym] + [row[y] for y in years] + [total_div, invested, div_pct, market_yield]
         sum_rows.append(r)

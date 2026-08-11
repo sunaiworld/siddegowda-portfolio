@@ -109,29 +109,6 @@ def fetch_fundamentals(sym, retries=3):
             tl   = info.get("totalCurrentLiabilities", 0) or 0
             roce = round(ebit / (ta_ - tl) * 100, 2) if (ta_ - tl) > 0 else None
             roa  = round(info.get("returnOnAssets", 0) * 100, 2) if info.get("returnOnAssets") else None
-            
-            # Normalize dividend yield to decimal fraction (e.g. 0.0265)
-            div_yield = info.get("dividendYield")
-            div_rate = info.get("dividendRate")
-            cmp_ = info.get("currentPrice") or info.get("regularMarketPrice") or info.get("previousClose")
-            
-            normalized_div = None
-            if div_rate and cmp_ and cmp_ > 0:
-                normalized_div = div_rate / cmp_
-            elif div_yield is not None:
-                # yfinance returns >1 for percentages, but <1 for <1% yields too. 
-                # Fallback trailing yield is often purely decimal:
-                trailing_yield = info.get("trailingAnnualDividendYield")
-                if trailing_yield is not None and trailing_yield < 1.0:
-                    normalized_div = trailing_yield
-                elif div_yield > 1.0:
-                    normalized_div = div_yield / 100.0
-                else:
-                    normalized_div = div_yield # assume it's already a decimal fraction
-            
-            if normalized_div is not None:
-                normalized_div = round(normalized_div, 6)
-
             return {
                 "shortName": info.get("shortName", ""),
                 "sector":   info.get("sector", ""),
@@ -143,7 +120,7 @@ def fetch_fundamentals(sym, retries=3):
                 "eps":      round(info.get("trailingEps", 0), 2)        if info.get("trailingEps")    else None,
                 "bv":       round(info.get("bookValue", 0), 2)          if info.get("bookValue")      else None,
                 "pb":       round(info.get("priceToBook", 0), 2)        if info.get("priceToBook")    else None,
-                "div":      normalized_div,
+                "div":      round(info.get("dividendYield", 0), 6) if info.get("dividendYield") else None,
                 "roe":      round(info.get("returnOnEquity", 0) * 100, 2)if info.get("returnOnEquity")else None,
                 "roa":      roa,
                 "roce":     roce,
