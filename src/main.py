@@ -374,7 +374,7 @@ def run_portfolio_update(sh):
 
     try:
         log.info("Building Dividends tab...")
-        div_headers, div_rows = dividend_builder.process_dividends(prices, fund_map)
+        div_headers, div_rows = dividend_builder.process_dividends(fund_map)
         if div_rows:
             dividend_builder.write_dividends_tab(sh, div_headers, div_rows)
     except Exception as e:

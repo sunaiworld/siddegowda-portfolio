@@ -378,15 +378,20 @@ def compute_holdings(trades):
     return holdings
 
 
+import math
+
+def is_valid_price(p):
+    return p is not None and isinstance(p, (int, float)) and not math.isnan(p) and p > 0
+
 def build_portfolio(prices, imports_dir="data/imports"):
     trades = load_all_trades(imports_dir)
     holdings = compute_holdings(trades)
 
     portfolio_live_value_g = sum(
-        h["qty"] * prices.get(h["symbol"], 0) for h in holdings.values() if prices.get(h["symbol"]) and h["broker"].lower() == "groww"
+        h["qty"] * prices.get(h["symbol"], 0) for h in holdings.values() if is_valid_price(prices.get(h["symbol"])) and h["broker"].lower() == "groww"
     )
     portfolio_live_value_z = sum(
-        h["qty"] * prices.get(h["symbol"], 0) for h in holdings.values() if prices.get(h["symbol"]) and h["broker"].lower() == "zerodha"
+        h["qty"] * prices.get(h["symbol"], 0) for h in holdings.values() if is_valid_price(prices.get(h["symbol"])) and h["broker"].lower() == "zerodha"
     )
 
     rows = []
@@ -398,8 +403,7 @@ def build_portfolio(prices, imports_dir="data/imports"):
         invested_raw = h["cost"]
 
         cmp = prices.get(sym)
-        import math
-        if cmp is None or not isinstance(cmp, (int, float)) or math.isnan(cmp) or cmp <= 0:
+        if not is_valid_price(cmp):
             continue
 
         # Use the true total cost (not avg_buy * qty) so rounding of avg_buy
