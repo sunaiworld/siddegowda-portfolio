@@ -572,7 +572,8 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     profiler.increment("Rows written", len(all_data))
 
     nc = len(headers)
-    widths = [200, 100, 80, 80, 80, 100, 100, 100, 80, 70, 100, 90, 90, 90, 150]
+    # Compact column widths matching GITHUB DATA presentation style
+    widths = [130, 80, 60, 75, 75, 90, 90, 90, 70, 60, 70, 75, 75, 75, 110]
     reqs = sheet_formatter.get_structural_format_reqs(
         ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=2)
 
@@ -598,6 +599,12 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
         try:
             ret_pct = float(row[8]) if row[8] else 0.0
             req = sheet_formatter.color_positive_negative(ws.id, rn, 8, ret_pct)
+            if req: reqs.append(req)
+        except: pass
+
+        try:
+            xirr_pct = float(row[10]) if row[10] else 0.0
+            req = sheet_formatter.color_positive_negative(ws.id, rn, 10, xirr_pct)
             if req: reqs.append(req)
         except: pass
         

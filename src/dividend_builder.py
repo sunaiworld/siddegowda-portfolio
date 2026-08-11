@@ -272,66 +272,57 @@ def write_dividends_tab(sh, sum_rows):
 
     cf_index = 0
 
-    if len(sum_rows) > 1 and total_idx > 1:
-        # Yearly dividend columns (B .. column before Total): white -> medium
-        # green gradient. Zero values sit at/near the min, so they render
-        # neutral/white rather than being treated as a high value.
-        reqs.append({
-            "addConditionalFormatRule": {
-                "rule": {
-                    "ranges": [{
-                        "sheetId": ws_id,
-                        "startRowIndex": 1,
-                        "endRowIndex": len(sum_rows),
-                        "startColumnIndex": 1,
-                        "endColumnIndex": total_idx
-                    }],
-                    "gradientRule": {
-                        "minpoint": {"color": hex_rgb("ffffff"), "type": "MIN"},
-                        "maxpoint": {"color": hex_rgb("66bb6a"), "type": "MAX"}
-                    }
-                },
-                "index": cf_index
-            }
-        })
-        cf_index += 1
-
-        # Total Dividend column: same family but darker/more prominent.
-        reqs.append({
-            "addConditionalFormatRule": {
-                "rule": {
-                    "ranges": [{
-                        "sheetId": ws_id,
-                        "startRowIndex": 1,
-                        "endRowIndex": len(sum_rows),
-                        "startColumnIndex": total_idx,
-                        "endColumnIndex": total_idx + 1
-                    }],
-                    "gradientRule": {
-                        "minpoint": {"color": hex_rgb("ffffff"), "type": "MIN"},
-                        "maxpoint": {"color": hex_rgb("1b5e20"), "type": "MAX"}
-                    }
-                },
-                "index": cf_index
-            }
-        })
-        cf_index += 1
-
     if pct_idx is not None and len(sum_rows) > 1:
-        # Dividend % — higher % = stronger green, lower/blank = neutral.
+        # Dividend % — >= 2% (green), >= 1% (yellow)
         reqs.append({
             "addConditionalFormatRule": {
                 "rule": {
-                    "ranges": [{
-                        "sheetId": ws_id,
-                        "startRowIndex": 1,
-                        "endRowIndex": len(sum_rows),
-                        "startColumnIndex": pct_idx,
-                        "endColumnIndex": pct_idx + 1
-                    }],
-                    "gradientRule": {
-                        "minpoint": {"color": hex_rgb("ffffff"), "type": "MIN"},
-                        "maxpoint": {"color": hex_rgb("2e7d32"), "type": "MAX"}
+                    "ranges": [{"sheetId": ws_id, "startRowIndex": 1, "endRowIndex": len(sum_rows), "startColumnIndex": pct_idx, "endColumnIndex": pct_idx + 1}],
+                    "booleanRule": {
+                        "condition": {"type": "NUMBER_GREATER_THAN_EQ", "values": [{"userEnteredValue": "0.02"}]},
+                        "format": {"backgroundColor": hex_rgb("d9ead3"), "textFormat": {"foregroundColor": hex_rgb("0b8043")}}
+                    }
+                },
+                "index": cf_index
+            }
+        })
+        cf_index += 1
+        reqs.append({
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": [{"sheetId": ws_id, "startRowIndex": 1, "endRowIndex": len(sum_rows), "startColumnIndex": pct_idx, "endColumnIndex": pct_idx + 1}],
+                    "booleanRule": {
+                        "condition": {"type": "NUMBER_GREATER_THAN_EQ", "values": [{"userEnteredValue": "0.01"}]},
+                        "format": {"backgroundColor": hex_rgb("fff2cc"), "textFormat": {"foregroundColor": hex_rgb("7f4f00")}}
+                    }
+                },
+                "index": cf_index
+            }
+        })
+        cf_index += 1
+
+    if market_yield_idx is not None and len(sum_rows) > 1:
+        # Market Dividend Yield % — >= 2% (green), >= 1% (yellow) to match GITHUB DATA
+        reqs.append({
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": [{"sheetId": ws_id, "startRowIndex": 1, "endRowIndex": len(sum_rows), "startColumnIndex": market_yield_idx, "endColumnIndex": market_yield_idx + 1}],
+                    "booleanRule": {
+                        "condition": {"type": "NUMBER_GREATER_THAN_EQ", "values": [{"userEnteredValue": "0.02"}]},
+                        "format": {"backgroundColor": hex_rgb("d9ead3"), "textFormat": {"foregroundColor": hex_rgb("0b8043")}}
+                    }
+                },
+                "index": cf_index
+            }
+        })
+        cf_index += 1
+        reqs.append({
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": [{"sheetId": ws_id, "startRowIndex": 1, "endRowIndex": len(sum_rows), "startColumnIndex": market_yield_idx, "endColumnIndex": market_yield_idx + 1}],
+                    "booleanRule": {
+                        "condition": {"type": "NUMBER_GREATER_THAN_EQ", "values": [{"userEnteredValue": "0.01"}]},
+                        "format": {"backgroundColor": hex_rgb("fff2cc"), "textFormat": {"foregroundColor": hex_rgb("7f4f00")}}
                     }
                 },
                 "index": cf_index
@@ -351,11 +342,7 @@ def write_dividends_tab(sh, sum_rows):
     if pct_idx is not None:
         reqs += get_percentage_format_reqs(ws_id, 1, len(sum_rows), pct_idx, pct_idx + 1)
 
-    # Percentage format for Market Dividend Yield % — intentionally NO
-    # conditional-format gradient here. This is a pure market metric and
-    # stays visually neutral (plain alternating white/light-grey banding
-    # from the structural formatting above), unlike the dividend-analysis
-    # columns which are deliberately shaded green.
+    # Percentage format for Market Dividend Yield %.
     if market_yield_idx is not None:
         reqs += get_true_percentage_format_reqs(ws_id, 1, len(sum_rows), market_yield_idx, market_yield_idx + 1)
 
