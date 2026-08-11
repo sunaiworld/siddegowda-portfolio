@@ -44,14 +44,21 @@ def process_dividends(fund_map):
     Reads Zerodha dividend CSVs and computes the year-wise dividend
     summary for the 'Dividends' tab:
 
-        Stock | <year> Dividend ... | Total Dividend | Amount Invested | Dividend %
+        Stock | <year> Dividend ... | Total Dividend | Amount Invested
+        | Dividend % | Market Dividend Yield %
 
     sorted by Total Dividend descending. Amount Invested is the true cost
     basis reused from the Portfolio tab's data source (see
     _get_invested_map); Dividend % = Total Dividend / Amount Invested x 100
-    (historical dividend received relative to invested capital — NOT a
-    CMP-based dividend yield). If a stock has no investment data, both
-    Amount Invested and Dividend % are left blank rather than estimated.
+    (historical dividend received relative to invested capital — a personal
+    return metric). Market Dividend Yield % is a completely separate,
+    portfolio-independent market metric (Annual Dividend Per Share / CMP x
+    100) reused as-is from fund_map[sym]["div"] — the same yfinance-based
+    field fetch_fundamentals() already computes and main.py already passes
+    into this function. If a stock has no investment data, Amount Invested
+    and Dividend % are left blank; if fund_map has no dividend-yield data
+    for a stock, Market Dividend Yield % is left blank. Nothing is
+    estimated.
 
     The per-transaction detail (Ex-Date/Qty/Div-per-share) is used only
     internally to compute the yearly sums — it is not written to the sheet.
@@ -107,10 +114,10 @@ def process_dividends(fund_map):
 
     invested_map = _get_invested_map()
 
-    # Build summary rows: Stock | <year> Dividend ... | Total Dividend | Amount Invested | Dividend %
+    # Build summary rows: Stock | <year> Dividend ... | Total Dividend | Amount Invested | Dividend % | Market Dividend Yield %
     sum_headers = (
         ["Stock"] + [f"{int(y)} Dividend" for y in years]
-        + ["Total Dividend", "Amount Invested", "Dividend %"]
+        + ["Total Dividend", "Amount Invested", "Dividend %", "Market Dividend Yield %"]
     )
     sum_rows = [sum_headers]
 
@@ -122,7 +129,17 @@ def process_dividends(fund_map):
         else:
             invested = ""
             div_pct = ""
-        r = [sym] + [row[y] for y in years] + [total_div, invested, div_pct]
+
+        # Market Dividend Yield % is a pure market metric (Annual Dividend
+        # Per Share / CMP x 100) — independent of holdings/qty/invested
+        # amount. Reused as-is from fetch_fundamentals()'s existing
+        # yfinance-based "div" field (data_fetcher.py) rather than
+        # recomputed here, so this is never a second competing calculation.
+        market_yield = (fund_map or {}).get(sym, {}).get("div")
+        if market_yield in (None, ""):
+            market_yield = ""
+
+        r = [sym] + [row[y] for y in years] + [total_div, invested, div_pct, market_yield]
         sum_rows.append(r)
 
     import math
@@ -143,11 +160,14 @@ def process_dividends(fund_map):
 def write_dividends_tab(sh, sum_rows):
     """
     Writes the year-wise dividend summary — Stock, <year> Dividend...,
-    Total Dividend, Amount Invested, Dividend % — to the Dividends tab,
-    starting at A1. Reuses the same structural styling as GITHUB DATA /
-    Portfolio (header, freeze, banding), applies green gradients to the
-    dividend columns and Dividend %, currency formatting to Amount Invested,
-    percentage formatting to Dividend %, and a filter over the full table.
+    Total Dividend, Amount Invested, Dividend %, Market Dividend Yield % —
+    to the Dividends tab, starting at A1. Reuses the same structural
+    styling as GITHUB DATA / Portfolio (header, freeze, alternating
+    white/light-grey row banding across the full A:J range), applies green
+    gradients to the dividend columns and Dividend % only, currency
+    formatting to Amount Invested, percentage formatting to Dividend % and
+    Market Dividend Yield % (no gradient on the latter — stays neutral),
+    and a filter over the full table.
     """
     import time
     import gspread.exceptions as _gse
@@ -168,11 +188,12 @@ def write_dividends_tab(sh, sum_rows):
     total_idx = headers.index("Total Dividend") if "Total Dividend" in headers else max(num_cols - 3, 0)
     invested_idx = headers.index("Amount Invested") if "Amount Invested" in headers else None
     pct_idx = headers.index("Dividend %") if "Dividend %" in headers else None
+    market_yield_idx = headers.index("Market Dividend Yield %") if "Market Dividend Yield %" in headers else None
 
     try:
         ws = sh.worksheet(tab_name)
     except _gse.WorksheetNotFound:
-        ws = sh.add_worksheet(tab_name, rows=300, cols=max(num_cols, 9))
+        ws = sh.add_worksheet(tab_name, rows=300, cols=max(num_cols, 10))
 
     for _attempt in range(3):
         try:
@@ -186,7 +207,7 @@ def write_dividends_tab(sh, sum_rows):
 
     # Trim the sheet down to exactly the columns we need.
     try:
-        ws.resize(rows=max(len(sum_rows) + 20, 100), cols=max(num_cols, 9))
+        ws.resize(rows=max(len(sum_rows) + 20, 100), cols=max(num_cols, 10))
     except _gse.APIError:
         pass  # non-fatal — formatting below still targets the correct range
 
@@ -211,6 +232,8 @@ def write_dividends_tab(sh, sum_rows):
         widths += [140] * (invested_idx - len(widths) + 1)
     if pct_idx is not None:
         widths += [110] * (pct_idx - len(widths) + 1)
+    if market_yield_idx is not None:
+        widths += [170] * (market_yield_idx - len(widths) + 1)
     widths = (widths + [110] * num_cols)[:num_cols]
 
     reqs = get_structural_format_reqs(ws_id, len(sum_rows), num_cols, widths, freeze_rows=1, freeze_cols=1)
@@ -314,7 +337,15 @@ def write_dividends_tab(sh, sum_rows):
     if pct_idx is not None:
         reqs += get_percentage_format_reqs(ws_id, 1, len(sum_rows), pct_idx, pct_idx + 1)
 
-    # Filter over the full table (A:I).
+    # Percentage format for Market Dividend Yield % — intentionally NO
+    # conditional-format gradient here. This is a pure market metric and
+    # stays visually neutral (plain alternating white/light-grey banding
+    # from the structural formatting above), unlike the dividend-analysis
+    # columns which are deliberately shaded green.
+    if market_yield_idx is not None:
+        reqs += get_percentage_format_reqs(ws_id, 1, len(sum_rows), market_yield_idx, market_yield_idx + 1)
+
+    # Filter over the full table (A:J).
     reqs.append({
         "setBasicFilter": {
             "filter": {
