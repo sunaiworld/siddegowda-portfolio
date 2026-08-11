@@ -107,6 +107,7 @@ def fetch_fundamentals(sym, retries=3):
             roce = round(ebit / (ta_ - tl) * 100, 2) if (ta_ - tl) > 0 else None
             roa  = round(info.get("returnOnAssets", 0) * 100, 2) if info.get("returnOnAssets") else None
             return {
+                "shortName": info.get("shortName", ""),
                 "sector":   info.get("sector", ""),
                 "industry": info.get("industry", ""),
                 "high52":   info.get("fiftyTwoWeekHigh") or None,
