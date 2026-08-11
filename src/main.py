@@ -11,6 +11,7 @@ from telegram_alerts import *
 from portfolio_builder import *
 import mutual_fund_builder
 import dividend_builder
+from profiler import profiler
 
 #!/usr/bin/env python3
 """
@@ -96,10 +97,14 @@ def run_portfolio_update(sh):
     cron AND the /refresh bot command both call this — single source
     of truth, no duplicated pipeline logic).
     """
+    profiler.start_stage("[01] Load configuration")
     symbols = read_symbols(sh)
     if not symbols:
-        log.error("No symbols found.")
+        profiler.stop_stage("[01] Load configuration", category="Python processing")
         return None
+    
+    profiler.stop_stage("[01] Load configuration", category="Python processing")
+
 
     # Real trades live in data/imports/{zerodha,groww} now, not the legacy
     # "Trade Log" sheet tab (which is empty/unused) — load_all_trades()
@@ -108,31 +113,35 @@ def run_portfolio_update(sh):
     # into the row shape get_avg_buy_and_qty/get_xirr/get_entry_date
     # already expect, so nothing downstream (Dashboard holdings dict,
     # SL/target alerts, per-symbol XIRR) needs to change.
-    trades = trades_to_legacy_rows(load_all_trades())
+    with profiler.stage("[03] Load CSV data", category="Python processing"):
+        trades = trades_to_legacy_rows(load_all_trades())
+    
     log.info(f"Found {len(symbols)} symbols")
 
     log.info("Fetching prices...")
-    prices = fetch_prices_batch(symbols)
+    with profiler.stage("[04] yfinance price download", category="Yahoo/yfinance"):
+        prices = fetch_prices_batch(symbols)
 
     log.info("Fetching fundamentals...")
-    fund_map = {}
-    fc_cache = fund_cache.load_cache(sh)
-    
-    def _fetch_fund(sym):
-        return sym, fund_cache.get_or_fetch_fundamentals(sym, fc_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
+    with profiler.stage("[05] yfinance fundamentals", category="Yahoo/yfinance"):
+        fund_map = {}
+        fc_cache = fund_cache.load_cache(sh)
+        
+        def _fetch_fund(sym):
+            return sym, fund_cache.get_or_fetch_fundamentals(sym, fc_cache, max_age_days=FUNDAMENTALS_CACHE_DAYS)
 
-    with ThreadPoolExecutor(max_workers=TECH_WORKERS) as ex:
-        futures = {ex.submit(_fetch_fund, sym): sym for sym in symbols}
-        for fut in as_completed(futures):
-            sym = futures[fut]
-            try:
-                _, data = fut.result()
-                fund_map[sym] = data
-            except Exception as e:
-                log.warning(f"  fundamentals failed {sym}: {e}")
-                fund_map[sym] = {}
-                
-    fund_cache.save_cache(sh, fc_cache)
+        with ThreadPoolExecutor(max_workers=TECH_WORKERS) as ex:
+            futures = {ex.submit(_fetch_fund, sym): sym for sym in symbols}
+            for fut in as_completed(futures):
+                sym = futures[fut]
+                try:
+                    _, data = fut.result()
+                    fund_map[sym] = data
+                except Exception as e:
+                    log.warning(f"  fundamentals failed {sym}: {e}")
+                    fund_map[sym] = {}
+                    
+        fund_cache.save_cache(sh, fc_cache)
 
     # Technicals + revenue growth: both hit yfinance directly (no cache layer
     # like fundamentals has), so this is the biggest per-symbol serial cost
@@ -258,12 +267,14 @@ def run_portfolio_update(sh):
                 except Exception as e:
                     log.warning(f"  News stage failed for {sym}: {e}")
 
+    profiler.start_stage("[07] Portfolio calculations")
     results, failed = [], []
     alerts = {"sl_breach": [], "target_hit": [], "strong_buy": [], "sell_watch": []}
     top_picks = []
 
     for sym in symbols:
         cmp = prices.get(sym)
+        profiler.increment("Stocks processed")
         if not cmp:
             failed.append(sym)
             log.warning(f"  SKIP {sym} — no price")
@@ -298,6 +309,7 @@ def run_portfolio_update(sh):
         log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}")
 
     top_picks.sort(key=lambda x: x["total"], reverse=True)
+    profiler.stop_stage("[07] Portfolio calculations", category="Python processing")
 
     if nc_ws is not None:
         news_cache.flush(nc_ws, nc_row_map, pending_news)
@@ -310,11 +322,13 @@ def run_portfolio_update(sh):
     _sym_index = {s: i for i, s in enumerate(symbols)}
     results.sort(key=lambda r: _sym_index.get(r[GITHUB_DATA_COLS["symbol"]], len(symbols)))
     write_github_data(sh, results, tab_name="GITHUB DATA")
+    profiler.increment("Rows written", len(results))
     log.info(f"[CHECKPOINT] About to write GITHUB DATA — {len(results)} rows built")
 
     try:
         portfolio_rows = build_portfolio(prices)
-        write_portfolio(sh, portfolio_rows)
+        with profiler.stage("[09] Portfolio sheet write", category="Google Sheets"):
+            write_portfolio(sh, portfolio_rows)
     except Exception as e:
         log.error(f"[CHECKPOINT] Portfolio build/write FAILED: {e}", exc_info=True)
         raise
@@ -374,9 +388,11 @@ def run_portfolio_update(sh):
 
     try:
         log.info("Building Dividends tab...")
-        div_rows = dividend_builder.process_dividends(fund_map)
+        with profiler.stage("[06] Dividend processing", category="Python processing"):
+            div_rows = dividend_builder.process_dividends(fund_map)
         if div_rows:
-            dividend_builder.write_dividends_tab(sh, div_rows)
+            with profiler.stage("[10] Dividends sheet write", category="Google Sheets"):
+                dividend_builder.write_dividends_tab(sh, div_rows)
     except Exception as e:
         log.error(f"Dividend tab build/write FAILED: {e}", exc_info=True)
 
@@ -394,8 +410,9 @@ def main():
     log.info(f"Run time: {datetime.now().strftime('%d-%b-%Y %H:%M:%S')}")
     log.info("═" * 55)
 
-    gc = get_gspread_client()
-    sh = gc.open_by_key(SHEET_ID)
+    with profiler.stage("[08] Google Sheets authentication", category="Google Sheets"):
+        gc = get_gspread_client()
+        sh = gc.open_by_key(SHEET_ID)
     log.info("Connected to Google Sheets")
 
     try:
@@ -418,11 +435,12 @@ def main():
     send_telegram(msg)
 
     # ── Mutual Fund update (isolated — never breaks stock pipeline) ───
-    try:
-        mutual_fund_builder.run_mutual_fund_update(sh)
-    except Exception as mf_e:
-        log.error(f"Mutual Fund update FAILED: {mf_e}", exc_info=True)
-        send_telegram(f"⚠️ Mutual Fund update failed — {type(mf_e).__name__}: {mf_e}")
+    with profiler.stage("[12] Other (Mutual Fund)", category="Other"):
+        try:
+            mutual_fund_builder.run_mutual_fund_update(sh)
+        except Exception as mf_e:
+            log.error(f"Mutual Fund update FAILED: {mf_e}", exc_info=True)
+            send_telegram(f"⚠️ Mutual Fund update failed — {type(mf_e).__name__}: {mf_e}")
 
     log.info("═" * 55)
     log.info(f"✅ {len(out['results'])} stocks updated | ❌ Failed: {out['failed'] or 'None'}")
@@ -434,6 +452,8 @@ def main():
     for r in out["top_picks"][:5]:
         log.info(f"   {r['sym']:<12} Score:{r['total']:>3}  {r['action']}")
     log.info("═" * 55)
+    
+    profiler.print_summary()
 
 if __name__ == "__main__":
     main()

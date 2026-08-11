@@ -22,6 +22,7 @@ from news_engine import classifier
 log = logging.getLogger("portfolio")
 
 from config import *
+from profiler import profiler
 
 
 
@@ -95,6 +96,7 @@ def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
 
 
 def get_structural_format_reqs(ws_id, num_rows, num_cols, widths=None, freeze_rows=1, freeze_cols=1):
+    profiler.increment("Formatting operations")
     reqs = []
     # Header format
     reqs.append({

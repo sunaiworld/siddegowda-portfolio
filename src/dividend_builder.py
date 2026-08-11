@@ -2,6 +2,7 @@ import os
 import glob
 import pandas as pd
 import logging
+from profiler import profiler
 
 log = logging.getLogger(__name__)
 
@@ -141,6 +142,7 @@ def process_dividends(fund_map):
 
         r = [sym] + [row[y] for y in years] + [total_div, invested, div_pct, market_yield]
         sum_rows.append(r)
+        profiler.increment("Rows written")
 
     import math
 

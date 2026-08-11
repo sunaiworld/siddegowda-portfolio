@@ -22,6 +22,7 @@ from news_engine import classifier
 log = logging.getLogger("portfolio")
 
 from config import *
+from profiler import profiler
 
 
 
@@ -30,6 +31,7 @@ from config import *
 # ══════════════════════════════════════════════
 def fetch_technicals(sym):
     try:
+        profiler.increment("Yahoo requests")
         df = yf.download(
             sym + ".NS", period="1y", interval="1d",
             progress=False, threads=False
@@ -97,6 +99,7 @@ def fetch_technicals(sym):
 def fetch_fundamentals(sym, retries=3):
     for attempt in range(retries):
         try:
+            profiler.increment("Yahoo requests")
             tk   = yf.Ticker(sym + ".NS")
             info = tk.info
             mcap_raw = info.get("marketCap", 0) or 0
@@ -142,6 +145,7 @@ def fetch_fundamentals(sym, retries=3):
 
 def fetch_rev_growth(sym):
     try:
+        profiler.increment("Yahoo requests")
         fin = yf.Ticker(sym + ".NS").financials
         if fin is not None and not fin.empty and "Total Revenue" in fin.index:
             rv = fin.loc["Total Revenue"].dropna()
@@ -161,10 +165,12 @@ def fetch_prices_batch(symbols):
     for i in range(0, len(ns_syms), BATCH_SIZE):
         batch      = ns_syms[i:i + BATCH_SIZE]
         batch_orig = symbols[i:i + BATCH_SIZE]
+        batch_str  = " ".join(batch)
         for attempt in range(3):
             try:
+                profiler.increment("Yahoo requests")
                 df = yf.download(
-                    tickers=batch, period="5d", interval="1d",
+                    tickers=batch_str, period="5d", interval="1d",
                     group_by="ticker", auto_adjust=True,
                     progress=False, threads=False
                 )
