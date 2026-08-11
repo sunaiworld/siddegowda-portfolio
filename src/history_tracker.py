@@ -94,7 +94,7 @@ def _gradient_color(score, lo=0, hi=100):
     return f"{r:02x}{g:02x}{b:02x}"
 
 
-def _format_data_tab(sh, ws, headers, num_data_rows, total_score_col=None, action_col=None):
+def _format_data_tab(sh, ws, headers, num_data_rows, total_score_col=None, action_col=None, new_rows_count=None):
     """
     Shared presentation-only formatter reused for both History and
     Portfolio History. Reuses main.py's hex_rgb / color_cell_req /
@@ -143,13 +143,16 @@ def _format_data_tab(sh, ws, headers, num_data_rows, total_score_col=None, actio
         }})
 
     # Alternating row colors + per-row score gradient / action color
-    if num_data_rows > 0 and (total_score_col is not None or action_col is not None):
+    if num_data_rows > 0 and (total_score_col is not None or action_col is not None) and new_rows_count != 0:
         try:
             all_values = ws.get_all_values()[1:]
         except Exception:
             all_values = []
 
-        for i, row in enumerate(all_values):
+        start_idx = 0 if new_rows_count is None else max(0, len(all_values) - new_rows_count)
+
+        for i in range(start_idx, len(all_values)):
+            row = all_values[i]
             rn = i + 1
             alt = "f8f9fa" if i % 2 == 0 else "ffffff"
             reqs.append({"repeatCell": {
@@ -179,7 +182,7 @@ def _format_data_tab(sh, ws, headers, num_data_rows, total_score_col=None, actio
     batch_update_safe(sh, reqs)
 
 
-def _format_history_tab(sh, ws, num_data_rows):
+def _format_history_tab(sh, ws, num_data_rows, new_rows_count=None):
     from main import hex_rgb, batch_update_safe  # lazy import
 
     reqs = []
@@ -204,10 +207,10 @@ def _format_history_tab(sh, ws, num_data_rows):
         batch_update_safe(sh, reqs)
 
     _format_data_tab(sh, ws, HISTORY_HEADERS, num_data_rows,
-                      total_score_col=_H["Total Score"], action_col=_H["Final Action"])
+                      total_score_col=_H["Total Score"], action_col=_H["Final Action"], new_rows_count=new_rows_count)
 
 
-def _format_portfolio_history_tab(sh, ws, num_data_rows):
+def _format_portfolio_history_tab(sh, ws, num_data_rows, new_rows_count=None):
     from main import batch_update_safe  # lazy import
 
     reqs = []
@@ -228,7 +231,7 @@ def _format_portfolio_history_tab(sh, ws, num_data_rows):
         batch_update_safe(sh, reqs)
 
     # Health Score gets the same gradient as Total Score (col index 2)
-    _format_data_tab(sh, ws, PORTFOLIO_HISTORY_HEADERS, num_data_rows, total_score_col=2, action_col=None)
+    _format_data_tab(sh, ws, PORTFOLIO_HISTORY_HEADERS, num_data_rows, total_score_col=2, action_col=None, new_rows_count=new_rows_count)
 
 
 def append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=None):
@@ -268,7 +271,7 @@ def append_history_snapshot(sh, results, portfolio_live_value, prices, health_sc
     log.info(f"History: {len(snap_rows)} symbol snapshots appended for {today}")
 
     total_history_rows = len(ws.get_all_values()) - 1
-    _format_history_tab(sh, ws, total_history_rows)
+    _format_history_tab(sh, ws, total_history_rows, len(snap_rows))
 
     ph_headers = PORTFOLIO_HISTORY_HEADERS
     pws = _get_or_create(sh, PORTFOLIO_HISTORY_TAB, ph_headers)
@@ -278,7 +281,7 @@ def append_history_snapshot(sh, results, portfolio_live_value, prices, health_sc
     log.info(f"Portfolio History: value + health snapshot appended for {today}")
 
     total_ph_rows = len(pws.get_all_values()) - 1
-    _format_portfolio_history_tab(sh, pws, total_ph_rows)
+    _format_portfolio_history_tab(sh, pws, total_ph_rows, 1)
 
 
 def _load_previous_trading_day_snapshot(sh):
