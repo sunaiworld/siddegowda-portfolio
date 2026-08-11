@@ -22,7 +22,7 @@ from news_engine import classifier
 log = logging.getLogger("portfolio")
 
 from config import *
-
+from profiler import profiler
 
 # ══════════════════════════════════════════════
 # GOOGLE SHEETS AUTH
@@ -50,6 +50,7 @@ def batch_update_safe(sh, requests, chunk=30):
         slice_ = requests[i:i + chunk]
         for attempt in range(5):  # up to 5 retries
             try:
+                profiler.increment("Sheets requests")
                 sh.batch_update({"requests": slice_})
                 time.sleep(1.5)   # 1.5 s between every chunk to stay under quota
                 break

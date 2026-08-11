@@ -27,6 +27,7 @@ from news_engine import classifier
 log = logging.getLogger("portfolio")
 
 from config import *
+from profiler import profiler
 
 
 # ══════════════════════════════════════════════
@@ -568,6 +569,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     ws.clear()
     ws.update("A1", all_data, value_input_option="RAW")
     log.info(f"write_portfolio: wrote {len(all_data)} rows to '{tab_name}'")
+    profiler.increment("Rows written", len(all_data))
 
     nc = len(headers)
     widths = [200, 100, 80, 80, 80, 100, 100, 100, 80, 70, 100, 90, 90, 90, 150]
