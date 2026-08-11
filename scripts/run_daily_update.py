@@ -99,6 +99,10 @@ def main():
     safe_print("Completed successfully.")
     safe_print(f"Total Runtime : {runtime} seconds")
     safe_print("==================================================")
+    
+    # Print the profiler summary which is captured in stdout
+    if "PERFORMANCE SUMMARY" in engine_proc.stdout:
+        safe_print(engine_proc.stdout[engine_proc.stdout.find("========== PERFORMANCE SUMMARY =========="):])
 
 if __name__ == "__main__":
     main()
