@@ -239,14 +239,16 @@ def write_dividends_tab(sh, sum_rows):
     # Structural formatting — same header/freeze/row-banding treatment as
     # GITHUB DATA / Portfolio.
     num_year_cols = max(total_idx - 1, 0)
-    widths = [130] + [110] * num_year_cols
+    widths = [90] + [80] * num_year_cols
+    if total_idx >= 1:
+        widths += [90]
     if invested_idx is not None:
-        widths += [140] * (invested_idx - len(widths) + 1)
+        widths += [100] * (invested_idx - len(widths) + 1)
     if pct_idx is not None:
-        widths += [110] * (pct_idx - len(widths) + 1)
+        widths += [80] * (pct_idx - len(widths) + 1)
     if market_yield_idx is not None:
-        widths += [170] * (market_yield_idx - len(widths) + 1)
-    widths = (widths + [110] * num_cols)[:num_cols]
+        widths += [90] * (market_yield_idx - len(widths) + 1)
+    widths = (widths + [90] * num_cols)[:num_cols]
 
     reqs = get_structural_format_reqs(ws_id, len(sum_rows), num_cols, widths, freeze_rows=1, freeze_cols=1)
 
