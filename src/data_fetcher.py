@@ -117,7 +117,7 @@ def fetch_fundamentals(sym, retries=3):
                 "eps":      round(info.get("trailingEps", 0), 2)        if info.get("trailingEps")    else None,
                 "bv":       round(info.get("bookValue", 0), 2)          if info.get("bookValue")      else None,
                 "pb":       round(info.get("priceToBook", 0), 2)        if info.get("priceToBook")    else None,
-                "div":      round(info.get("dividendYield", 0) * 100, 2)if info.get("dividendYield") else None,
+                "div":      round(info.get("dividendYield", 0), 6) if info.get("dividendYield") else None,
                 "roe":      round(info.get("returnOnEquity", 0) * 100, 2)if info.get("returnOnEquity")else None,
                 "roa":      roa,
                 "roce":     roce,

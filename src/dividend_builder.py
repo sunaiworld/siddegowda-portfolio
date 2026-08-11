@@ -174,9 +174,10 @@ def write_dividends_tab(sh, sum_rows):
     from sheet_writer import batch_update_safe
     from sheet_formatter import (
         get_structural_format_reqs,
+        hex_rgb,
         get_currency_format_reqs,
         get_percentage_format_reqs,
-        hex_rgb,
+        get_true_percentage_format_reqs
     )
 
     tab_name = "Dividends"
@@ -343,7 +344,7 @@ def write_dividends_tab(sh, sum_rows):
     # from the structural formatting above), unlike the dividend-analysis
     # columns which are deliberately shaded green.
     if market_yield_idx is not None:
-        reqs += get_percentage_format_reqs(ws_id, 1, len(sum_rows), market_yield_idx, market_yield_idx + 1)
+        reqs += get_true_percentage_format_reqs(ws_id, 1, len(sum_rows), market_yield_idx, market_yield_idx + 1)
 
     # Filter over the full table (A:J).
     reqs.append({
