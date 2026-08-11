@@ -5,15 +5,56 @@ import logging
 
 log = logging.getLogger(__name__)
 
+
+def _get_invested_map(imports_dir="data/imports"):
+    """
+    Returns {symbol: total_invested_amount}, using the exact same cost-basis
+    source the Portfolio tab uses: portfolio_builder.compute_holdings() over
+    portfolio_builder.load_all_trades() (true cost basis from broker trade
+    history — never CMP x qty, never an estimate). Summed across brokers per
+    symbol, mirroring how build_portfolio()'s "combined" view aggregates
+    Invested. No duplicate calculation logic — this reuses the same
+    functions the Portfolio tab is built from.
+    """
+    try:
+        from portfolio_builder import load_all_trades, compute_holdings
+    except Exception as e:
+        log.warning(f"Could not import portfolio_builder for invested amounts: {e}")
+        return {}
+
+    try:
+        trades = load_all_trades(imports_dir)
+        holdings = compute_holdings(trades)  # keyed "broker:symbol"
+    except Exception as e:
+        log.warning(f"Could not compute holdings for invested amounts: {e}")
+        return {}
+
+    invested = {}
+    for h in holdings.values():
+        sym = h.get("symbol", "")
+        cost = h.get("cost", 0.0)
+        if not sym:
+            continue
+        invested[sym] = invested.get(sym, 0.0) + cost
+    return invested
+
+
 def process_dividends(fund_map):
     """
     Reads Zerodha dividend CSVs and computes the year-wise dividend
-    summary for the 'Dividends' tab (Stock, <year> Dividend..., Total
-    Dividend), sorted by Total Dividend descending.
+    summary for the 'Dividends' tab:
+
+        Stock | <year> Dividend ... | Total Dividend | Amount Invested | Dividend %
+
+    sorted by Total Dividend descending. Amount Invested is the true cost
+    basis reused from the Portfolio tab's data source (see
+    _get_invested_map); Dividend % = Total Dividend / Amount Invested x 100
+    (historical dividend received relative to invested capital — NOT a
+    CMP-based dividend yield). If a stock has no investment data, both
+    Amount Invested and Dividend % are left blank rather than estimated.
 
     The per-transaction detail (Ex-Date/Qty/Div-per-share) is used only
-    internally to compute the yearly sums — it is no longer written to
-    the sheet.
+    internally to compute the yearly sums — it is not written to the sheet.
     """
     PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     div_dir = os.path.join(PROJECT_ROOT, "data", "imports", "Dividend_Zerodha")
@@ -58,18 +99,30 @@ def process_dividends(fund_map):
     # Sort columns (years) ascending
     years = sorted([c for c in pivot.columns if isinstance(c, (int, float))])
 
-    # Calculate Total
+    # Calculate Total (unchanged — existing dividend calc/logic untouched)
     pivot['Total Dividend'] = pivot.sum(axis=1)
 
     # Sort by Total Dividend descending to highlight highest earners
     pivot = pivot.sort_values(by='Total Dividend', ascending=False)
 
-    # Build summary rows: Stock | <year> Dividend ... | Total Dividend
-    sum_headers = ["Stock"] + [f"{int(y)} Dividend" for y in years] + ["Total Dividend"]
+    invested_map = _get_invested_map()
+
+    # Build summary rows: Stock | <year> Dividend ... | Total Dividend | Amount Invested | Dividend %
+    sum_headers = (
+        ["Stock"] + [f"{int(y)} Dividend" for y in years]
+        + ["Total Dividend", "Amount Invested", "Dividend %"]
+    )
     sum_rows = [sum_headers]
 
     for sym, row in pivot.iterrows():
-        r = [sym] + [row[y] for y in years] + [row['Total Dividend']]
+        total_div = row['Total Dividend']
+        invested = invested_map.get(sym)
+        if invested and invested > 0:
+            div_pct = round((total_div / invested) * 100, 2)
+        else:
+            invested = ""
+            div_pct = ""
+        r = [sym] + [row[y] for y in years] + [total_div, invested, div_pct]
         sum_rows.append(r)
 
     import math
@@ -89,24 +142,37 @@ def process_dividends(fund_map):
 
 def write_dividends_tab(sh, sum_rows):
     """
-    Writes ONLY the year-wise dividend summary (Stock, <year> Dividend...,
-    Total Dividend) to the Dividends tab, starting at A1. Reuses the same
-    structural styling as GITHUB DATA / Portfolio (header, freeze, banding),
-    applies a green gradient heatmap to the dividend columns (B onwards),
-    and adds a filter over the full table.
+    Writes the year-wise dividend summary — Stock, <year> Dividend...,
+    Total Dividend, Amount Invested, Dividend % — to the Dividends tab,
+    starting at A1. Reuses the same structural styling as GITHUB DATA /
+    Portfolio (header, freeze, banding), applies green gradients to the
+    dividend columns and Dividend %, currency formatting to Amount Invested,
+    percentage formatting to Dividend %, and a filter over the full table.
     """
     import time
     import gspread.exceptions as _gse
     from sheet_writer import batch_update_safe
-    from sheet_formatter import get_structural_format_reqs, get_currency_format_reqs, hex_rgb
+    from sheet_formatter import (
+        get_structural_format_reqs,
+        get_currency_format_reqs,
+        get_percentage_format_reqs,
+        hex_rgb,
+    )
 
     tab_name = "Dividends"
-    num_cols = len(sum_rows[0]) if sum_rows else 0
+    headers = sum_rows[0] if sum_rows else []
+    num_cols = len(headers)
+
+    # Locate columns by header name rather than hardcoded offsets, so this
+    # stays correct regardless of how many dividend years are present.
+    total_idx = headers.index("Total Dividend") if "Total Dividend" in headers else max(num_cols - 3, 0)
+    invested_idx = headers.index("Amount Invested") if "Amount Invested" in headers else None
+    pct_idx = headers.index("Dividend %") if "Dividend %" in headers else None
 
     try:
         ws = sh.worksheet(tab_name)
     except _gse.WorksheetNotFound:
-        ws = sh.add_worksheet(tab_name, rows=300, cols=max(num_cols, 7))
+        ws = sh.add_worksheet(tab_name, rows=300, cols=max(num_cols, 9))
 
     for _attempt in range(3):
         try:
@@ -118,11 +184,9 @@ def write_dividends_tab(sh, sum_rows):
             else:
                 raise
 
-    # Trim the sheet down to exactly the columns we need — the old A:H
-    # transaction table + I:O summary layout no longer exists, so there's
-    # no reason to keep the sheet 15 columns wide.
+    # Trim the sheet down to exactly the columns we need.
     try:
-        ws.resize(rows=max(len(sum_rows) + 20, 100), cols=max(num_cols, 7))
+        ws.resize(rows=max(len(sum_rows) + 20, 100), cols=max(num_cols, 9))
     except _gse.APIError:
         pass  # non-fatal — formatting below still targets the correct range
 
@@ -141,13 +205,18 @@ def write_dividends_tab(sh, sum_rows):
 
     # Structural formatting — same header/freeze/row-banding treatment as
     # GITHUB DATA / Portfolio.
-    widths = [130] + [115] * (num_cols - 2) + [130] if num_cols >= 2 else [130] * num_cols
+    num_year_cols = max(total_idx - 1, 0)
+    widths = [130] + [110] * num_year_cols
+    if invested_idx is not None:
+        widths += [140] * (invested_idx - len(widths) + 1)
+    if pct_idx is not None:
+        widths += [110] * (pct_idx - len(widths) + 1)
+    widths = (widths + [110] * num_cols)[:num_cols]
+
     reqs = get_structural_format_reqs(ws_id, len(sum_rows), num_cols, widths, freeze_rows=1, freeze_cols=1)
 
-    # ── Clear any pre-existing conditional format rules on this sheet first.
-    # The previous implementation always inserted a new gradient rule at
-    # index 0 without ever removing the old one, so rules silently piled up
-    # on every daily run. Clear before re-adding so there's exactly one set.
+    # ── Clear any pre-existing conditional format rules on this sheet first,
+    # so rules don't accumulate on every daily run.
     try:
         meta = sh.fetch_sheet_metadata()
         sheet_meta = next(
@@ -164,8 +233,10 @@ def write_dividends_tab(sh, sum_rows):
     ]
     reqs = clear_cf_reqs + reqs
 
-    if len(sum_rows) > 1 and num_cols >= 2:
-        # Yearly dividend columns (B .. second-to-last): white -> medium
+    cf_index = 0
+
+    if len(sum_rows) > 1 and total_idx > 1:
+        # Yearly dividend columns (B .. column before Total): white -> medium
         # green gradient. Zero values sit at/near the min, so they render
         # neutral/white rather than being treated as a high value.
         reqs.append({
@@ -176,19 +247,19 @@ def write_dividends_tab(sh, sum_rows):
                         "startRowIndex": 1,
                         "endRowIndex": len(sum_rows),
                         "startColumnIndex": 1,
-                        "endColumnIndex": num_cols - 1
+                        "endColumnIndex": total_idx
                     }],
                     "gradientRule": {
                         "minpoint": {"color": hex_rgb("ffffff"), "type": "MIN"},
                         "maxpoint": {"color": hex_rgb("66bb6a"), "type": "MAX"}
                     }
                 },
-                "index": 0
+                "index": cf_index
             }
         })
+        cf_index += 1
 
-        # Total Dividend column: same family but darker/more prominent,
-        # so the highest total-dividend payers pop out immediately.
+        # Total Dividend column: same family but darker/more prominent.
         reqs.append({
             "addConditionalFormatRule": {
                 "rule": {
@@ -196,23 +267,54 @@ def write_dividends_tab(sh, sum_rows):
                         "sheetId": ws_id,
                         "startRowIndex": 1,
                         "endRowIndex": len(sum_rows),
-                        "startColumnIndex": num_cols - 1,
-                        "endColumnIndex": num_cols
+                        "startColumnIndex": total_idx,
+                        "endColumnIndex": total_idx + 1
                     }],
                     "gradientRule": {
                         "minpoint": {"color": hex_rgb("ffffff"), "type": "MIN"},
                         "maxpoint": {"color": hex_rgb("1b5e20"), "type": "MAX"}
                     }
                 },
-                "index": 1
+                "index": cf_index
             }
         })
+        cf_index += 1
 
-    # Currency format (₹#,##0.00) for all dividend value columns, B onwards.
-    if num_cols >= 2:
-        reqs += get_currency_format_reqs(ws_id, 1, len(sum_rows), 1, num_cols)
+    if pct_idx is not None and len(sum_rows) > 1:
+        # Dividend % — higher % = stronger green, lower/blank = neutral.
+        reqs.append({
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": [{
+                        "sheetId": ws_id,
+                        "startRowIndex": 1,
+                        "endRowIndex": len(sum_rows),
+                        "startColumnIndex": pct_idx,
+                        "endColumnIndex": pct_idx + 1
+                    }],
+                    "gradientRule": {
+                        "minpoint": {"color": hex_rgb("ffffff"), "type": "MIN"},
+                        "maxpoint": {"color": hex_rgb("2e7d32"), "type": "MAX"}
+                    }
+                },
+                "index": cf_index
+            }
+        })
+        cf_index += 1
 
-    # Filter over the full table.
+    # Currency format (₹#,##0.00): yearly dividend columns + Total Dividend.
+    if total_idx >= 1:
+        reqs += get_currency_format_reqs(ws_id, 1, len(sum_rows), 1, total_idx + 1)
+
+    # Currency format for Amount Invested.
+    if invested_idx is not None:
+        reqs += get_currency_format_reqs(ws_id, 1, len(sum_rows), invested_idx, invested_idx + 1)
+
+    # Percentage format (2 decimals, e.g. 5.25%) for Dividend %.
+    if pct_idx is not None:
+        reqs += get_percentage_format_reqs(ws_id, 1, len(sum_rows), pct_idx, pct_idx + 1)
+
+    # Filter over the full table (A:I).
     reqs.append({
         "setBasicFilter": {
             "filter": {
