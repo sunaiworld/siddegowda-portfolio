@@ -162,6 +162,16 @@ def get_percentage_format_reqs(ws_id, start_row, end_row, start_col, end_col):
         }
     }]
 
+def get_true_percentage_format_reqs(ws_id, start_row, end_row, start_col, end_col):
+    return [{
+        "repeatCell": {
+            "range": {"sheetId": ws_id, "startRowIndex": start_row, "endRowIndex": end_row,
+                      "startColumnIndex": start_col, "endColumnIndex": end_col},
+            "cell": {"userEnteredFormat": {"numberFormat": {"type": "PERCENTAGE", "pattern": "0.00%"}}},
+            "fields": "userEnteredFormat.numberFormat"
+        }
+    }]
+
 def color_positive_negative(ws_id, rn, col_idx, val):
     try:
         val_f = float(val)
