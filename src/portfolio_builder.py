@@ -398,7 +398,8 @@ def build_portfolio(prices, imports_dir="data/imports"):
         invested_raw = h["cost"]
 
         cmp = prices.get(sym)
-        if not cmp or cmp <= 0:
+        import math
+        if cmp is None or not isinstance(cmp, (int, float)) or math.isnan(cmp) or cmp <= 0:
             continue
 
         # Use the true total cost (not avg_buy * qty) so rounding of avg_buy
