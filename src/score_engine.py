@@ -678,3 +678,36 @@ def score_symbol(sym, cmp, f, tech, rev_gr, news_data=None):
         "strengths": strengths, "weaknesses": weaknesses,
     }
 
+# ══════════════════════════════════════════════
+# BUYING ZONE CLASSIFICATION
+# ══════════════════════════════════════════════
+def calculate_buying_zone(quality_score, valuation_score, total_score=None):
+    """
+    Evaluates whether a stock is a buy at current valuation/fundamental scores.
+    Outputs: WAIT, SMALL BUY, ACCUMULATE, ADD AGGRESSIVELY, INVESTIGATE
+    """
+    if quality_score is None:
+        quality_score = 0
+    if valuation_score is None:
+        valuation_score = 0
+        
+    # Extremely cheap valuation but potentially broken fundamentals
+    if valuation_score >= 25 and quality_score < 15:
+        return "INVESTIGATE"
+        
+    # High quality and very cheap valuation
+    if quality_score >= 25 and valuation_score >= 22:
+        return "ADD AGGRESSIVELY"
+        
+    # High quality, reasonable valuation, OR exceptional quality with slightly premium valuation
+    if (quality_score >= 25 and valuation_score >= 15) or (quality_score >= 32 and valuation_score >= 10):
+        return "ACCUMULATE"
+        
+    # Medium quality with decent valuation, or high quality but slightly expensive
+    if (quality_score >= 15 and valuation_score >= 15) or (quality_score >= 25 and valuation_score >= 5):
+        return "SMALL BUY"
+        
+    # Expensive valuation or poor fundamentals
+    return "WAIT"
+
+

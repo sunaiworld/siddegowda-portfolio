@@ -42,17 +42,17 @@ GITHUB_DATA_COLS = {
     "roe": 16, "roa": 17, "debt_eq": 18,
     "rev_growth": 19, "beta": 20,
     "strengths": 21, "weaknesses": 22, "technical_setup": 23,
-    "action": 24, "trend": 25,
-    "quality": 26, "valuation": 27, "timing": 28, "total": 29,
-    "vol_spike": 30,
-    "mcap": 31, "cap_type": 32,
+    "action": 24, "buying_zone": 25, "trend": 26,
+    "quality": 27, "valuation": 28, "timing": 29, "total": 30,
+    "vol_spike": 31,
+    "mcap": 32, "cap_type": 33,
     # ── News Engine columns (Phase A) ──────────────────────
-    "news_summary":   33,
-    "bullish_score":  34,
-    "bearish_score":  35,
-    "news_sentiment": 36,
-    "news_reason":    37,
-    "news_source":    38,
+    "news_summary":   34,
+    "bullish_score":  35,
+    "bearish_score":  36,
+    "news_sentiment": 37,
+    "news_reason":    38,
+    "news_source":    39,
 }
 
 # Header text per column key
@@ -67,7 +67,7 @@ GITHUB_DATA_HEADER_NAMES = {
     "rev_growth": "Rev Growth%", "beta": "Beta",
     "strengths": "Strengths", "weaknesses": "Weaknesses",
     "technical_setup": "Technical Setup",
-    "action": "Final Action", "trend": "Trend",
+    "action": "Final Action", "buying_zone": "Buying Zone", "trend": "Trend",
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
     "vol_spike": "Vol Spike",
     "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
@@ -92,7 +92,7 @@ GITHUB_DATA_COL_WIDTHS = {
     "rev_growth": 55, "beta": 45,
     "strengths": 200, "weaknesses": 200,
     "technical_setup": 110,
-    "action": 90, "trend": 90,
+    "action": 90, "buying_zone": 105, "trend": 90,
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
     "vol_spike": 55,
     "mcap": 65, "cap_type": 65,
@@ -177,6 +177,8 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     q_sc, v_sc, t_sc, tot_sc, final_action, strengths, weaknesses = compute_unified_score(
         sym, archetype, metrics
     )
+    
+    buying_zone = calculate_buying_zone(q_sc, v_sc, tot_sc)
 
     strengths_str   = " | ".join(strengths)
     weaknesses_str  = " | ".join(weaknesses)
@@ -212,6 +214,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["weaknesses"]]      = weaknesses_str
     row[C["technical_setup"]] = technical_setup
     row[C["action"]]          = final_action
+    row[C["buying_zone"]]     = buying_zone
     row[C["quality"]]         = q_sc
     row[C["valuation"]]       = v_sc
     row[C["timing"]]          = t_sc
@@ -303,6 +306,14 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         "SELL":        ("cc0000", "ffffff"),
     }
 
+    BUYING_ZONE_COLORS = {
+        "ADD AGGRESSIVELY": ("00c853", "ffffff"),
+        "INVESTIGATE":      ("00796b", "ffffff"),
+        "ACCUMULATE":       ("d9ead3", "0b8043"),
+        "SMALL BUY":        ("fff2cc", "7f4f00"),
+        "WAIT":             ("fde9d9", "c62828"),
+    }
+
     def sf(row, key):
         idx = C[key]
         try:
@@ -316,6 +327,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 
         cap       = str(row[C["cap_type"]]).strip() if len(row) > C["cap_type"] else ""
         action    = str(row[C["action"]]).strip() if len(row) > C["action"] else ""
+        b_zone    = str(row[C["buying_zone"]]).strip() if len(row) > C["buying_zone"] else ""
         tech_set  = str(row[C["technical_setup"]]).strip() if len(row) > C["technical_setup"] else ""
         trend_val = str(row[C["trend"]]).strip() if len(row) > C["trend"] else ""
         risk_val  = str(row[C["econ_sens"]]).strip() if len(row) > C["econ_sens"] else ""
@@ -423,6 +435,9 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         if action in ACTION_COLORS:
             bg_a, fg_a = ACTION_COLORS[action]
             reqs.append(color_cell_req(ws.id, rn, C["action"], bg_a, fg_a))
+        if b_zone in BUYING_ZONE_COLORS:
+            bg_b, fg_b = BUYING_ZONE_COLORS[b_zone]
+            reqs.append(color_cell_req(ws.id, rn, C["buying_zone"], bg_b, fg_b))
         
         if risk_val:
             if risk_val == "Very High": reqs.append(color_cell_req(ws.id, rn, C["econ_sens"], "fde9d9", "c62828"))
