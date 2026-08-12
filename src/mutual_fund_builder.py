@@ -560,9 +560,19 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
 
     # Formatting
     nc = len(_ALL_HEADERS)
-    widths = [280, 140, 100, 100, 80, 110, 110, 100, 80, 90, 80, 70, 90,
-              90, 80, 110, 100, 100, 110, 100, 220, 
-              80, 80, 80, 80, 100, 110, 250]
+    # Compact column widths — GITHUB DATA compact philosophy
+    # Fund Name(180), Category(80), Avg NAV(65), Curr NAV(65),
+    # Units(60), Invested(85), Curr Val(85), P&L(80), Return%(65),
+    # Day Gain Rs(75), Day Gain%(65), Weight%(55), Signal(75),
+    # Holding Days(70), Tax Type(60), Unrealised(85), Harvestable(85),
+    # LTCG Units(65), Harvest Units(70), Tax Harvest(65), Reason(170),
+    # 1Y Ret%(60), 3Y Ret%(60), 5Y Ret%(60), MF Score(65),
+    # Trend(80), AI Decision(90), Decision Reason(170)
+    widths = [
+        180, 80, 65, 65, 60, 85, 85, 80, 65, 75, 65, 55, 75,
+        70, 60, 85, 85, 65, 70, 65, 170,
+        60, 60, 60, 65, 80, 90, 170,
+    ]
     reqs = sheet_formatter.get_structural_format_reqs(
         ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=1)
 
@@ -597,6 +607,15 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
             if req: reqs.append(req)
         except: pass
 
+        # Signal column colour (col 12) — same colour_cell_req approach as GITHUB DATA
+        sig = str(row[12])
+        if   sig == "STAR":   reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "00c853", "ffffff"))
+        elif sig == "MULTI":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "0b8043", "ffffff"))
+        elif sig == "PROFIT": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "d9ead3", "0b8043"))
+        elif sig == "HOLD":   reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "fff2cc", "7f4f00"))
+        elif sig == "REVIEW": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "fce8b2", "7f4f00"))
+        elif sig == "EXIT":   reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "cc0000", "ffffff"))
+
         rec = str(row[19])
         if   rec == "YES":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "0f9d58", "ffffff"))
         elif rec == "REVIEW": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "fce8b2", "7f4f00"))
@@ -617,6 +636,21 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, 0, "0d1b2a", "ffffff"))
     for s_idx in subtotal_indices:
         reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, 0, "37474f", "ffffff"))
+
+    # Filter over the full table
+    reqs.append({
+        "setBasicFilter": {
+            "filter": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": 0,
+                    "endRowIndex": len(all_data),
+                    "startColumnIndex": 0,
+                    "endColumnIndex": nc,
+                }
+            }
+        }
+    })
 
     sheet_writer.batch_update_safe(sh, reqs)
     log.info(f"write_mutual_funds: {len(reqs)} format requests applied")

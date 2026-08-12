@@ -572,8 +572,11 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     profiler.increment("Rows written", len(all_data))
 
     nc = len(headers)
-    # Compact column widths matching GITHUB DATA presentation style
-    widths = [130, 80, 60, 75, 75, 90, 90, 90, 70, 60, 70, 75, 75, 75, 110]
+    # Compact column widths — GITHUB DATA comparable sizes
+    # Name(120), Symbol(70), Shares(55), Avg Buy(70), CMP(65),
+    # Invested(85), Value(85), P&L(80), Return%(65), Wt%(55),
+    # Wt Status(70), Stop Loss(70), Target(70), Buy More@(70), Signal(100)
+    widths = [120, 70, 55, 70, 65, 85, 85, 80, 65, 55, 70, 70, 70, 70, 100]
     reqs = sheet_formatter.get_structural_format_reqs(
         ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=2)
 
@@ -608,6 +611,15 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
             if req: reqs.append(req)
         except: pass
         
+        # Wt Status (col 10): Overweight=red, Underweight=blue, Normal=green
+        wt_status = str(row[10]).strip()
+        if wt_status == "Overweight":
+            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "fde9d9", "c62828"))
+        elif wt_status == "Underweight":
+            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "d9eaf7", "1565c0"))
+        elif wt_status == "Normal":
+            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "d9ead3", "0b8043"))
+
         signal = str(row[14]).strip()
         req_sig = sheet_formatter.color_action_signal(ws.id, rn, 14, signal)
         if req_sig: reqs.append(req_sig)
@@ -616,6 +628,21 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
         reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, 0, "0d1b2a", "ffffff"))
     for s_idx in subtotal_indices:
         reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, 0, "37474f", "ffffff"))
+
+    # Filter over the full table
+    reqs.append({
+        "setBasicFilter": {
+            "filter": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": 0,
+                    "endRowIndex": len(all_data),
+                    "startColumnIndex": 0,
+                    "endColumnIndex": nc,
+                }
+            }
+        }
+    })
 
     if reqs:
         sheet_writer.batch_update_safe(sh, reqs)
