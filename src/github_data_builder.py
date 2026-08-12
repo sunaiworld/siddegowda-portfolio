@@ -178,7 +178,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
         sym, archetype, metrics
     )
     
-    buying_zone = calculate_buying_zone(q_sc, v_sc, tot_sc)
+    buying_zone = calculate_buying_zone(q_sc, v_sc, tot_sc, metrics)
 
     strengths_str   = " | ".join(strengths)
     weaknesses_str  = " | ".join(weaknesses)
@@ -309,11 +309,11 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     }
 
     BUYING_ZONE_COLORS = {
-        "ADD AGGRESSIVELY": ("00c853", "ffffff"),
-        "INVESTIGATE":      ("00796b", "ffffff"),
-        "ACCUMULATE":       ("d9ead3", "0b8043"),
-        "SMALL BUY":        ("fff2cc", "7f4f00"),
-        "WAIT":             ("fde9d9", "c62828"),
+        "🟢🟢 ADD AGGRESSIVELY": ("00c853", "ffffff"),
+        "🔎 INVESTIGATE WHY":      ("e65100", "ffffff"),
+        "🟢 ACCUMULATE":         ("d9ead3", "0b8043"),
+        "🟡 SMALL BUY":          ("fff2cc", "7f4f00"),
+        "❌ WAIT":               ("fde9d9", "c62828"),
     }
 
     def sf(row, key):
