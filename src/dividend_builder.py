@@ -213,8 +213,8 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
     except _gse.WorksheetNotFound:
         ws = sh.add_worksheet(tab_name, rows=max(len(sum_rows) + 20, 100), cols=max(num_cols, 10))
 
-    ws.clear()
-    ws.update("A1", sum_rows)
+    clear_sheet_safe(ws)
+    update_sheet_safe(ws, [{"range": "A1", "values": sum_rows}])
     ws_id = ws.id
 
     # ── Column widths (GITHUB DATA compact philosophy) ─────────────────────

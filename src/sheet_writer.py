@@ -43,9 +43,9 @@ def get_gspread_client():
 
 def batch_update_safe(sh, requests, chunk=30):
     """Send batchUpdate requests in small chunks with retry on 429 quota
-    errors and transient 500/503 Google-side outages."""
+    errors and transient 500/502/503/504 Google-side outages."""
     import gspread.exceptions
-    RETRYABLE = ("429", "500", "503")
+    RETRYABLE = ("429", "500", "502", "503", "504")
     for i in range(0, len(requests), chunk):
         slice_ = requests[i:i + chunk]
         for attempt in range(5):  # up to 5 retries
@@ -59,7 +59,43 @@ def batch_update_safe(sh, requests, chunk=30):
                 code = next((c for c in RETRYABLE if c in msg), None)
                 if code and attempt < 4:
                     wait = 15 * (2 ** attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
-                    print(f"[retry] {code} hit, waiting {wait}s before retry {attempt+1}/5…")
+                    print(f"[retry] {code} hit, waiting {wait}s before retry {attempt+1}/5.")
                     time.sleep(wait)
                 else:
                     raise
+
+def clear_sheet_safe(ws):
+    """Safely clear a worksheet with retries for transient Google Sheets errors."""
+    import gspread.exceptions
+    RETRYABLE = ("429", "500", "502", "503", "504")
+    for attempt in range(5):
+        try:
+            ws.clear()
+            break
+        except gspread.exceptions.APIError as e:
+            msg = str(e)
+            code = next((c for c in RETRYABLE if c in msg), None)
+            if code and attempt < 4:
+                wait = 15 * (2 ** attempt)
+                print(f"[retry] {code} on clear_sheet, waiting {wait}s before retry {attempt+1}/5.")
+                time.sleep(wait)
+            else:
+                raise
+
+def update_sheet_safe(ws, *args, **kwargs):
+    """Safely update a worksheet with retries for transient Google Sheets errors."""
+    import gspread.exceptions
+    RETRYABLE = ("429", "500", "502", "503", "504")
+    for attempt in range(5):
+        try:
+            ws.update(*args, **kwargs)
+            break
+        except gspread.exceptions.APIError as e:
+            msg = str(e)
+            code = next((c for c in RETRYABLE if c in msg), None)
+            if code and attempt < 4:
+                wait = 15 * (2 ** attempt)
+                print(f"[retry] {code} on update_sheet, waiting {wait}s before retry {attempt+1}/5.")
+                time.sleep(wait)
+            else:
+                raise
