@@ -23,6 +23,7 @@ log = logging.getLogger("portfolio")
 
 from config import *
 from sheet_formatter import *
+from github_data_builder import build_result_row
 from score_engine import *
 from data_fetcher import fetch_prices_batch, fetch_technicals, fetch_rev_growth
 

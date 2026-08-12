@@ -250,20 +250,26 @@ def append_history_snapshot(sh, results, portfolio_live_value, prices, health_sc
     today = datetime.now().strftime("%Y-%m-%d")
     ws = _get_or_create(sh, HISTORY_TAB, HISTORY_HEADERS)
 
+    import math
+    def clean_val(v):
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            return ""
+        return v
+
     snap_rows = []
     for row in results:
         try:
             sym       = row[GITHUB_DATA_COLS["symbol"]]
-            pe        = row[GITHUB_DATA_COLS["pe"]]
-            rsi       = row[GITHUB_DATA_COLS["rsi"]]
-            total     = row[GITHUB_DATA_COLS["total"]]
+            pe        = clean_val(row[GITHUB_DATA_COLS["pe"]])
+            rsi       = clean_val(row[GITHUB_DATA_COLS["rsi"]])
+            total     = clean_val(row[GITHUB_DATA_COLS["total"]])
             action    = row[GITHUB_DATA_COLS["action"]]
-            quality   = row[GITHUB_DATA_COLS["quality"]]
-            valuation = row[GITHUB_DATA_COLS["valuation"]]
-            timing    = row[GITHUB_DATA_COLS["timing"]]
+            quality   = clean_val(row[GITHUB_DATA_COLS["quality"]])
+            valuation = clean_val(row[GITHUB_DATA_COLS["valuation"]])
+            timing    = clean_val(row[GITHUB_DATA_COLS["timing"]])
         except (IndexError, KeyError):
             continue
-        cmp_ = prices.get(sym, "")
+        cmp_ = clean_val(prices.get(sym, ""))
         snap_rows.append([today, sym, cmp_, pe, rsi, total, action, quality, valuation, timing])
 
     if snap_rows:
