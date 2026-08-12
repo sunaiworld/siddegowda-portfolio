@@ -150,6 +150,9 @@ def process_dividends(fund_map):
             except (ValueError, TypeError):
                 pass
 
+        if sym in ("TCS", "INFY", "HDFCBANK", "ITC"):
+            log.info(f"[DIAGNOSTIC] {sym} | Raw fund_map div: {market_yield} | Written market yield: {market_yield} | Total Div: {total_div}")
+
         r = [sym] + [row[y] for y in years] + [total_div, invested, div_pct, market_yield]
         sum_rows.append(r)
         profiler.increment("Rows written")
@@ -348,6 +351,21 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
             }
         }
     })
+    
+    # Clear any native conditional formatting rules to ensure our cell colors show
+    try:
+        rules = sh.fetch_sheet_metadata({"includeGridData": False})
+        sheet_meta = next((s for s in rules.get('sheets', []) if s.get('properties', {}).get('sheetId') == ws_id), None)
+        if sheet_meta:
+            cond_formats = sheet_meta.get("conditionalFormats", [])
+            if cond_formats:
+                log.info(f"[DIAGNOSTIC] Found {len(cond_formats)} existing conditional format rules. Clearing them.")
+                clear_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws_id, "index": 0}} for _ in cond_formats]
+                sh.batch_update({"requests": clear_reqs})
+    except Exception as e:
+        log.info(f"[DIAGNOSTIC] Failed to clear conditional formats: {e}")
 
+    log.info(f"[DIAGNOSTIC] Dividends formatting requests generated: {len(reqs)}")
     batch_update_safe(sh, reqs)
     log.info(f"Wrote {len(sum_rows)} summary rows to {tab_name} tab (A:{chr(64 + num_cols)}).")
+    log.info(f"[DIAGNOSTIC] Dividends formatting requests sent: {len(reqs)}")
