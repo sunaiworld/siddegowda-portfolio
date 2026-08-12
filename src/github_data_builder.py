@@ -253,13 +253,15 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     # any transient error here propagates instead of falling through to
     # add_worksheet() on an already-existing sheet (the root cause of
     # the "sheet already exists" 400 error).
-    for _attempt in range(3):
+    for _attempt in range(5):
         try:
             ws.clear()
             break
         except _gse.APIError as _e:
-            if "429" in str(_e) and _attempt < 2:
-                time.sleep(20)
+            if any(code in str(_e) for code in ("429", "500", "502", "503", "504")) and _attempt < 4:
+                _wait = 15 * (2 ** _attempt)
+                log.warning(f"[write_github_data] {_e} on ws.clear, waiting {_wait}s (attempt {_attempt+1}/5)")
+                time.sleep(_wait)
             else:
                 raise
 
@@ -282,9 +284,9 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             ws.update(data)
             break
         except _gse.APIError as _e:
-            if "429" in str(_e):
+            if any(code in str(_e) for code in ("429", "500", "502", "503", "504")):
                 _wait = 15 * (2 ** _attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
-                log.warning(f"[write_github_data] 429 on ws.update, waiting {_wait}s (attempt {_attempt+1}/5)")
+                log.warning(f"[write_github_data] {_e} on ws.update, waiting {_wait}s (attempt {_attempt+1}/5)")
                 time.sleep(_wait)
             else:
                 raise
