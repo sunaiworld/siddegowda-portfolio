@@ -589,6 +589,9 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
             "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.000"}}},
             "fields": "userEnteredFormat.numberFormat"
         }}]
+    # Percent cols for 1Y Ret%(21), 3Y Ret%(22), 5Y Ret%(23)
+    for col in [21, 22, 23]:
+        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col, col + 1)
 
     for i, row in enumerate(all_data):
         rn = i + 1
@@ -632,10 +635,31 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         elif ai_dec == "WATCH":           reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 26, "fff2cc", "f57f17", bold=True))
         elif ai_dec == "REVIEW / REDUCE": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 26, "fce8b2", "d32f2f", bold=True))
 
+        # 1Y / 3Y / 5Y Ret% (cols 21, 22, 23) — color_positive_negative (same as GITHUB DATA)
+        for ret_col in [21, 22, 23]:
+            try:
+                ret_v = float(row[ret_col]) if len(row) > ret_col and row[ret_col] else 0.0
+                req_r = sheet_formatter.color_positive_negative(ws.id, rn, ret_col, ret_v)
+                if req_r: reqs.append(req_r)
+            except: pass
+
+        # MF Score (col 24) — same thresholds as GITHUB DATA Total Score
+        try:
+            mf_sc = float(row[24]) if len(row) > 24 and row[24] else None
+            if mf_sc is not None:
+                if   mf_sc >= 65: reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "00c853", "ffffff"))
+                elif mf_sc >= 50: reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "d9ead3", "0b8043"))
+                elif mf_sc >= 35: reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "fff2cc", "7f4f00"))
+                else:             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "fde9d9", "c62828"))
+        except: pass
+
+    # Color the full width of section header and subtotal rows
     for h_idx in header_indices:
-        reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, 0, "0d1b2a", "ffffff"))
+        for col in range(nc):
+            reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, col, "0d1b2a", "ffffff"))
     for s_idx in subtotal_indices:
-        reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, 0, "37474f", "ffffff"))
+        for col in range(nc):
+            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff"))
 
     # Filter over the full table
     reqs.append({
