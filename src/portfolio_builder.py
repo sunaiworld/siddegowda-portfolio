@@ -605,9 +605,10 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
             if req: reqs.append(req)
         except: pass
 
+        # Wt % (col 9): color_positive_negative treats it as a numeric
         try:
-            xirr_pct = float(row[10]) if row[10] else 0.0
-            req = sheet_formatter.color_positive_negative(ws.id, rn, 10, xirr_pct)
+            wt_pct_val = float(row[9]) if row[9] else 0.0
+            req = sheet_formatter.color_positive_negative(ws.id, rn, 9, wt_pct_val)
             if req: reqs.append(req)
         except: pass
         
@@ -624,10 +625,13 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
         req_sig = sheet_formatter.color_action_signal(ws.id, rn, 14, signal)
         if req_sig: reqs.append(req_sig)
 
+    # Color the full width of section header and subtotal rows
     for h_idx in header_indices:
-        reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, 0, "0d1b2a", "ffffff"))
+        for col in range(nc):
+            reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, col, "0d1b2a", "ffffff"))
     for s_idx in subtotal_indices:
-        reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, 0, "37474f", "ffffff"))
+        for col in range(nc):
+            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff"))
 
     # Filter over the full table
     reqs.append({

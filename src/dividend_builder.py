@@ -264,6 +264,33 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
         except (TypeError, ValueError):
             return None
 
+    # ── Precompute column-wise max for graduated heatmap ─────────────────────
+    # Indices of dividend-value columns: year cols (1..total_idx) + Total Dividend
+    div_col_indices = list(range(1, total_idx + 1))  # year cols + total_div
+    col_max = {}
+    for ci in div_col_indices:
+        vals = []
+        for row in sum_rows[1:]:
+            v = _safe_float(row[ci]) if ci < len(row) else None
+            if v is not None and v > 0:
+                vals.append(v)
+        col_max[ci] = max(vals) if vals else 0.0
+
+    def _heatmap_color(val, col_max_val):
+        """Return (bg, fg) based on value relative to column maximum."""
+        if val is None or col_max_val <= 0:
+            return None, None
+        ratio = val / col_max_val
+        if ratio >= 0.75:
+            return "0b8043", "ffffff"   # Darkest green — top quartile
+        elif ratio >= 0.50:
+            return "34a853", "ffffff"   # Strong green
+        elif ratio >= 0.25:
+            return "d9ead3", "0b8043"   # Light green
+        elif ratio > 0:
+            return "f1f9f1", "0b8043"   # Very light green — some dividend
+        return None, None
+
     for i, row in enumerate(sum_rows[1:], start=1):
         rn = i  # 0-indexed row index; row 0 = header, row 1 = first data row
 
@@ -278,6 +305,15 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
                     reqs.append(color_cell_req(ws_id, rn, 0, "d9eaf7", "1565c0"))
                 else:
                     reqs.append(color_cell_req(ws_id, rn, 0, "fde9d9", "c62828"))
+
+        # Year-dividend columns + Total Dividend — graduated heatmap
+        for ci in div_col_indices:
+            if ci >= len(row):
+                continue
+            val = _safe_float(row[ci])
+            bg, fg = _heatmap_color(val, col_max.get(ci, 0.0))
+            if bg:
+                reqs.append(color_cell_req(ws_id, rn, ci, bg, fg, bold=False))
 
         # Dividend % — same thresholds as GITHUB DATA div_v (stored as plain number)
         if pct_idx is not None:
