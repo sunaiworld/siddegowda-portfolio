@@ -396,7 +396,7 @@ def run_portfolio_update(sh):
             div_rows = dividend_builder.process_dividends(fund_map)
         if div_rows:
             with profiler.stage("[10] Dividends sheet write", category="Google Sheets"):
-                dividend_builder.write_dividends_tab(sh, div_rows)
+                dividend_builder.write_dividends_tab(sh, div_rows, fund_map)
     except Exception as e:
         log.error(f"Dividend tab build/write FAILED: {e}", exc_info=True)
 

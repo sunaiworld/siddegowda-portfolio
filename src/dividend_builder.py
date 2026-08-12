@@ -168,7 +168,7 @@ def process_dividends(fund_map):
     return safe_sum_rows
 
 
-def write_dividends_tab(sh, sum_rows):
+def write_dividends_tab(sh, sum_rows, fund_map=None):
     """
     Writes the year-wise dividend summary — Stock, <year> Dividend...,
     Total Dividend, Amount Invested, Dividend %, Market Dividend Yield % —
@@ -345,6 +345,25 @@ def write_dividends_tab(sh, sum_rows):
     # Percentage format for Market Dividend Yield %.
     if market_yield_idx is not None:
         reqs += get_true_percentage_format_reqs(ws_id, 1, len(sum_rows), market_yield_idx, market_yield_idx + 1)
+
+    # Apply Cap Type colors to Stock column
+    if fund_map and len(sum_rows) > 1:
+        from sheet_formatter import color_cell_req
+        for i, row in enumerate(sum_rows[1:]):
+            rn = i + 1
+            sym = str(row[0]).strip()
+            mcap = fund_map.get(sym, {}).get("mcap")
+            if mcap is not None:
+                try:
+                    mcap_cr = float(str(mcap).replace(",", ""))
+                    if mcap_cr >= 25000:
+                        reqs.append(color_cell_req(ws_id, rn, 0, "d9ead3", "0b8043"))
+                    elif mcap_cr >= 5000:
+                        reqs.append(color_cell_req(ws_id, rn, 0, "d9eaf7", "1565c0"))
+                    else:
+                        reqs.append(color_cell_req(ws_id, rn, 0, "fde9d9", "c62828"))
+                except (ValueError, TypeError):
+                    pass
 
     # Filter over the full table (A:J).
     reqs.append({
