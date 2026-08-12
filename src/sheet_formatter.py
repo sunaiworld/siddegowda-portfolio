@@ -90,7 +90,7 @@ def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
                 "backgroundColor": hex_rgb(bg),
                 "textFormat": {"foregroundColor": hex_rgb(fg), "bold": bold}
             }},
-            "fields": "userEnteredFormat(backgroundColor,textFormat)"
+            "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat"
         }
     }
 
