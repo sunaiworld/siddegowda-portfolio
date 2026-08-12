@@ -681,33 +681,43 @@ def score_symbol(sym, cmp, f, tech, rev_gr, news_data=None):
 # ══════════════════════════════════════════════
 # BUYING ZONE CLASSIFICATION
 # ══════════════════════════════════════════════
-def calculate_buying_zone(quality_score, valuation_score, total_score=None):
+def calculate_buying_zone(quality_score, valuation_score, total_score=None, metrics=None):
     """
     Evaluates whether a stock is a buy at current valuation/fundamental scores.
-    Outputs: WAIT, SMALL BUY, ACCUMULATE, ADD AGGRESSIVELY, INVESTIGATE
+    Outputs: ❌ WAIT, 🟡 SMALL BUY, 🟢 ACCUMULATE, 🟢🟢 ADD AGGRESSIVELY, 🔎 INVESTIGATE WHY
     """
     if quality_score is None:
         quality_score = 0
     if valuation_score is None:
         valuation_score = 0
+    
+    _m = metrics or {}
+    pe = _m.get("pe")
+    debt_eq = _m.get("debt_eq")
+    rev_gr = _m.get("rev_growth")
+    
+    # 1. INVESTIGATE WHY: Very large valuation discount but significant uncertainty/warning
+    # Extremely cheap valuation (v_sc >= 25 or very low PE) but poor quality or shrinking revenue
+    if (valuation_score >= 25 or (pe is not None and pe < 10 and pe > 0)) and (quality_score < 15 or (rev_gr is not None and rev_gr < 0)):
+        return "🔎 INVESTIGATE WHY"
         
-    # Extremely cheap valuation but potentially broken fundamentals
-    if valuation_score >= 25 and quality_score < 15:
-        return "INVESTIGATE"
-        
-    # High quality and very cheap valuation
+    # 2. ADD AGGRESSIVELY: Price is significantly below attractive valuation AND fundamentals are strong
+    # Must have high quality, very cheap valuation, manageable debt, and positive growth
     if quality_score >= 25 and valuation_score >= 22:
-        return "ADD AGGRESSIVELY"
+        if (debt_eq is None or debt_eq < 1.5) and (rev_gr is None or rev_gr > 0):
+            return "🟢🟢 ADD AGGRESSIVELY"
         
+    # 3. ACCUMULATE: Price is attractive enough to start building a position
     # High quality, reasonable valuation, OR exceptional quality with slightly premium valuation
     if (quality_score >= 25 and valuation_score >= 15) or (quality_score >= 32 and valuation_score >= 10):
-        return "ACCUMULATE"
+        return "🟢 ACCUMULATE"
         
+    # 4. SMALL BUY: Price is becoming reasonable but is not yet strongly attractive
     # Medium quality with decent valuation, or high quality but slightly expensive
     if (quality_score >= 15 and valuation_score >= 15) or (quality_score >= 25 and valuation_score >= 5):
-        return "SMALL BUY"
+        return "🟡 SMALL BUY"
         
-    # Expensive valuation or poor fundamentals
-    return "WAIT"
+    # 5. WAIT: Current price is not attractive enough (Expensive valuation or poor fundamentals)
+    return "❌ WAIT"
 
 
