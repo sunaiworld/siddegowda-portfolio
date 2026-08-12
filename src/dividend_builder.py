@@ -1,5 +1,6 @@
 import os
 import glob
+import math
 import pandas as pd
 import logging
 from profiler import profiler
@@ -153,11 +154,12 @@ def process_dividends(fund_map):
         sum_rows.append(r)
         profiler.increment("Rows written")
 
-    import math
-
     def _json_safe(val):
-        if pd.isna(val):
-            return ""
+        try:
+            if pd.isna(val):
+                return ""
+        except Exception:
+            pass
         if isinstance(val, float):
             if math.isnan(val) or math.isinf(val):
                 return ""
@@ -170,202 +172,133 @@ def process_dividends(fund_map):
 
 def write_dividends_tab(sh, sum_rows, fund_map=None):
     """
-    Writes the year-wise dividend summary — Stock, <year> Dividend...,
-    Total Dividend, Amount Invested, Dividend %, Market Dividend Yield % —
-    to the Dividends tab, starting at A1. Reuses the same structural
-    styling as GITHUB DATA / Portfolio (header, freeze, alternating
-    white/light-grey row banding across the full A:J range), applies green
-    gradients to the dividend columns and Dividend % only, currency
-    formatting to Amount Invested, percentage formatting to Dividend % and
-    Market Dividend Yield % (no gradient on the latter — stays neutral),
-    and a filter over the full table.
+    Writes the year-wise dividend summary to the Dividends tab.
+
+    Uses the IDENTICAL formatting system as GITHUB DATA (write_github_data):
+    - get_structural_format_reqs: header (#0d1b2a, white bold fs8, WRAP),
+      freeze row1/col1, header height 50px, alternating rows f8f9fa/ffffff
+    - get_currency_format_reqs / get_percentage_format_reqs: number formats
+    - color_cell_req per data row for ALL conditional colours
+      (NO addConditionalFormatRule — same approach as write_github_data)
+    - setBasicFilter over full table
+
+    Order: structural → number formats → per-cell colours → filter
+    This matches write_github_data exactly and guarantees colours appear.
     """
-    import time
     import gspread.exceptions as _gse
     from sheet_writer import batch_update_safe
     from sheet_formatter import (
         get_structural_format_reqs,
-        hex_rgb,
         get_currency_format_reqs,
         get_percentage_format_reqs,
-        get_true_percentage_format_reqs
+        get_true_percentage_format_reqs,
+        color_cell_req,
     )
 
     tab_name = "Dividends"
     headers = sum_rows[0] if sum_rows else []
     num_cols = len(headers)
 
-    # Locate columns by header name rather than hardcoded offsets, so this
-    # stays correct regardless of how many dividend years are present.
-    total_idx = headers.index("Total Dividend") if "Total Dividend" in headers else max(num_cols - 3, 0)
-    invested_idx = headers.index("Amount Invested") if "Amount Invested" in headers else None
-    pct_idx = headers.index("Dividend %") if "Dividend %" in headers else None
+    # Locate columns by header name — stays correct regardless of year count
+    total_idx        = headers.index("Total Dividend")          if "Total Dividend"          in headers else max(num_cols - 4, 0)
+    invested_idx     = headers.index("Amount Invested")         if "Amount Invested"         in headers else None
+    pct_idx          = headers.index("Dividend %")              if "Dividend %"              in headers else None
     market_yield_idx = headers.index("Market Dividend Yield %") if "Market Dividend Yield %" in headers else None
 
     try:
         ws = sh.worksheet(tab_name)
     except _gse.WorksheetNotFound:
-        ws = sh.add_worksheet(tab_name, rows=300, cols=max(num_cols, 10))
+        ws = sh.add_worksheet(tab_name, rows=max(len(sum_rows) + 20, 100), cols=max(num_cols, 10))
 
-    for _attempt in range(3):
-        try:
-            ws.clear()
-            break
-        except _gse.APIError as _e:
-            if "429" in str(_e) and _attempt < 2:
-                time.sleep(20)
-            else:
-                raise
-
-    # Trim the sheet down to exactly the columns we need.
-    try:
-        ws.resize(rows=max(len(sum_rows) + 20, 100), cols=max(num_cols, 10))
-    except _gse.APIError:
-        pass  # non-fatal — formatting below still targets the correct range
-
-    for _attempt in range(5):
-        try:
-            if sum_rows:
-                ws.update('A1', sum_rows)
-            break
-        except _gse.APIError as _e:
-            if "429" in str(_e) and _attempt < 4:
-                time.sleep(15 * (2 ** _attempt))
-            else:
-                raise
-
+    ws.clear()
+    ws.update("A1", sum_rows)
     ws_id = ws.id
 
-    # Structural formatting — same header/freeze/row-banding treatment as
-    # GITHUB DATA / Portfolio.
+    # ── Column widths (GITHUB DATA compact philosophy) ─────────────────────
+    # Stock: 90, each year-dividend col: 75, Total Dividend: 85,
+    # Amount Invested: 90, Dividend %: 70, Market Dividend Yield %: 80
     num_year_cols = max(total_idx - 1, 0)
-    widths = [90] + [80] * num_year_cols
-    if total_idx >= 1:
-        widths += [90]
+    widths = (
+        [90]                     # Stock
+        + [75] * num_year_cols   # Year dividend columns
+        + [85]                   # Total Dividend
+    )
     if invested_idx is not None:
-        widths += [100] * (invested_idx - len(widths) + 1)
+        widths += [90]           # Amount Invested
     if pct_idx is not None:
-        widths += [80] * (pct_idx - len(widths) + 1)
+        widths += [70]           # Dividend %
     if market_yield_idx is not None:
-        widths += [90] * (market_yield_idx - len(widths) + 1)
-    widths = (widths + [90] * num_cols)[:num_cols]
+        widths += [80]           # Market Dividend Yield %
+    widths = (widths + [75] * num_cols)[:num_cols]
 
-    reqs = get_structural_format_reqs(ws_id, len(sum_rows), num_cols, widths, freeze_rows=1, freeze_cols=1)
+    # ── 1. Structural format ─────────────────────────────────────────────────
+    # Same call as write_github_data: header dark bg, white bold fs8, WRAP,
+    # freeze row1+col1, header height 50px, alternating f8f9fa/ffffff rows.
+    reqs = get_structural_format_reqs(
+        ws_id, len(sum_rows), num_cols, widths, freeze_rows=1, freeze_cols=1
+    )
 
-    # ── Clear any pre-existing conditional format rules on this sheet first,
-    # so rules don't accumulate on every daily run.
-    try:
-        meta = sh.fetch_sheet_metadata()
-        sheet_meta = next(
-            (s for s in meta.get("sheets", []) if s["properties"]["sheetId"] == ws_id), None
-        )
-        existing_cf_count = len(sheet_meta.get("conditionalFormats", [])) if sheet_meta else 0
-    except Exception as _e:
-        log.warning(f"Could not read existing conditional formats, skipping clear: {_e}")
-        existing_cf_count = 0
-
-    clear_cf_reqs = [
-        {"deleteConditionalFormatRule": {"sheetId": ws_id, "index": i}}
-        for i in range(existing_cf_count - 1, -1, -1)
-    ]
-    reqs = clear_cf_reqs + reqs
-
-    cf_index = 0
-
-    if pct_idx is not None and len(sum_rows) > 1:
-        # Dividend % — >= 2% (green), >= 1% (yellow)
-        reqs.append({
-            "addConditionalFormatRule": {
-                "rule": {
-                    "ranges": [{"sheetId": ws_id, "startRowIndex": 1, "endRowIndex": len(sum_rows), "startColumnIndex": pct_idx, "endColumnIndex": pct_idx + 1}],
-                    "booleanRule": {
-                        "condition": {"type": "NUMBER_GREATER_THAN_EQ", "values": [{"userEnteredValue": "0.02"}]},
-                        "format": {"backgroundColor": hex_rgb("d9ead3"), "textFormat": {"foregroundColor": hex_rgb("0b8043")}}
-                    }
-                },
-                "index": cf_index
-            }
-        })
-        cf_index += 1
-        reqs.append({
-            "addConditionalFormatRule": {
-                "rule": {
-                    "ranges": [{"sheetId": ws_id, "startRowIndex": 1, "endRowIndex": len(sum_rows), "startColumnIndex": pct_idx, "endColumnIndex": pct_idx + 1}],
-                    "booleanRule": {
-                        "condition": {"type": "NUMBER_GREATER_THAN_EQ", "values": [{"userEnteredValue": "0.01"}]},
-                        "format": {"backgroundColor": hex_rgb("fff2cc"), "textFormat": {"foregroundColor": hex_rgb("7f4f00")}}
-                    }
-                },
-                "index": cf_index
-            }
-        })
-        cf_index += 1
-
-    if market_yield_idx is not None and len(sum_rows) > 1:
-        # Market Dividend Yield % — >= 2% (green), >= 1% (yellow) to match GITHUB DATA
-        reqs.append({
-            "addConditionalFormatRule": {
-                "rule": {
-                    "ranges": [{"sheetId": ws_id, "startRowIndex": 1, "endRowIndex": len(sum_rows), "startColumnIndex": market_yield_idx, "endColumnIndex": market_yield_idx + 1}],
-                    "booleanRule": {
-                        "condition": {"type": "NUMBER_GREATER_THAN_EQ", "values": [{"userEnteredValue": "0.02"}]},
-                        "format": {"backgroundColor": hex_rgb("d9ead3"), "textFormat": {"foregroundColor": hex_rgb("0b8043")}}
-                    }
-                },
-                "index": cf_index
-            }
-        })
-        cf_index += 1
-        reqs.append({
-            "addConditionalFormatRule": {
-                "rule": {
-                    "ranges": [{"sheetId": ws_id, "startRowIndex": 1, "endRowIndex": len(sum_rows), "startColumnIndex": market_yield_idx, "endColumnIndex": market_yield_idx + 1}],
-                    "booleanRule": {
-                        "condition": {"type": "NUMBER_GREATER_THAN_EQ", "values": [{"userEnteredValue": "0.01"}]},
-                        "format": {"backgroundColor": hex_rgb("fff2cc"), "textFormat": {"foregroundColor": hex_rgb("7f4f00")}}
-                    }
-                },
-                "index": cf_index
-            }
-        })
-        cf_index += 1
-
-    # Currency format (₹#,##0.00): yearly dividend columns + Total Dividend.
+    # ── 2. Number formats ────────────────────────────────────────────────────
+    # Currency (₹#,##0.00): year dividend cols + Total Dividend
     if total_idx >= 1:
         reqs += get_currency_format_reqs(ws_id, 1, len(sum_rows), 1, total_idx + 1)
-
-    # Currency format for Amount Invested.
+    # Currency for Amount Invested
     if invested_idx is not None:
         reqs += get_currency_format_reqs(ws_id, 1, len(sum_rows), invested_idx, invested_idx + 1)
-
-    # Percentage format (2 decimals, e.g. 5.25%) for Dividend %.
+    # Number format "0.00%" for Dividend % (stored as plain number e.g. 5.25)
     if pct_idx is not None:
         reqs += get_percentage_format_reqs(ws_id, 1, len(sum_rows), pct_idx, pct_idx + 1)
-
-    # Percentage format for Market Dividend Yield %.
+    # True percentage format "0.00%" for Market Dividend Yield % (stored as 0.0403)
     if market_yield_idx is not None:
         reqs += get_true_percentage_format_reqs(ws_id, 1, len(sum_rows), market_yield_idx, market_yield_idx + 1)
 
-    # Apply Cap Type colors to Stock column
-    if fund_map and len(sum_rows) > 1:
-        from sheet_formatter import color_cell_req
-        for i, row in enumerate(sum_rows[1:]):
-            rn = i + 1
-            sym = str(row[0]).strip()
-            mcap = fund_map.get(sym, {}).get("mcap")
-            if mcap is not None:
-                try:
-                    mcap_cr = float(str(mcap).replace(",", ""))
-                    if mcap_cr >= 25000:
-                        reqs.append(color_cell_req(ws_id, rn, 0, "d9ead3", "0b8043"))
-                    elif mcap_cr >= 5000:
-                        reqs.append(color_cell_req(ws_id, rn, 0, "d9eaf7", "1565c0"))
-                    else:
-                        reqs.append(color_cell_req(ws_id, rn, 0, "fde9d9", "c62828"))
-                except (ValueError, TypeError):
-                    pass
+    # ── 3. Per-cell colour coding — identical approach to write_github_data ──
+    # No addConditionalFormatRule. Direct color_cell_req per row, applied
+    # after the structural background so they take visual precedence.
+    def _safe_float(val):
+        if val in (None, ""):
+            return None
+        try:
+            f = float(val)
+            return None if math.isnan(f) or math.isinf(f) else f
+        except (TypeError, ValueError):
+            return None
 
-    # Filter over the full table (A:J).
+    for i, row in enumerate(sum_rows[1:], start=1):
+        rn = i  # 0-indexed row index; row 0 = header, row 1 = first data row
+
+        # Stock column — cap-type colour (same logic as GITHUB DATA cap_type)
+        sym = str(row[0]).strip()
+        if fund_map:
+            mcap_f = _safe_float(fund_map.get(sym, {}).get("mcap"))
+            if mcap_f is not None:
+                if mcap_f >= 25000:
+                    reqs.append(color_cell_req(ws_id, rn, 0, "d9ead3", "0b8043"))
+                elif mcap_f >= 5000:
+                    reqs.append(color_cell_req(ws_id, rn, 0, "d9eaf7", "1565c0"))
+                else:
+                    reqs.append(color_cell_req(ws_id, rn, 0, "fde9d9", "c62828"))
+
+        # Dividend % — same thresholds as GITHUB DATA div_v (stored as plain number)
+        if pct_idx is not None:
+            pct_val = _safe_float(row[pct_idx])
+            if pct_val is not None:
+                if pct_val >= 2:
+                    reqs.append(color_cell_req(ws_id, rn, pct_idx, "d9ead3", "0b8043"))
+                elif pct_val >= 1:
+                    reqs.append(color_cell_req(ws_id, rn, pct_idx, "fff2cc", "7f4f00"))
+
+        # Market Dividend Yield % — stored as fraction (0.0403 = 4.03%)
+        # thresholds: >= 0.02 (2%) green, >= 0.01 (1%) yellow
+        if market_yield_idx is not None:
+            my_val = _safe_float(row[market_yield_idx])
+            if my_val is not None:
+                if my_val >= 0.02:
+                    reqs.append(color_cell_req(ws_id, rn, market_yield_idx, "d9ead3", "0b8043"))
+                elif my_val >= 0.01:
+                    reqs.append(color_cell_req(ws_id, rn, market_yield_idx, "fff2cc", "7f4f00"))
+
+    # ── 4. Filter over full table ─────────────────────────────────────────────
     reqs.append({
         "setBasicFilter": {
             "filter": {
@@ -374,7 +307,7 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
                     "startRowIndex": 0,
                     "endRowIndex": len(sum_rows),
                     "startColumnIndex": 0,
-                    "endColumnIndex": num_cols
+                    "endColumnIndex": num_cols,
                 }
             }
         }
