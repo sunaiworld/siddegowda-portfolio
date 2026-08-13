@@ -135,11 +135,11 @@ def generate_morning_message():
             msg += "None today.\n\n"
         else:
             for s in stocks:
-                sym = s.get("Symbol", "?")
+                sym = str(s.get("Symbol", "?")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 cmp = s.get("CMP", 0)
                 pe = s.get("PE", "-")
                 score = s.get("Total Score", "-")
-                action = s.get("Final Action", "-")
+                action = str(s.get("Final Action", "-")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 msg += f"• {sym} | ₹{cmp} | {action} | PE {pe} | Score {score}\n"
             msg += "\n"
             
@@ -152,11 +152,11 @@ def generate_morning_message():
              msg += "None today.\n"
         else:
              for s in stocks:
-                sym = s.get("Symbol", "?")
+                sym = str(s.get("Symbol", "?")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 cmp = s.get("CMP", 0)
                 pe = s.get("PE", "-")
                 score = s.get("Total Score", "-")
-                action = s.get("Final Action", "-")
+                action = str(s.get("Final Action", "-")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 msg += f"• {sym} | ₹{cmp} | {action} | PE {pe} | Score {score}\n"
     else:
         msg += f"{wait_count} stocks\n"
