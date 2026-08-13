@@ -34,47 +34,41 @@ from sheet_writer import *
 # ══════════════════════════════════════════════
 GITHUB_DATA_COLS = {
     "symbol": 0, "sector": 1, "industry": 2, "archetype": 3,
-    "econ_sens": 4, "inv_role": 5,
-    "low52": 6, "high52": 7, "day_chg_pct": 8, "pct_high": 9,
-    "pe": 10, "eps": 11, "bv": 12, "pb": 13,
-    "div": 14,
-    "rsi": 15,
-    "roe": 16, "roa": 17, "debt_eq": 18,
-    "rev_growth": 19, "beta": 20,
-    "strengths": 21, "weaknesses": 22, "technical_setup": 23,
-    # ── Trading decision section ─────────────────────────────────
-    "cmp": 24, "fair_val": 25,
-    "buying_zone": 26, "price_range": 27, "action": 28, "trend": 29,
-    "quality": 30, "valuation": 31, "timing": 32, "total": 33,
-    "vol_spike": 34,
-    "mcap": 35, "cap_type": 36,
-    # ── News Engine columns (Phase A) ──────────────────────
-    "news_summary":   37,
-    "bullish_score":  38,
-    "bearish_score":  39,
-    "news_sentiment": 40,
-    "news_reason":    41,
-    "news_source":    42,
+    "econ_sens": 4, "inv_role": 5, "technical_setup": 6,
+    "low52": 7, "cmp": 8, "high52": 9,
+    "buying_zone": 10, "fair_val": 11, "price_range": 12, "action": 13, "trend": 14,
+    "pe": 15, "eps": 16, "bv": 17, "pb": 18,
+    "div": 19,
+    "rsi": 20,
+    "roe": 21, "roa": 22, "debt_eq": 23,
+    "rev_growth": 24, "beta": 25,
+    "strengths": 26, "weaknesses": 27,
+    "quality": 28, "valuation": 29, "timing": 30, "total": 31,
+    "vol_spike": 32,
+    "mcap": 33, "cap_type": 34,
+    "news_summary":   35,
+    "bullish_score":  36,
+    "bearish_score":  37,
+    "news_sentiment": 38,
+    "news_reason":    39,
+    "news_source":    40,
 }
 
 # Header text per column key
 GITHUB_DATA_HEADER_NAMES = {
     "symbol": "Symbol", "sector": "Sector", "industry": "Industry", "archetype": "Archetype",
-    "econ_sens": "Economic Sensitivity", "inv_role": "Investor Role",
-    "low52": "52W Low", "high52": "52W High", "day_chg_pct": "Day Chg%", "pct_high": "Buy 20% Less",
+    "econ_sens": "Economic Sensitivity", "inv_role": "Investor Role", "technical_setup": "Technical Setup",
+    "low52": "52W Low", "cmp": "CMP", "high52": "52W High",
+    "buying_zone": "Buying Zone", "fair_val": "Fair Val", "price_range": "Buy/Sell Price Range", "action": "Final Action", "trend": "Trend",
     "pe": "PE", "eps": "EPS", "bv": "Book Value", "pb": "P/B",
     "div": "Div Yield%",
     "rsi": "RSI",
     "roe": "ROE%", "roa": "ROA%", "debt_eq": "Debt/Equity",
     "rev_growth": "Rev Growth%", "beta": "Beta",
     "strengths": "Strengths", "weaknesses": "Weaknesses",
-    "technical_setup": "Technical Setup",
-    "cmp": "CMP", "fair_val": "Fair Val",
-    "buying_zone": "Buying Zone", "price_range": "Buy/Sell Price Range", "action": "Final Action", "trend": "Trend",
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
     "vol_spike": "Vol Spike",
     "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
-    # ── News Engine columns (Phase A) ──────────────────────
     "news_summary":   "News Summary",
     "bullish_score":  "Bullish Score",
     "bearish_score":  "Bearish Score",
@@ -86,21 +80,18 @@ GITHUB_DATA_HEADER_NAMES = {
 # Column pixel width per key
 GITHUB_DATA_COL_WIDTHS = {
     "symbol": 70, "sector": 75, "industry": 90, "archetype": 80,
-    "econ_sens": 130, "inv_role": 130,
-    "low52": 55, "high52": 55, "day_chg_pct": 60, "pct_high": 65,
+    "econ_sens": 130, "inv_role": 130, "technical_setup": 110,
+    "low52": 55, "cmp": 65, "high52": 55,
+    "buying_zone": 105, "fair_val": 65, "price_range": 160, "action": 90, "trend": 90,
     "pe": 45, "eps": 45, "bv": 55, "pb": 45,
     "div": 50,
     "rsi": 45,
     "roe": 50, "roa": 50, "debt_eq": 55,
     "rev_growth": 55, "beta": 45,
     "strengths": 200, "weaknesses": 200,
-    "technical_setup": 110,
-    "cmp": 65, "fair_val": 65,
-    "buying_zone": 105, "price_range": 160, "action": 90, "trend": 90,
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
     "vol_spike": 55,
     "mcap": 65, "cap_type": 65,
-    # ── News Engine columns (Phase A) ──────────────────────
     "news_summary":   220,
     "bullish_score":   55,
     "bearish_score":   55,
@@ -142,7 +133,6 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     vol_spike   = tech.get("vol_spike", "")
     trend       = tech.get("trend", "")
     cross       = tech.get("cross", "")
-    day_chg_pct = tech.get("day_chg_pct", "")
 
     # News signals (already fetched by the news engine; zero cost here).
     # Passed as optional keys — scoring degrades gracefully to zero if absent.
@@ -208,8 +198,6 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["inv_role"]]        = inv_role
     row[C["low52"]]           = low52 or ""
     row[C["high52"]]          = high52 or ""
-    row[C["day_chg_pct"]]     = day_chg_pct
-    row[C["pct_high"]]        = pct_high_display
     row[C["pe"]]              = f.get("pe") or ""
     row[C["eps"]]             = f.get("eps") or ""
     row[C["bv"]]              = f.get("bv") or ""
@@ -357,8 +345,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         trend_val = str(row[C["trend"]]).strip() if len(row) > C["trend"] else ""
         risk_val  = str(row[C["econ_sens"]]).strip() if len(row) > C["econ_sens"] else ""
 
-        pct      = sf(row, "pct_high")
-        day_chg  = sf(row, "day_chg_pct")
         rsi_v    = sf(row, "rsi")
         pe_v     = sf(row, "pe")
         eps_v    = sf(row, "eps")
@@ -387,17 +373,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         # ── 52W High / Low ──
         reqs.append(color_cell_req(ws.id, rn, C["high52"], "eaf4fb", "1565c0", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["low52"], "fdf2f2", "c62828", bold=False))
-
-        # ── Day Chg% ──
-        if day_chg is not None:
-            reqs.append(color_cell_req(ws.id, rn, C["day_chg_pct"], "d9ead3", "0b8043") if day_chg > 0
-                        else color_cell_req(ws.id, rn, C["day_chg_pct"], "fde9d9", "c62828") if day_chg < 0
-                        else color_cell_req(ws.id, rn, C["day_chg_pct"], "f1f1f1", "666666"))
-
-        # ── Buy 20% Less (pct from 52W high) ──
-        if pct is not None:
-            reqs.append(color_cell_req(ws.id, rn, C["pct_high"], "d9ead3", "0b8043") if pct >= -20
-                        else color_cell_req(ws.id, rn, C["pct_high"], "fde9d9", "c62828"))
 
         # ── PE ──
         if pe_v is not None:
