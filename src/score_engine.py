@@ -768,28 +768,28 @@ def _fmt_inr(value):
 
 def calculate_price_range(archetype, metrics):
     """
-    Derives the Buy/Sell Price Range string for the stock's current Buying Zone.
+    Derives the Buy/Sell Price Range string and Fair Value for the stock's current Buying Zone.
 
-    Uses sector-appropriate fair PE × EPS or fair PB × Book Value
-    (already available in metrics — no new API call).
+    Uses sector-appropriate fair PE x EPS or fair PB x Book Value
+    (already available in metrics -- no new API call).
 
     Zone boundaries (% of fair value):
-      ❌ WAIT           > 110%
-      🟡 SMALL BUY      100% – 110%
-      🟢 ACCUMULATE      90% – 100%
-      🟢🟢 ADD AGGR       80% –  90%
-      🔎 INVESTIGATE     < 80%
+      WAIT           > 110%
+      SMALL BUY      100% - 110%
+      ACCUMULATE      90% - 100%
+      ADD AGGR        80% -  90%
+      INVESTIGATE     < 80%
 
-    Returns a formatted string such as "₹850 – ₹950" or "> ₹1,050" or "< ₹750".
-    Returns "" if insufficient data (EPS/BV missing or negative).
+    Returns a tuple: (price_range_str, fair_val_str)
+      price_range_str -- e.g. the price band string.
+      fair_val_str    -- e.g. the sector fair value reference point formatted as INR.
+    Both return "" if insufficient data (EPS/BV missing or negative).
     """
     anchor_metric, fair_anchor = SECTOR_FAIR_ANCHOR.get(
         archetype, SECTOR_FAIR_ANCHOR["DEFAULT"]
     )
 
     _m = metrics or {}
-
-    # ── Derive fair value ──────────────────────────────────────────────────
     fair_value = None
 
     if anchor_metric == "pe":
@@ -798,11 +798,9 @@ def calculate_price_range(archetype, metrics):
         if eps is not None and eps > 0:
             fair_value = fair_anchor * eps
         elif pe is not None and pe > 0:
-            # Fallback: approximate using CMP / actual PE → implied EPS, then fair PE × implied EPS
-            cmp = _m.get("cmp")
-            if cmp and cmp > 0:
-                implied_eps = cmp / pe
-                fair_value = fair_anchor * implied_eps
+            cmp_v = _m.get("cmp")
+            if cmp_v and cmp_v > 0:
+                fair_value = fair_anchor * (cmp_v / pe)
 
     elif anchor_metric == "pb":
         bv = _m.get("bv")
@@ -810,39 +808,35 @@ def calculate_price_range(archetype, metrics):
         if bv is not None and bv > 0:
             fair_value = fair_anchor * bv
         elif pb is not None and pb > 0:
-            cmp = _m.get("cmp")
-            if cmp and cmp > 0:
-                implied_bv = cmp / pb
-                fair_value = fair_anchor * implied_bv
+            cmp_v = _m.get("cmp")
+            if cmp_v and cmp_v > 0:
+                fair_value = fair_anchor * (cmp_v / pb)
 
     if not fair_value or fair_value <= 0:
-        return ""
+        return "", ""
 
-    # ── Zone boundaries ────────────────────────────────────────────────────
-    z_wait_lower     = fair_value * 1.10   # ❌ WAIT: > this
-    z_small_upper    = fair_value * 1.10   # 🟡 SMALL BUY: fair_value – z_small_upper
-    z_small_lower    = fair_value * 1.00
-    z_accum_upper    = fair_value * 1.00   # 🟢 ACCUMULATE: z_accum_lower – z_accum_upper
-    z_accum_lower    = fair_value * 0.90
-    z_aggr_upper     = fair_value * 0.90   # 🟢🟢 ADD AGGR: z_aggr_lower – z_aggr_upper
-    z_aggr_lower     = fair_value * 0.80
-    z_invest_upper   = fair_value * 0.80   # 🔎 INVESTIGATE: < this
+    fair_val_str = _fmt_inr(fair_value)
 
-    cmp = _m.get("cmp")
+    z_wait_lower   = fair_value * 1.10
+    z_small_upper  = fair_value * 1.10
+    z_small_lower  = fair_value * 1.00
+    z_accum_upper  = fair_value * 1.00
+    z_accum_lower  = fair_value * 0.90
+    z_aggr_upper   = fair_value * 0.90
+    z_aggr_lower   = fair_value * 0.80
+    z_invest_upper = fair_value * 0.80
 
-    # Determine which zone the current CMP falls into
-    if cmp is None or cmp <= 0:
-        return ""
+    cmp_v = _m.get("cmp")
+    if cmp_v is None or cmp_v <= 0:
+        return "", fair_val_str
 
-    if cmp > z_wait_lower:
-        return f"> {_fmt_inr(z_wait_lower)}"
-    elif cmp >= z_small_lower:
-        return f"{_fmt_inr(z_small_lower)} – {_fmt_inr(z_small_upper)}"
-    elif cmp >= z_accum_lower:
-        return f"{_fmt_inr(z_accum_lower)} – {_fmt_inr(z_accum_upper)}"
-    elif cmp >= z_aggr_lower:
-        return f"{_fmt_inr(z_aggr_lower)} – {_fmt_inr(z_aggr_upper)}"
+    if cmp_v > z_wait_lower:
+        return f"> {_fmt_inr(z_wait_lower)}", fair_val_str
+    elif cmp_v >= z_small_lower:
+        return f"{_fmt_inr(z_small_lower)} \u2013 {_fmt_inr(z_small_upper)}", fair_val_str
+    elif cmp_v >= z_accum_lower:
+        return f"{_fmt_inr(z_accum_lower)} \u2013 {_fmt_inr(z_accum_upper)}", fair_val_str
+    elif cmp_v >= z_aggr_lower:
+        return f"{_fmt_inr(z_aggr_lower)} \u2013 {_fmt_inr(z_aggr_upper)}", fair_val_str
     else:
-        return f"< {_fmt_inr(z_invest_upper)}"
-
-
+        return f"< {_fmt_inr(z_invest_upper)}", fair_val_str
