@@ -684,7 +684,7 @@ def score_symbol(sym, cmp, f, tech, rev_gr, news_data=None):
 def calculate_buying_zone(quality_score, valuation_score, total_score=None, metrics=None):
     """
     Evaluates whether a stock is a buy at current valuation/fundamental scores.
-    Outputs: ❌ WAIT, 🟡 SMALL BUY, 🟢 ACCUMULATE, 🟢🟢 ADD AGGRESSIVELY, 🔎 INVESTIGATE WHY
+    Outputs: ❌ WAIT, 🟠 SMALL BUY, 🟢 ACCUMULATE, 🟢🟢 ADD AGGRESSIVELY, 🔎 INVESTIGATE WHY
     """
     if quality_score is None:
         quality_score = 0
@@ -715,7 +715,7 @@ def calculate_buying_zone(quality_score, valuation_score, total_score=None, metr
     # 4. SMALL BUY: Price is becoming reasonable but is not yet strongly attractive
     # Medium quality with decent valuation, or high quality but slightly expensive
     if (quality_score >= 15 and valuation_score >= 15) or (quality_score >= 25 and valuation_score >= 5):
-        return "🟡 SMALL BUY"
+        return "🟠 SMALL BUY"
         
     # 5. WAIT: Current price is not attractive enough (Expensive valuation or poor fundamentals)
     return "❌ WAIT"
