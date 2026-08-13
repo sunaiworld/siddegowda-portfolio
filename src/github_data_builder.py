@@ -144,6 +144,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     vol_spike   = tech.get("vol_spike", "")
     trend       = tech.get("trend", "")
     cross       = tech.get("cross", "")
+    day_chg_pct = tech.get("day_chg_pct", "")
 
     # News signals (already fetched by the news engine; zero cost here).
     # Passed as optional keys — scoring degrades gracefully to zero if absent.
