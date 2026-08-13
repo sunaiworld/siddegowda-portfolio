@@ -214,7 +214,11 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
         ws = sh.add_worksheet(tab_name, rows=max(len(sum_rows) + 20, 100), cols=max(num_cols, 10))
 
     clear_sheet_safe(ws)
-    update_sheet_safe(ws, [{"range": "A1", "values": sum_rows}])
+    try:
+        sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": ws_id}}]})
+    except Exception:
+        pass
+    update_sheet_safe(ws, sum_rows)
     ws_id = ws.id
 
     # ── Column widths (GITHUB DATA compact philosophy) ─────────────────────
