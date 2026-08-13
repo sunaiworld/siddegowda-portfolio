@@ -42,17 +42,17 @@ GITHUB_DATA_COLS = {
     "roe": 16, "roa": 17, "debt_eq": 18,
     "rev_growth": 19, "beta": 20,
     "strengths": 21, "weaknesses": 22, "technical_setup": 23,
-    "action": 24, "buying_zone": 25, "trend": 26,
-    "quality": 27, "valuation": 28, "timing": 29, "total": 30,
-    "vol_spike": 31,
-    "mcap": 32, "cap_type": 33,
+    "action": 24, "buying_zone": 25, "price_range": 26, "trend": 27,
+    "quality": 28, "valuation": 29, "timing": 30, "total": 31,
+    "vol_spike": 32,
+    "mcap": 33, "cap_type": 34,
     # ── News Engine columns (Phase A) ──────────────────────
-    "news_summary":   34,
-    "bullish_score":  35,
-    "bearish_score":  36,
-    "news_sentiment": 37,
-    "news_reason":    38,
-    "news_source":    39,
+    "news_summary":   35,
+    "bullish_score":  36,
+    "bearish_score":  37,
+    "news_sentiment": 38,
+    "news_reason":    39,
+    "news_source":    40,
 }
 
 # Header text per column key
@@ -67,7 +67,7 @@ GITHUB_DATA_HEADER_NAMES = {
     "rev_growth": "Rev Growth%", "beta": "Beta",
     "strengths": "Strengths", "weaknesses": "Weaknesses",
     "technical_setup": "Technical Setup",
-    "action": "Final Action", "buying_zone": "Buying Zone", "trend": "Trend",
+    "action": "Final Action", "buying_zone": "Buying Zone", "price_range": "Buy/Sell Price Range", "trend": "Trend",
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
     "vol_spike": "Vol Spike",
     "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
@@ -92,7 +92,7 @@ GITHUB_DATA_COL_WIDTHS = {
     "rev_growth": 55, "beta": 45,
     "strengths": 200, "weaknesses": 200,
     "technical_setup": 110,
-    "action": 90, "buying_zone": 105, "trend": 90,
+    "action": 90, "buying_zone": 105, "price_range": 160, "trend": 90,
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
     "vol_spike": 55,
     "mcap": 65, "cap_type": 65,
@@ -180,6 +180,13 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     
     buying_zone = calculate_buying_zone(q_sc, v_sc, tot_sc, metrics)
 
+    # Build a complete metrics dict with EPS and BV for price range calculation
+    price_range_metrics = dict(metrics)
+    price_range_metrics["eps"] = f.get("eps")
+    price_range_metrics["bv"]  = f.get("bv")
+    price_range_metrics["cmp"] = cmp
+    price_range = calculate_price_range(archetype, price_range_metrics)
+
     strengths_str   = " | ".join(strengths)
     weaknesses_str  = " | ".join(weaknesses)
     technical_setup = classify_technical_setup(tech, cmp)
@@ -215,6 +222,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["technical_setup"]] = technical_setup
     row[C["action"]]          = final_action
     row[C["buying_zone"]]     = buying_zone
+    row[C["price_range"]]     = price_range
     row[C["quality"]]         = q_sc
     row[C["valuation"]]       = v_sc
     row[C["timing"]]          = t_sc
@@ -440,7 +448,18 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         if b_zone in BUYING_ZONE_COLORS:
             bg_b, fg_b = BUYING_ZONE_COLORS[b_zone]
             reqs.append(color_cell_req(ws.id, rn, C["buying_zone"], bg_b, fg_b))
-        
+            # Price range column uses a lighter tint of the same zone colour
+            PRICE_RANGE_LIGHT_COLORS = {
+                "🟢🟢 ADD AGGRESSIVELY": ("c8f5dc", "0b5e2a"),
+                "🔎 INVESTIGATE WHY":    ("fde3cc", "b84000"),
+                "🟢 ACCUMULATE":         ("eaf5e8", "0b5e2a"),
+                "🟡 SMALL BUY":          ("fdf9e3", "7f4f00"),
+                "❌ WAIT":               ("fef2f0", "c62828"),
+            }
+            if b_zone in PRICE_RANGE_LIGHT_COLORS:
+                lbg, lfg = PRICE_RANGE_LIGHT_COLORS[b_zone]
+                reqs.append(color_cell_req(ws.id, rn, C["price_range"], lbg, lfg, bold=False))
+
         if risk_val:
             if risk_val == "Very High": reqs.append(color_cell_req(ws.id, rn, C["econ_sens"], "fde9d9", "c62828"))
             elif risk_val in ("Medium-High", "High"): reqs.append(color_cell_req(ws.id, rn, C["econ_sens"], "ffe599", "7f4f00"))

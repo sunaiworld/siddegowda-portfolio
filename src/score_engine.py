@@ -721,3 +721,128 @@ def calculate_buying_zone(quality_score, valuation_score, total_score=None, metr
     return "❌ WAIT"
 
 
+# ══════════════════════════════════════════════
+# SECTOR FAIR VALUATION ANCHOR
+# Derives sector-appropriate "fair" PE or PB from
+# SECTOR_RULES thresholds — zero new API calls.
+# ══════════════════════════════════════════════
+# Fair anchor: (metric, fair_value)
+# metric = "pe"  → fair_value = PE ratio → Fair Value = fair_PE × EPS
+# metric = "pb"  → fair_value = PB ratio → Fair Value = fair_PB × Book Value
+SECTOR_FAIR_ANCHOR = {
+    "QUALITY_GROWTH":            ("pe", 25),
+    "CONSUMER_STAPLES":          ("pe", 35),
+    "CONSUMER_DISCRETIONARY":    ("pe", 20),
+    "INDUSTRIAL_CAPEX":          ("pe", 20),
+    "COMMODITY_CYCLICAL":        ("pe",  8),
+    "FINANCIAL_BANK":            ("pb", 1.5),
+    "FINANCIAL_NBFC":            ("pb", 1.5),
+    "FINANCIAL_INSURANCE":       ("pb", 2.0),
+    "FINANCIAL_CAPITAL_MARKETS": ("pe", 20),
+    "DEFAULT":                   ("pe", 20),
+}
+
+
+def _fmt_inr(value):
+    """Format a number as Indian rupee string with comma grouping."""
+    try:
+        v = int(round(value))
+        if v <= 0:
+            return ""
+        s = str(v)
+        if len(s) <= 3:
+            return f"₹{s}"
+        last3 = s[-3:]
+        rest = s[:-3]
+        parts = []
+        while len(rest) > 2:
+            parts.append(rest[-2:])
+            rest = rest[:-2]
+        if rest:
+            parts.append(rest)
+        parts.reverse()
+        return "₹" + ",".join(parts) + "," + last3
+    except Exception:
+        return ""
+
+
+def calculate_price_range(archetype, metrics):
+    """
+    Derives the Buy/Sell Price Range string for the stock's current Buying Zone.
+
+    Uses sector-appropriate fair PE × EPS or fair PB × Book Value
+    (already available in metrics — no new API call).
+
+    Zone boundaries (% of fair value):
+      ❌ WAIT           > 110%
+      🟡 SMALL BUY      100% – 110%
+      🟢 ACCUMULATE      90% – 100%
+      🟢🟢 ADD AGGR       80% –  90%
+      🔎 INVESTIGATE     < 80%
+
+    Returns a formatted string such as "₹850 – ₹950" or "> ₹1,050" or "< ₹750".
+    Returns "" if insufficient data (EPS/BV missing or negative).
+    """
+    anchor_metric, fair_anchor = SECTOR_FAIR_ANCHOR.get(
+        archetype, SECTOR_FAIR_ANCHOR["DEFAULT"]
+    )
+
+    _m = metrics or {}
+
+    # ── Derive fair value ──────────────────────────────────────────────────
+    fair_value = None
+
+    if anchor_metric == "pe":
+        eps = _m.get("eps")
+        pe  = _m.get("pe")
+        if eps is not None and eps > 0:
+            fair_value = fair_anchor * eps
+        elif pe is not None and pe > 0:
+            # Fallback: approximate using CMP / actual PE → implied EPS, then fair PE × implied EPS
+            cmp = _m.get("cmp")
+            if cmp and cmp > 0:
+                implied_eps = cmp / pe
+                fair_value = fair_anchor * implied_eps
+
+    elif anchor_metric == "pb":
+        bv = _m.get("bv")
+        pb = _m.get("pb")
+        if bv is not None and bv > 0:
+            fair_value = fair_anchor * bv
+        elif pb is not None and pb > 0:
+            cmp = _m.get("cmp")
+            if cmp and cmp > 0:
+                implied_bv = cmp / pb
+                fair_value = fair_anchor * implied_bv
+
+    if not fair_value or fair_value <= 0:
+        return ""
+
+    # ── Zone boundaries ────────────────────────────────────────────────────
+    z_wait_lower     = fair_value * 1.10   # ❌ WAIT: > this
+    z_small_upper    = fair_value * 1.10   # 🟡 SMALL BUY: fair_value – z_small_upper
+    z_small_lower    = fair_value * 1.00
+    z_accum_upper    = fair_value * 1.00   # 🟢 ACCUMULATE: z_accum_lower – z_accum_upper
+    z_accum_lower    = fair_value * 0.90
+    z_aggr_upper     = fair_value * 0.90   # 🟢🟢 ADD AGGR: z_aggr_lower – z_aggr_upper
+    z_aggr_lower     = fair_value * 0.80
+    z_invest_upper   = fair_value * 0.80   # 🔎 INVESTIGATE: < this
+
+    cmp = _m.get("cmp")
+
+    # Determine which zone the current CMP falls into
+    if cmp is None or cmp <= 0:
+        return ""
+
+    if cmp > z_wait_lower:
+        return f"> {_fmt_inr(z_wait_lower)}"
+    elif cmp >= z_small_lower:
+        return f"{_fmt_inr(z_small_lower)} – {_fmt_inr(z_small_upper)}"
+    elif cmp >= z_accum_lower:
+        return f"{_fmt_inr(z_accum_lower)} – {_fmt_inr(z_accum_upper)}"
+    elif cmp >= z_aggr_lower:
+        return f"{_fmt_inr(z_aggr_lower)} – {_fmt_inr(z_aggr_upper)}"
+    else:
+        return f"< {_fmt_inr(z_invest_upper)}"
+
+

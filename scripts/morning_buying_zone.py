@@ -140,7 +140,9 @@ def generate_morning_message():
                 pe = s.get("PE", "-")
                 score = s.get("Total Score", "-")
                 action = str(s.get("Final Action", "-")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                msg += f"• {sym} | ₹{cmp} | {action} | PE {pe} | Score {score}\n"
+                price_rng = str(s.get("Buy/Sell Price Range", "")).replace("&", "&amp;")
+                price_rng_line = f"Buy Zone: {price_rng}\n" if price_rng else ""
+                msg += f"<b>{sym}</b>\nCMP: ₹{cmp}\n{price_rng_line}PE: {pe} | Score: {score}\nFinal Action: {action}\n\n"
             msg += "\n"
             
     # Render WAIT differently
@@ -154,10 +156,8 @@ def generate_morning_message():
              for s in stocks:
                 sym = str(s.get("Symbol", "?")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                 cmp = s.get("CMP", 0)
-                pe = s.get("PE", "-")
-                score = s.get("Total Score", "-")
                 action = str(s.get("Final Action", "-")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                msg += f"• {sym} | ₹{cmp} | {action} | PE {pe} | Score {score}\n"
+                msg += f"• {sym} | ₹{cmp} | {action}\n"
     else:
         msg += f"{wait_count} stocks\n"
         
