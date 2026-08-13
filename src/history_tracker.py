@@ -260,8 +260,6 @@ def append_history_snapshot(sh, results, portfolio_live_value, prices, health_sc
     for row in results:
         try:
             sym       = row[GITHUB_DATA_COLS["symbol"]]
-            pe        = clean_val(row[GITHUB_DATA_COLS["pe"]])
-            rsi       = clean_val(row[GITHUB_DATA_COLS["rsi"]])
             total     = clean_val(row[GITHUB_DATA_COLS["total"]])
             action    = row[GITHUB_DATA_COLS["action"]]
             quality   = clean_val(row[GITHUB_DATA_COLS["quality"]])
@@ -270,7 +268,8 @@ def append_history_snapshot(sh, results, portfolio_live_value, prices, health_sc
         except (IndexError, KeyError):
             continue
         cmp_ = clean_val(prices.get(sym, ""))
-        snap_rows.append([today, sym, cmp_, pe, rsi, total, action, quality, valuation, timing])
+        # pe and rsi columns removed from schema; preserve history column structure.
+        snap_rows.append([today, sym, cmp_, "", "", total, action, quality, valuation, timing])
 
     if snap_rows:
         ws.append_rows(snap_rows)

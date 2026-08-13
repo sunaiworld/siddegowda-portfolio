@@ -46,11 +46,13 @@ TECHNICAL_SETUP_COLORS = {
 
 
 TREND_COLORS = {
-    "Strong Uptrend":   ("00c853", "ffffff"),
+    "Strong Uptrend":   ("c6efce", "276221"),
     "Uptrend":          ("d9ead3", "0b8043"),
-    "Sideways":         ("fff2cc", "7f4f00"),
+    "Weak Uptrend":     ("ebf3e8", "0b8043"),
+    "Neutral":          ("f3f3f3", "555555"),
+    "Weak Downtrend":   ("fef3c7", "92400e"),
     "Downtrend":        ("fde9d9", "c62828"),
-    "Strong Downtrend": ("cc0000", "ffffff"),
+    "Strong Downtrend": ("fce5cd", "b45309"),
 }
 
 

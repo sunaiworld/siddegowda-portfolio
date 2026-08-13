@@ -33,42 +33,39 @@ from sheet_writer import *
 # without re-deriving indices.
 # ══════════════════════════════════════════════
 GITHUB_DATA_COLS = {
+    # Identity / classification
     "symbol": 0, "sector": 1, "industry": 2, "archetype": 3,
-    "econ_sens": 4, "inv_role": 5, "technical_setup": 6,
+    "econ_sens": 4, "inv_role": 5,
+    # Technical + price
+    "technical_setup": 6,
     "low52": 7, "cmp": 8, "high52": 9,
-    "buying_zone": 10, "fair_val": 11, "price_range": 12, "action": 13, "trend": 14,
-    "pe": 15, "eps": 16, "bv": 17, "pb": 18,
-    "div": 19,
-    "rsi": 20,
-    "roe": 21, "roa": 22, "debt_eq": 23,
-    "rev_growth": 24, "beta": 25,
-    "strengths": 26, "weaknesses": 27,
-    "quality": 28, "valuation": 29, "timing": 30, "total": 31,
-    "vol_spike": 32,
-    "mcap": 33, "cap_type": 34,
-    "news_summary":   35,
-    "bullish_score":  36,
-    "bearish_score":  37,
-    "news_sentiment": 38,
-    "news_reason":    39,
-    "news_source":    40,
+    # Value analysis
+    "buying_zone": 10, "fair_val": 11, "price_range": 12,
+    # Decision
+    "action": 13, "trend": 14,
+    # Scores
+    "quality": 15, "valuation": 16, "timing": 17, "total": 18,
+    # Market data
+    "vol_spike": 19, "mcap": 20, "cap_type": 21,
+    # News Engine columns
+    "news_summary":   22,
+    "bullish_score":  23,
+    "bearish_score":  24,
+    "news_sentiment": 25,
+    "news_reason":    26,
+    "news_source":    27,
 }
 
 # Header text per column key
 GITHUB_DATA_HEADER_NAMES = {
     "symbol": "Symbol", "sector": "Sector", "industry": "Industry", "archetype": "Archetype",
-    "econ_sens": "Economic Sensitivity", "inv_role": "Investor Role", "technical_setup": "Technical Setup",
+    "econ_sens": "Economic Sensitivity", "inv_role": "Investor Role",
+    "technical_setup": "Technical Setup",
     "low52": "52W Low", "cmp": "CMP", "high52": "52W High",
-    "buying_zone": "Buying Zone", "fair_val": "Fair Val", "price_range": "Buy/Sell Price Range", "action": "Final Action", "trend": "Trend",
-    "pe": "PE", "eps": "EPS", "bv": "Book Value", "pb": "P/B",
-    "div": "Div Yield%",
-    "rsi": "RSI",
-    "roe": "ROE%", "roa": "ROA%", "debt_eq": "Debt/Equity",
-    "rev_growth": "Rev Growth%", "beta": "Beta",
-    "strengths": "Strengths", "weaknesses": "Weaknesses",
+    "buying_zone": "Buying Zone", "fair_val": "Fair Val", "price_range": "Buy/Sell Price Range",
+    "action": "Final Action", "trend": "Trend",
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
-    "vol_spike": "Vol Spike",
-    "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
+    "vol_spike": "Vol Spike", "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
     "news_summary":   "News Summary",
     "bullish_score":  "Bullish Score",
     "bearish_score":  "Bearish Score",
@@ -80,18 +77,13 @@ GITHUB_DATA_HEADER_NAMES = {
 # Column pixel width per key
 GITHUB_DATA_COL_WIDTHS = {
     "symbol": 70, "sector": 75, "industry": 90, "archetype": 80,
-    "econ_sens": 130, "inv_role": 130, "technical_setup": 110,
-    "low52": 55, "cmp": 65, "high52": 55,
-    "buying_zone": 105, "fair_val": 65, "price_range": 160, "action": 90, "trend": 90,
-    "pe": 45, "eps": 45, "bv": 55, "pb": 45,
-    "div": 50,
-    "rsi": 45,
-    "roe": 50, "roa": 50, "debt_eq": 55,
-    "rev_growth": 55, "beta": 45,
-    "strengths": 200, "weaknesses": 200,
+    "econ_sens": 110, "inv_role": 110,
+    "technical_setup": 110,
+    "low52": 60, "cmp": 65, "high52": 60,
+    "buying_zone": 115, "fair_val": 70, "price_range": 150,
+    "action": 90, "trend": 90,
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
-    "vol_spike": 55,
-    "mcap": 65, "cap_type": 65,
+    "vol_spike": 55, "mcap": 70, "cap_type": 65,
     "news_summary":   220,
     "bullish_score":   55,
     "bearish_score":   55,
@@ -185,46 +177,30 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     weaknesses_str  = " | ".join(weaknesses)
     technical_setup = classify_technical_setup(tech, cmp)
 
-    # Row is built BY KEY via GITHUB_DATA_COLS, not by position in a
-    # literal list — reordering the columns is now a one-line change
-    # to GITHUB_DATA_COLS, nothing here needs to change to match.
     C = GITHUB_DATA_COLS
     row = [""] * len(C)
-    row[C["symbol"]]          = sym
-    row[C["sector"]]          = sector
-    row[C["industry"]]        = industry
-    row[C["archetype"]]       = archetype
-    row[C["econ_sens"]]       = econ_sens
-    row[C["inv_role"]]        = inv_role
-    row[C["low52"]]           = low52 or ""
-    row[C["high52"]]          = high52 or ""
-    row[C["pe"]]              = f.get("pe") or ""
-    row[C["eps"]]             = f.get("eps") or ""
-    row[C["bv"]]              = f.get("bv") or ""
-    row[C["pb"]]              = f.get("pb") or ""
-    row[C["div"]]             = f.get("div") or ""
-    row[C["rsi"]]             = rsi
-    row[C["roe"]]             = f.get("roe") or ""
-    row[C["roa"]]             = f.get("roa") or ""
-    row[C["debt_eq"]]         = f.get("debt_eq") or ""
-    row[C["rev_growth"]]      = rev_gr or ""
-    row[C["beta"]]            = f.get("beta") or ""
-    row[C["strengths"]]       = strengths_str
-    row[C["weaknesses"]]      = weaknesses_str
-    row[C["technical_setup"]] = technical_setup
-    row[C["cmp"]]             = round(cmp, 2) if cmp else ""
-    row[C["fair_val"]]        = fair_val
-    row[C["buying_zone"]]     = buying_zone
-    row[C["price_range"]]     = price_range
-    row[C["action"]]          = final_action
-    row[C["quality"]]         = q_sc
-    row[C["valuation"]]       = v_sc
-    row[C["timing"]]          = t_sc
-    row[C["total"]]           = tot_sc
-    row[C["vol_spike"]]       = vol_spike
-    row[C["trend"]]           = trend
-    row[C["mcap"]]            = mcap_fmt
-    row[C["cap_type"]]        = cap_type
+    row[C["symbol"]]         = sym
+    row[C["sector"]]         = sector
+    row[C["industry"]]       = industry
+    row[C["archetype"]]      = archetype
+    row[C["econ_sens"]]      = econ_sens
+    row[C["inv_role"]]       = inv_role
+    row[C["technical_setup"]]= technical_setup
+    row[C["low52"]]          = low52 or ""
+    row[C["cmp"]]            = round(cmp, 2) if cmp else ""
+    row[C["high52"]]         = high52 or ""
+    row[C["buying_zone"]]    = buying_zone
+    row[C["fair_val"]]       = fair_val
+    row[C["price_range"]]    = price_range
+    row[C["action"]]         = final_action
+    row[C["trend"]]          = trend
+    row[C["quality"]]        = q_sc
+    row[C["valuation"]]      = v_sc
+    row[C["timing"]]         = t_sc
+    row[C["total"]]          = tot_sc
+    row[C["vol_spike"]]      = vol_spike
+    row[C["mcap"]]           = mcap_fmt
+    row[C["cap_type"]]       = cap_type
 
     # ── News Engine fields (Phase A) ─────────────────────────────
     nd = news_data or {}
@@ -301,21 +277,21 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 
 
     ACTION_COLORS = {
-        "STRONG BUY":  ("00c853", "ffffff"),
-        "BUY":         ("0b8043", "ffffff"),
-        "ACCUMULATE":  ("d9ead3", "0b8043"),
+        "STRONG BUY":  ("c6efce", "276221"),  # strong green — light
+        "BUY":         ("d9ead3", "0b8043"),  # light green
+        "ACCUMULATE":  ("ebf3e8", "0b8043"),  # very light green
         "HOLD":        ("fff2cc", "7f4f00"),
         "WATCH":       ("fce8b2", "7f4f00"),
         "AVOID":       ("fde9d9", "c62828"),
-        "SELL":        ("cc0000", "ffffff"),
+        "SELL":        ("fce5cd", "b45309"),  # light orange — not dark red+white
     }
 
     BUYING_ZONE_COLORS = {
-        "🟢🟢 ADD AGGRESSIVELY": ("00c853", "ffffff"),
-        "🔎 INVESTIGATE WHY":      ("e65100", "ffffff"),
-        "🟢 ACCUMULATE":         ("d9ead3", "0b8043"),
-        "🟡 SMALL BUY":          ("fff2cc", "7f4f00"),
-        "❌ WAIT":               ("fde9d9", "c62828"),
+        "🟢🟢 ADD AGGRESSIVELY": ("c6efce", "276221"),  # strong light green
+        "🟢 ACCUMULATE":         ("d9ead3", "0b8043"),  # light green
+        "🟡 SMALL BUY":          ("fef3c7", "92400e"),  # light amber
+        "🔎 INVESTIGATE WHY":    ("fce5cd", "b45309"),  # light orange — not dark red/saturated
+        "❌ WAIT":               ("fde9d9", "c62828"),  # light red/pink
     }
 
     def sf(row, key):
@@ -345,16 +321,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         trend_val = str(row[C["trend"]]).strip() if len(row) > C["trend"] else ""
         risk_val  = str(row[C["econ_sens"]]).strip() if len(row) > C["econ_sens"] else ""
 
-        rsi_v    = sf(row, "rsi")
-        pe_v     = sf(row, "pe")
-        eps_v    = sf(row, "eps")
-        pb_v     = sf(row, "pb")
-        div_v    = sf(row, "div")
-        roe_v    = sf(row, "roe")
-        roa_v    = sf(row, "roa")
-        debt_v   = sf(row, "debt_eq")
-        growth_v = sf(row, "rev_growth")
-        beta_v   = sf(row, "beta")
         vol_v    = sf(row, "vol_spike")
         q_sc     = sf(row, "quality")
         v_sc     = sf(row, "valuation")
@@ -374,68 +340,17 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         reqs.append(color_cell_req(ws.id, rn, C["high52"], "eaf4fb", "1565c0", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["low52"], "fdf2f2", "c62828", bold=False))
 
-        # ── PE ──
-        if pe_v is not None:
-            if 0 < pe_v <= 25:   reqs.append(color_cell_req(ws.id, rn, C["pe"], "d9ead3", "0b8043"))
-            elif pe_v <= 40:     reqs.append(color_cell_req(ws.id, rn, C["pe"], "fff2cc", "7f4f00"))
-            else:                reqs.append(color_cell_req(ws.id, rn, C["pe"], "fde9d9", "c62828"))
-
-        # ── EPS ──
-        if eps_v is not None:
-            reqs.append(color_cell_req(ws.id, rn, C["eps"], "d9ead3", "0b8043") if eps_v > 0
-                        else color_cell_req(ws.id, rn, C["eps"], "fde9d9", "c62828"))
-
-        # ── P/B ──
-        if pb_v is not None:
-            if pb_v <= 3:        reqs.append(color_cell_req(ws.id, rn, C["pb"], "d9ead3", "0b8043"))
-            elif pb_v <= 5:      reqs.append(color_cell_req(ws.id, rn, C["pb"], "fff2cc", "7f4f00"))
-            else:                reqs.append(color_cell_req(ws.id, rn, C["pb"], "fde9d9", "c62828"))
-
-        # ── Div Yield% ──
-        if div_v is not None:
-            if div_v >= 2:       reqs.append(color_cell_req(ws.id, rn, C["div"], "d9ead3", "0b8043"))
-            elif div_v >= 1:     reqs.append(color_cell_req(ws.id, rn, C["div"], "fff2cc", "7f4f00"))
-
-        # ── RSI ──
-        if rsi_v is not None:
-            if   rsi_v < 35:  reqs.append(color_cell_req(ws.id, rn, C["rsi"], "d9ead3", "0b8043"))
-            elif rsi_v > 70:  reqs.append(color_cell_req(ws.id, rn, C["rsi"], "fde9d9", "c62828"))
-            elif rsi_v > 60:  reqs.append(color_cell_req(ws.id, rn, C["rsi"], "fff2cc", "7f4f00"))
-
-        # ── ROE% / ROA% / Debt-Equity / Rev Growth% / Beta ──
-        if roe_v is not None:
-            if roe_v >= 15:      reqs.append(color_cell_req(ws.id, rn, C["roe"], "d9ead3", "0b8043"))
-            elif roe_v >= 8:     reqs.append(color_cell_req(ws.id, rn, C["roe"], "fff2cc", "7f4f00"))
-            else:                reqs.append(color_cell_req(ws.id, rn, C["roe"], "fde9d9", "c62828"))
-        if roa_v is not None:
-            if roa_v >= 2:       reqs.append(color_cell_req(ws.id, rn, C["roa"], "d9ead3", "0b8043"))
-            elif roa_v >= 1:     reqs.append(color_cell_req(ws.id, rn, C["roa"], "fff2cc", "7f4f00"))
-            else:                reqs.append(color_cell_req(ws.id, rn, C["roa"], "fde9d9", "c62828"))
-        if debt_v is not None:
-            if debt_v <= 0.5:    reqs.append(color_cell_req(ws.id, rn, C["debt_eq"], "d9ead3", "0b8043"))
-            elif debt_v <= 1:    reqs.append(color_cell_req(ws.id, rn, C["debt_eq"], "fff2cc", "7f4f00"))
-            else:                reqs.append(color_cell_req(ws.id, rn, C["debt_eq"], "fde9d9", "c62828"))
-        if growth_v is not None:
-            if growth_v >= 10:   reqs.append(color_cell_req(ws.id, rn, C["rev_growth"], "d9ead3", "0b8043"))
-            elif growth_v >= 0:  reqs.append(color_cell_req(ws.id, rn, C["rev_growth"], "fff2cc", "7f4f00"))
-            else:                reqs.append(color_cell_req(ws.id, rn, C["rev_growth"], "fde9d9", "c62828"))
-        if beta_v is not None:
-            if beta_v <= 1:      reqs.append(color_cell_req(ws.id, rn, C["beta"], "d9ead3", "0b8043"))
-            elif beta_v <= 1.5:  reqs.append(color_cell_req(ws.id, rn, C["beta"], "fff2cc", "7f4f00"))
-            else:                reqs.append(color_cell_req(ws.id, rn, C["beta"], "fde9d9", "c62828"))
-
-        # ── Strengths / Weaknesses ──
-        reqs.append(color_cell_req(ws.id, rn, C["strengths"], "f1f9f1", "0b8043", bold=False))
-        reqs.append(color_cell_req(ws.id, rn, C["weaknesses"], "fdf2f2", "c62828", bold=False))
+        # ── No formatting for dropped columns (PE, EPS, RSI, etc. not in new schema) ──
+        # ── Strengths / Weaknesses removed from schema — no formatting needed ──
 
         # ── Technical Setup / CMP / Fair Val / Final Action / Risk Level ──
         if tech_set in TECHNICAL_SETUP_COLORS:
             bg, fg = TECHNICAL_SETUP_COLORS[tech_set]
             reqs.append(color_cell_req(ws.id, rn, C["technical_setup"], bg, fg))
-        # CMP: neutral blue-grey highlight for readability
-        reqs.append(color_cell_req(ws.id, rn, C["cmp"], "e8eaf6", "1a237e", bold=True))
-        # Fair Val: light blue reference colour
-        reqs.append(color_cell_req(ws.id, rn, C["fair_val"], "e3f2fd", "01579b", bold=False))
+        # CMP: neutral light-green info cell
+        reqs.append(color_cell_req(ws.id, rn, C["cmp"], "f1f8e9", "33691e", bold=False))
+        # Fair Val: light green reference colour
+        reqs.append(color_cell_req(ws.id, rn, C["fair_val"], "e8f5e9", "1b5e20", bold=False))
         if action in ACTION_COLORS:
             bg_a, fg_a = ACTION_COLORS[action]
             reqs.append(color_cell_req(ws.id, rn, C["action"], bg_a, fg_a))

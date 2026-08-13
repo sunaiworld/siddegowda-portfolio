@@ -359,7 +359,6 @@ def run_portfolio_update(sh):
                 sym    = row[C["symbol"]]
                 tot_sc = row[C["total"]]
                 action = row[C["action"]]
-                rsi    = row[C["rsi"]]
                 trend  = row[C["trend"]]
                 setup  = row[C["technical_setup"]]
                 news_s = row[C["news_sentiment"]]
@@ -374,7 +373,7 @@ def run_portfolio_update(sh):
             if score_f >= 50:
                 watchlist_opportunities.append({
                     "sym": sym, "score": int(score_f), "action": action,
-                    "rsi": rsi, "trend": trend, "setup": setup, "news": news_s,
+                    "trend": trend, "setup": setup, "news": news_s,
                 })
     watchlist_opportunities.sort(key=lambda x: x["score"], reverse=True)
 
