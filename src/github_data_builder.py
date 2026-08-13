@@ -42,17 +42,19 @@ GITHUB_DATA_COLS = {
     "roe": 16, "roa": 17, "debt_eq": 18,
     "rev_growth": 19, "beta": 20,
     "strengths": 21, "weaknesses": 22, "technical_setup": 23,
-    "action": 24, "buying_zone": 25, "price_range": 26, "trend": 27,
-    "quality": 28, "valuation": 29, "timing": 30, "total": 31,
-    "vol_spike": 32,
-    "mcap": 33, "cap_type": 34,
+    # ── Trading decision section ─────────────────────────────────
+    "cmp": 24, "fair_val": 25,
+    "buying_zone": 26, "price_range": 27, "action": 28, "trend": 29,
+    "quality": 30, "valuation": 31, "timing": 32, "total": 33,
+    "vol_spike": 34,
+    "mcap": 35, "cap_type": 36,
     # ── News Engine columns (Phase A) ──────────────────────
-    "news_summary":   35,
-    "bullish_score":  36,
-    "bearish_score":  37,
-    "news_sentiment": 38,
-    "news_reason":    39,
-    "news_source":    40,
+    "news_summary":   37,
+    "bullish_score":  38,
+    "bearish_score":  39,
+    "news_sentiment": 40,
+    "news_reason":    41,
+    "news_source":    42,
 }
 
 # Header text per column key
@@ -67,7 +69,8 @@ GITHUB_DATA_HEADER_NAMES = {
     "rev_growth": "Rev Growth%", "beta": "Beta",
     "strengths": "Strengths", "weaknesses": "Weaknesses",
     "technical_setup": "Technical Setup",
-    "action": "Final Action", "buying_zone": "Buying Zone", "price_range": "Buy/Sell Price Range", "trend": "Trend",
+    "cmp": "CMP", "fair_val": "Fair Val",
+    "buying_zone": "Buying Zone", "price_range": "Buy/Sell Price Range", "action": "Final Action", "trend": "Trend",
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
     "vol_spike": "Vol Spike",
     "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
@@ -92,7 +95,8 @@ GITHUB_DATA_COL_WIDTHS = {
     "rev_growth": 55, "beta": 45,
     "strengths": 200, "weaknesses": 200,
     "technical_setup": 110,
-    "action": 90, "buying_zone": 105, "price_range": 160, "trend": 90,
+    "cmp": 65, "fair_val": 65,
+    "buying_zone": 105, "price_range": 160, "action": 90, "trend": 90,
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
     "vol_spike": 55,
     "mcap": 65, "cap_type": 65,
@@ -180,12 +184,12 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     
     buying_zone = calculate_buying_zone(q_sc, v_sc, tot_sc, metrics)
 
-    # Build a complete metrics dict with EPS and BV for price range calculation
+    # Build price range metrics with EPS and BV for price range calculation
     price_range_metrics = dict(metrics)
     price_range_metrics["eps"] = f.get("eps")
     price_range_metrics["bv"]  = f.get("bv")
     price_range_metrics["cmp"] = cmp
-    price_range = calculate_price_range(archetype, price_range_metrics)
+    price_range, fair_val = calculate_price_range(archetype, price_range_metrics)
 
     strengths_str   = " | ".join(strengths)
     weaknesses_str  = " | ".join(weaknesses)
@@ -220,9 +224,11 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["strengths"]]       = strengths_str
     row[C["weaknesses"]]      = weaknesses_str
     row[C["technical_setup"]] = technical_setup
-    row[C["action"]]          = final_action
+    row[C["cmp"]]             = round(cmp, 2) if cmp else ""
+    row[C["fair_val"]]        = fair_val
     row[C["buying_zone"]]     = buying_zone
     row[C["price_range"]]     = price_range
+    row[C["action"]]          = final_action
     row[C["quality"]]         = q_sc
     row[C["valuation"]]       = v_sc
     row[C["timing"]]          = t_sc
@@ -332,6 +338,15 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         except:
             return None
 
+    # Light-tint colour map for Buy/Sell Price Range — defined once, reused per row
+    PRICE_RANGE_LIGHT_COLORS = {
+        "🟢🟢 ADD AGGRESSIVELY": ("c8f5dc", "0b5e2a"),
+        "🔎 INVESTIGATE WHY":    ("fde3cc", "b84000"),
+        "🟢 ACCUMULATE":         ("eaf5e8", "0b5e2a"),
+        "🟡 SMALL BUY":          ("fdf9e3", "7f4f00"),
+        "❌ WAIT":               ("fef2f0", "c62828"),
+    }
+
     for i, row in enumerate(rows):
         rn  = i + 1
 
@@ -438,24 +453,20 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         reqs.append(color_cell_req(ws.id, rn, C["strengths"], "f1f9f1", "0b8043", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["weaknesses"], "fdf2f2", "c62828", bold=False))
 
-        # ── Technical Setup / Final Action / Risk Level ──
+        # ── Technical Setup / CMP / Fair Val / Final Action / Risk Level ──
         if tech_set in TECHNICAL_SETUP_COLORS:
             bg, fg = TECHNICAL_SETUP_COLORS[tech_set]
             reqs.append(color_cell_req(ws.id, rn, C["technical_setup"], bg, fg))
+        # CMP: neutral blue-grey highlight for readability
+        reqs.append(color_cell_req(ws.id, rn, C["cmp"], "e8eaf6", "1a237e", bold=True))
+        # Fair Val: light blue reference colour
+        reqs.append(color_cell_req(ws.id, rn, C["fair_val"], "e3f2fd", "01579b", bold=False))
         if action in ACTION_COLORS:
             bg_a, fg_a = ACTION_COLORS[action]
             reqs.append(color_cell_req(ws.id, rn, C["action"], bg_a, fg_a))
         if b_zone in BUYING_ZONE_COLORS:
             bg_b, fg_b = BUYING_ZONE_COLORS[b_zone]
             reqs.append(color_cell_req(ws.id, rn, C["buying_zone"], bg_b, fg_b))
-            # Price range column uses a lighter tint of the same zone colour
-            PRICE_RANGE_LIGHT_COLORS = {
-                "🟢🟢 ADD AGGRESSIVELY": ("c8f5dc", "0b5e2a"),
-                "🔎 INVESTIGATE WHY":    ("fde3cc", "b84000"),
-                "🟢 ACCUMULATE":         ("eaf5e8", "0b5e2a"),
-                "🟡 SMALL BUY":          ("fdf9e3", "7f4f00"),
-                "❌ WAIT":               ("fef2f0", "c62828"),
-            }
             if b_zone in PRICE_RANGE_LIGHT_COLORS:
                 lbg, lfg = PRICE_RANGE_LIGHT_COLORS[b_zone]
                 reqs.append(color_cell_req(ws.id, rn, C["price_range"], lbg, lfg, bold=False))
