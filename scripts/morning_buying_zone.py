@@ -139,7 +139,8 @@ def generate_morning_message():
                 cmp = s.get("CMP", 0)
                 pe = s.get("PE", "-")
                 score = s.get("Total Score", "-")
-                msg += f"• {sym} | ₹{cmp} | PE {pe} | Score {score}\n"
+                action = s.get("Final Action", "-")
+                msg += f"• {sym} | ₹{cmp} | {action} | PE {pe} | Score {score}\n"
             msg += "\n"
             
     # Render WAIT differently
@@ -155,7 +156,8 @@ def generate_morning_message():
                 cmp = s.get("CMP", 0)
                 pe = s.get("PE", "-")
                 score = s.get("Total Score", "-")
-                msg += f"• {sym} | ₹{cmp} | PE {pe} | Score {score}\n"
+                action = s.get("Final Action", "-")
+                msg += f"• {sym} | ₹{cmp} | {action} | PE {pe} | Score {score}\n"
     else:
         msg += f"{wait_count} stocks\n"
         
