@@ -277,7 +277,18 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
                 time.sleep(_wait)
             else:
                 raise
-
+for _attempt in range(5):
+        try:
+            ws.clear()
+            break
+        except _gse.APIError as _e:
+            if any(code in str(_e) for code in ("429", "500", "502", "503", "504")) and _attempt < 4:
+                _wait = 15 * (2 ** _attempt)
+                log.warning(f"[write_github_data] {_e} on ws.clear, waiting {_wait}s (attempt {_attempt+1}/5)")
+                time.sleep(_wait)
+            else:
+                raise
+    # ← paste the new formatting-clear line here
 
     # Headers and widths assembled BY KEY from GITHUB_DATA_COLS — the
     # only place column order is ever defined. Nothing else can drift.
