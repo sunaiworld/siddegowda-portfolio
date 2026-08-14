@@ -156,6 +156,18 @@ def get_structural_format_reqs(ws_id, num_rows, num_cols, widths=None, freeze_ro
         }})
     return reqs
 
+def clear_all_formatting_reqs(ws_id):
+    """Reset every cell's formatting to default across the whole sheet.
+    ws.clear() only wipes values, not backgrounds/borders/fonts — call
+    this first so no formatting survives from a previous schema/writer."""
+    return [{
+        "repeatCell": {
+            "range": {"sheetId": ws_id},
+            "cell": {"userEnteredFormat": {}},
+            "fields": "userEnteredFormat"
+        }
+    }]
+
 def get_currency_format_reqs(ws_id, start_row, end_row, start_col, end_col):
     return [{
         "repeatCell": {
