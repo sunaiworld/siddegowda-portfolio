@@ -33,32 +33,26 @@ from sheet_writer import *
 # without re-deriving indices.
 # ══════════════════════════════════════════════
 GITHUB_DATA_COLS = {
-    # Identity / classification
+    # Group 1: Identity & Size
     "symbol": 0, "sector": 1, "industry": 2, "archetype": 3,
-    "econ_sens": 4, "inv_role": 5,
-    # Technical + price + valuation (new requested order)
-    "technical_setup": 6,
-    "low52": 7, "cmp": 8, "high52": 9,
-    "buying_zone": 10, "fair_val": 11, "price_range": 12,
-    "action": 13, "trend": 14,
-    # Restoring everything else from the old schema
-    "day_chg_pct": 15, "pct_high": 16,
-    "pe": 17, "eps": 18, "bv": 19, "pb": 20,
-    "div": 21,
-    "rsi": 22,
-    "roe": 23, "roa": 24, "debt_eq": 25,
-    "rev_growth": 26, "beta": 27,
-    "strengths": 28, "weaknesses": 29,
-    "quality": 30, "valuation": 31, "timing": 32, "total": 33,
-    "vol_spike": 34,
-    "mcap": 35, "cap_type": 36,
-    # News Engine columns
-    "news_summary":   37,
-    "bullish_score":  38,
-    "bearish_score":  39,
-    "news_sentiment": 40,
-    "news_reason":    41,
-    "news_source":    42,
+    "econ_sens": 4, "inv_role": 5, "cap_type": 6, "mcap": 7,
+    # Group 2: Price Position
+    "low52": 8, "cmp": 9, "high52": 10, "pct_high": 11,
+    # Group 3: Immediate Momentum & Risk
+    "day_chg_pct": 12, "trend": 13, "technical_setup": 14,
+    "rsi": 15, "vol_spike": 16, "beta": 17,
+    # Group 4: Valuation
+    "eps": 18, "pe": 19, "bv": 20, "pb": 21, "div": 22, "fair_val": 23,
+    # Group 5: Financial Health & Efficiency
+    "rev_growth": 24, "roe": 25, "roa": 26, "debt_eq": 27,
+    # Group 6: Sentiment & Qualitative Data
+    "news_summary": 28, "news_reason": 29, "news_source": 30,
+    "news_sentiment": 31, "bullish_score": 32, "bearish_score": 33,
+    "strengths": 34, "weaknesses": 35,
+    # Group 7: Automated Scoring
+    "quality": 36, "valuation": 37, "timing": 38, "total": 39,
+    # Group 8: Final Decision (MUST stay last)
+    "buying_zone": 40, "price_range": 41, "action": 42,
 }
 
 # Header text per column key
