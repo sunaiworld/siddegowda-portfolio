@@ -105,6 +105,18 @@ GITHUB_DATA_COL_WIDTHS = {
     "news_source":     80,
 }
 
+# Group label → (start_key, end_key inclusive) using GITHUB_DATA_COLS keys.
+# Drives the merged banner row written above the normal column headers.
+GROUP_DEFS = [
+    ("symbol",       "mcap",        "Group 1: Identity & Size (Know what you're looking at)"),
+    ("low52",        "pct_high",    "Group 2: Price Position (Where is it right now?)"),
+    ("day_chg_pct",  "beta",        "Group 3: Immediate Momentum & Risk (Short-term action)"),
+    ("eps",          "fair_val",    "Group 4: Valuation (Is the price justified?)"),
+    ("rev_growth",   "debt_eq",     "Group 5: Financial Health & Efficiency (Business quality)"),
+    ("news_summary", "weaknesses",  "Group 6: Sentiment & Qualitative Data (News and SWOT)"),
+    ("quality",      "total",       "Group 7: Automated Scoring (System's composite ratings)"),
+    ("buying_zone",  "action",      "Group 8: Final Decision (Actionable output - MUST be last)"),
+]
 
 # ══════════════════════════════════════════════
 # BUILD A SINGLE RESULT ROW
@@ -256,10 +268,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     except _gse.WorksheetNotFound:
         ws = sh.add_worksheet(tab_name, rows=300, cols=num_cols)
 
-    # Always clear after resolving the worksheet — outside the try so
-    # any transient error here propagates instead of falling through to
-    # add_worksheet() on an already-existing sheet (the root cause of
-    # the "sheet already exists" 400 error).
     for _attempt in range(5):
         try:
             ws.clear()
@@ -272,40 +280,43 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             else:
                 raise
 
-    # Wipe leftover formatting from any prior writer/schema — values-only
-    # clear() above won't touch backgrounds/borders/widths.
     batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
 
-    # Headers and widths assembled BY KEY from GITHUB_DATA_COLS — the
-    # only place column order is ever defined. Nothing else can drift.
     headers = [""] * num_cols
     widths  = [70] * num_cols
     for key, idx in C.items():
         headers[idx] = GITHUB_DATA_HEADER_NAMES.get(key, key)
         widths[idx]  = GITHUB_DATA_COL_WIDTHS.get(key, 70)
 
-    data = [headers]
+    # Group header row — one label per group, placed in the leftmost cell
+    # of its range. mergeCells (below) visually spans it across the group.
+    group_ranges = [(C[sk], C[ek], label) for sk, ek, label in GROUP_DEFS]
+    group_row = [""] * num_cols
+    for start_col, end_col, label in group_ranges:
+        group_row[start_col] = label
+
+    data = [group_row, headers]
     if rows:
         data.extend([clean_row(r) for r in rows])
 
-    # Harden header/data write against transient 429 quota errors.
     for _attempt in range(5):
         try:
             ws.update(data)
             break
         except _gse.APIError as _e:
             if any(code in str(_e) for code in ("429", "500", "502", "503", "504")):
-                _wait = 15 * (2 ** _attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
+                _wait = 15 * (2 ** _attempt)
                 log.warning(f"[write_github_data] {_e} on ws.update, waiting {_wait}s (attempt {_attempt+1}/5)")
                 time.sleep(_wait)
             else:
                 raise
 
-    # ── Structural formatting: header, freeze, row height, column widths ──
-    # Consolidated into a single batch_update.
-    struct_reqs = get_structural_format_reqs(ws.id, len(rows), num_cols, widths, freeze_rows=1, freeze_cols=1)
+    # Column-name header now sits at row index 1 (sheet row 2) since the
+    # merged group-header banner occupies row index 0 above it.
+    struct_reqs = get_structural_format_reqs(ws.id, len(rows), num_cols, widths, freeze_rows=2, freeze_cols=1, header_row_idx=1)
+    group_header_reqs = get_group_header_merge_reqs(ws.id, group_ranges)
 
-    reqs = struct_reqs
+    reqs = struct_reqs + group_header_reqs
     
     # ← paste the new formatting-clear line here
 
@@ -377,7 +388,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     }
 
     for i, row in enumerate(rows):
-        rn  = i + 1
+        rn  = i + 2
 
         cap       = str(row[C["cap_type"]]).strip() if len(row) > C["cap_type"] else ""
         action    = str(row[C["action"]]).strip() if len(row) > C["action"] else ""
