@@ -277,17 +277,42 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
                 time.sleep(_wait)
             else:
                 raise
-for _attempt in range(5):
+
+    # Wipe leftover formatting from any prior writer/schema — values-only
+    # clear() above won't touch backgrounds/borders/widths.
+    batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
+
+    # Headers and widths assembled BY KEY from GITHUB_DATA_COLS — the
+    # only place column order is ever defined. Nothing else can drift.
+    headers = [""] * num_cols
+    widths  = [70] * num_cols
+    for key, idx in C.items():
+        headers[idx] = GITHUB_DATA_HEADER_NAMES.get(key, key)
+        widths[idx]  = GITHUB_DATA_COL_WIDTHS.get(key, 70)
+
+    data = [headers]
+    if rows:
+        data.extend([clean_row(r) for r in rows])
+
+    # Harden header/data write against transient 429 quota errors.
+    for _attempt in range(5):
         try:
-            ws.clear()
+            ws.update(data)
             break
         except _gse.APIError as _e:
-            if any(code in str(_e) for code in ("429", "500", "502", "503", "504")) and _attempt < 4:
-                _wait = 15 * (2 ** _attempt)
-                log.warning(f"[write_github_data] {_e} on ws.clear, waiting {_wait}s (attempt {_attempt+1}/5)")
+            if any(code in str(_e) for code in ("429", "500", "502", "503", "504")):
+                _wait = 15 * (2 ** _attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
+                log.warning(f"[write_github_data] {_e} on ws.update, waiting {_wait}s (attempt {_attempt+1}/5)")
                 time.sleep(_wait)
             else:
                 raise
+
+    # ── Structural formatting: header, freeze, row height, column widths ──
+    # Consolidated into a single batch_update.
+    struct_reqs = get_structural_format_reqs(ws.id, len(rows), num_cols, widths, freeze_rows=1, freeze_cols=1)
+
+    reqs = struct_reqs
+    
     # ← paste the new formatting-clear line here
 
     # Headers and widths assembled BY KEY from GITHUB_DATA_COLS — the
