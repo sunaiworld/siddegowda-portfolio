@@ -107,13 +107,53 @@ def clear_all_formatting_reqs(ws_id):
         }
     }]
 
-def get_structural_format_reqs(ws_id, num_rows, num_cols, widths=None, freeze_rows=1, freeze_cols=1):
-    profiler.increment("Formatting operations")
+def get_group_header_merge_reqs(ws_id, group_ranges):
+    """group_ranges: list of (start_col_idx, end_col_idx_inclusive, label).
+    Merges each group's columns in row 0 and styles that row as a
+    dark-blue banner sitting above the normal column-name header row."""
     reqs = []
-    # Header format
+    for start_col, end_col, label in group_ranges:
+        if end_col > start_col:
+            reqs.append({
+                "mergeCells": {
+                    "range": {
+                        "sheetId": ws_id,
+                        "startRowIndex": 0, "endRowIndex": 1,
+                        "startColumnIndex": start_col, "endColumnIndex": end_col + 1
+                    },
+                    "mergeType": "MERGE_ALL"
+                }
+            })
+    last_col = group_ranges[-1][1] + 1
     reqs.append({
         "repeatCell": {
             "range": {"sheetId": ws_id, "startRowIndex": 0, "endRowIndex": 1,
+                      "startColumnIndex": 0, "endColumnIndex": last_col},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": hex_rgb("1f4e78"),
+                "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 9},
+                "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
+                "wrapStrategy": "WRAP"
+            }},
+            "fields": "userEnteredFormat"
+        }
+    })
+    reqs.append({
+        "updateDimensionProperties": {
+            "range": {"sheetId": ws_id, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
+            "properties": {"pixelSize": 34}, "fields": "pixelSize"
+        }
+    })
+    return reqs
+
+def get_structural_format_reqs(ws_id, num_rows, num_cols, widths=None, freeze_rows=1, freeze_cols=1, header_row_idx=0):
+    profiler.increment("Formatting operations")
+    reqs = []
+    # Header format (column-name row — may sit at row 0 or lower if a
+    # merged group-header row is stacked above it)
+    reqs.append({
+        "repeatCell": {
+            "range": {"sheetId": ws_id, "startRowIndex": header_row_idx, "endRowIndex": header_row_idx + 1,
                       "startColumnIndex": 0, "endColumnIndex": num_cols},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": hex_rgb("0d1b2a"),
@@ -130,10 +170,10 @@ def get_structural_format_reqs(ws_id, num_rows, num_cols, widths=None, freeze_ro
             "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
         }
     })
-    # Row height
+    # Row height for header row
     reqs.append({
         "updateDimensionProperties": {
-            "range": {"sheetId": ws_id, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
+            "range": {"sheetId": ws_id, "dimension": "ROWS", "startIndex": header_row_idx, "endIndex": header_row_idx + 1},
             "properties": {"pixelSize": 50}, "fields": "pixelSize"
         }
     })
@@ -144,9 +184,10 @@ def get_structural_format_reqs(ws_id, num_rows, num_cols, widths=None, freeze_ro
             "properties": {"pixelSize": w}, "fields": "pixelSize"
         }} for i, w in enumerate(widths)]
 
-    # Alternating row colors
+    # Alternating row colors — start right after the header row
+    data_start = header_row_idx + 1
     for i in range(num_rows):
-        rn = i + 1
+        rn = data_start + i
         alt = "f8f9fa" if i % 2 == 0 else "ffffff"
         reqs.append({"repeatCell": {
             "range": {"sheetId": ws_id, "startRowIndex": rn, "endRowIndex": rn + 1,
