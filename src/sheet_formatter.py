@@ -95,7 +95,17 @@ def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
             "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat"
         }
     }
-
+def clear_all_formatting_reqs(ws_id):
+    """Reset every cell's formatting to default across the whole sheet.
+    ws.clear() only wipes values, not backgrounds/borders/fonts — call
+    this first so no formatting survives from a previous schema/writer."""
+    return [{
+        "repeatCell": {
+            "range": {"sheetId": ws_id},
+            "cell": {"userEnteredFormat": {}},
+            "fields": "userEnteredFormat"
+        }
+    }]
 
 def get_structural_format_reqs(ws_id, num_rows, num_cols, widths=None, freeze_rows=1, freeze_cols=1):
     profiler.increment("Formatting operations")
