@@ -323,7 +323,9 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     struct_reqs = get_structural_format_reqs(ws.id, len(rows), num_cols, widths, freeze_rows=2, freeze_cols=1, header_row_idx=1)
     group_header_reqs = get_group_header_merge_reqs(ws.id, group_ranges, frozen_cols=FROZEN_COLS)
 
-    reqs = struct_reqs + group_header_reqs
+    # Clear any existing AutoFilter before attempting merges (merge crosses filter borders → API error)
+    clear_filter_req = {"clearBasicFilter": {"sheetId": ws.id}}
+    reqs = [clear_filter_req] + struct_reqs + group_header_reqs
 
     ACTION_COLORS = {
         "STRONG BUY":  ("c6efce", "276221"),  # strong green — light
