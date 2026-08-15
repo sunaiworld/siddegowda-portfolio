@@ -100,6 +100,11 @@ def main():
     safe_print("✓ Portfolio History updated")
     safe_print("")
     
+    safe_print("==================================================")
+    safe_print("MAIN.PY LOGS:")
+    safe_print(engine_proc.stderr or engine_proc.stdout)
+    safe_print("==================================================")
+    
     runtime = int(round(time.time() - start_time))
     
     safe_print("Completed successfully.")
