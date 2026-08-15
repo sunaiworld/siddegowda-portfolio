@@ -357,17 +357,8 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
     })
     
     # Clear any native conditional formatting rules to ensure our cell colors show
-    try:
-        rules = sh.fetch_sheet_metadata({"includeGridData": False})
-        sheet_meta = next((s for s in rules.get('sheets', []) if s.get('properties', {}).get('sheetId') == ws_id), None)
-        if sheet_meta:
-            cond_formats = sheet_meta.get("conditionalFormats", [])
-            if cond_formats:
-                log.info(f"[DIAGNOSTIC] Found {len(cond_formats)} existing conditional format rules. Clearing them safely.")
-                clear_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws_id, "index": 0}} for _ in cond_formats]
-                batch_update_safe(sh, clear_reqs)
-    except Exception as e:
-        log.warning(f"[DIAGNOSTIC] Failed to clear conditional formats: {e}")
+    from sheet_formatter import clear_native_conditional_formatting
+    clear_native_conditional_formatting(sh, ws_id)
 
     log.info(f"[DIVIDENDS DEBUG] Data rows: {len(sum_rows) - 1}")
     log.info(f"[DIVIDENDS DEBUG] Formatting requests generated: {len(reqs)}")

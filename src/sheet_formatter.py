@@ -328,3 +328,20 @@ def color_action_signal(ws_id, rn, col_idx, action):
         bg, fg = ACTION_COLORS[action]
         return color_cell_req(ws_id, rn, col_idx, bg, fg)
     return None
+
+def clear_native_conditional_formatting(sh, ws_id):
+    """Safely fetch and delete any native conditional formatting rules on the given worksheet
+    that could override the direct cell colors applied by the API."""
+    from sheet_writer import batch_update_safe
+    try:
+        rules = sh.fetch_sheet_metadata({"includeGridData": False})
+        sheet_meta = next((s for s in rules.get('sheets', []) if s.get('properties', {}).get('sheetId') == ws_id), None)
+        if sheet_meta:
+            cond_formats = sheet_meta.get("conditionalFormats", [])
+            if cond_formats:
+                log.info(f"[DIAGNOSTIC] Found {len(cond_formats)} existing conditional format rules on ws {ws_id}. Clearing them safely.")
+                clear_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws_id, "index": 0}} for _ in cond_formats]
+                batch_update_safe(sh, clear_reqs)
+    except Exception as e:
+        log.warning(f"Could not clear conditional formats on ws {ws_id}: {e}")
+

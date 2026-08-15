@@ -281,6 +281,8 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
                 raise
 
     batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
+    from sheet_formatter import clear_native_conditional_formatting
+    clear_native_conditional_formatting(sh, ws.id)
 
     headers = [""] * num_cols
     widths  = [70] * num_cols
