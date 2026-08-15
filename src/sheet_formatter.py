@@ -107,19 +107,26 @@ def clear_all_formatting_reqs(ws_id):
         }
     }]
 
-def get_group_header_merge_reqs(ws_id, group_ranges):
+def get_group_header_merge_reqs(ws_id, group_ranges, frozen_cols=0):
     """group_ranges: list of (start_col_idx, end_col_idx_inclusive, label).
     Merges each group's columns in row 0 and styles that row as a
-    dark-blue banner sitting above the normal column-name header row."""
+    dark-blue banner sitting above the normal column-name header row.
+    frozen_cols: number of frozen columns (matches freeze_cols passed to
+    get_structural_format_reqs for the same sheet). The Sheets API refuses
+    to merge a range that spans across the frozen/non-frozen boundary, so
+    any group crossing it is merged as two pieces: the lone frozen cell
+    (left as-is, no merge needed for a single cell) and the remaining
+    unfrozen columns (merged, carries the label)."""
     reqs = []
     for start_col, end_col, label in group_ranges:
-        if end_col > start_col:
+        merge_start = frozen_cols if (start_col < frozen_cols <= end_col) else start_col
+        if end_col > merge_start:
             reqs.append({
                 "mergeCells": {
                     "range": {
                         "sheetId": ws_id,
                         "startRowIndex": 0, "endRowIndex": 1,
-                        "startColumnIndex": start_col, "endColumnIndex": end_col + 1
+                        "startColumnIndex": merge_start, "endColumnIndex": end_col + 1
                     },
                     "mergeType": "MERGE_ALL"
                 }
