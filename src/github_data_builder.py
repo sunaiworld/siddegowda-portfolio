@@ -322,10 +322,11 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     # merged group-header banner occupies row index 0 above it.
     struct_reqs = get_structural_format_reqs(ws.id, len(rows), num_cols, widths, freeze_rows=2, freeze_cols=1, header_row_idx=1)
     group_header_reqs = get_group_header_merge_reqs(ws.id, group_ranges, frozen_cols=FROZEN_COLS)
+    group_color_reqs = get_group_header_color_reqs(ws.id, group_ranges, frozen_cols=FROZEN_COLS)
 
     # Clear any existing AutoFilter before attempting merges (merge crosses filter borders → API error)
     clear_filter_req = {"clearBasicFilter": {"sheetId": ws.id}}
-    reqs = [clear_filter_req] + struct_reqs + group_header_reqs
+    reqs = [clear_filter_req] + struct_reqs + group_header_reqs + group_color_reqs
 
     ACTION_COLORS = {
         "STRONG BUY":  ("c6efce", "276221"),  # strong green — light
@@ -400,6 +401,24 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         # ── 52W High / Low ──
         reqs.append(color_cell_req(ws.id, rn, C["high52"], "eaf4fb", "1565c0", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["low52"], "fdf2f2", "c62828", bold=False))
+
+        # ── Day Chg% — Positive/Negative/Neutral colour coding ──
+        day_chg_v = sf(row, "day_chg_pct")
+        if day_chg_v is not None:
+            if day_chg_v > 0:
+                reqs.append(color_cell_req(ws.id, rn, C["day_chg_pct"], "d9ead3", "0b8043"))
+            elif day_chg_v < 0:
+                reqs.append(color_cell_req(ws.id, rn, C["day_chg_pct"], "fde9d9", "c62828"))
+            else:
+                reqs.append(color_cell_req(ws.id, rn, C["day_chg_pct"], "f1f1f1", "666666"))
+
+        # ── Buy 20% Less (% from 52W high) — discount attractiveness ──
+        pct_high_v = sf(row, "pct_high")
+        if pct_high_v is not None:
+            if pct_high_v >= -20:
+                reqs.append(color_cell_req(ws.id, rn, C["pct_high"], "d9ead3", "0b8043"))
+            else:
+                reqs.append(color_cell_req(ws.id, rn, C["pct_high"], "fde9d9", "c62828"))
 
         # ── PE ──
         if pe_v is not None:

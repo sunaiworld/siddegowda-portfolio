@@ -213,13 +213,13 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
     except _gse.WorksheetNotFound:
         ws = sh.add_worksheet(tab_name, rows=max(len(sum_rows) + 20, 100), cols=max(num_cols, 10))
 
+    ws_id = ws.id
     clear_sheet_safe(ws)
     try:
         sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": ws_id}}]})
     except Exception:
         pass
     update_sheet_safe(ws, sum_rows)
-    ws_id = ws.id
 
     # ── Column widths (GITHUB DATA compact philosophy) ─────────────────────
     # Stock: 90, each year-dividend col: 75, Total Dividend: 85,
