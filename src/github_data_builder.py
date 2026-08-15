@@ -290,10 +290,17 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
 
     # Group header row — one label per group, placed in the leftmost cell
     # of its range. mergeCells (below) visually spans it across the group.
+    # FROZEN_COLS must match freeze_cols passed to get_structural_format_reqs
+    # below: Sheets API refuses to merge a range spanning the frozen/
+    # non-frozen boundary, so any group crossing it (currently just Group 1,
+    # since Symbol/col A is frozen) gets its label placed at the first
+    # unfrozen column instead — matching where the merge actually starts.
+    FROZEN_COLS = 1
     group_ranges = [(C[sk], C[ek], label) for sk, ek, label in GROUP_DEFS]
     group_row = [""] * num_cols
     for start_col, end_col, label in group_ranges:
-        group_row[start_col] = label
+        label_col = FROZEN_COLS if (start_col < FROZEN_COLS <= end_col) else start_col
+        group_row[label_col] = label
 
     data = [group_row, headers]
     if rows:
@@ -314,7 +321,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     # Column-name header now sits at row index 1 (sheet row 2) since the
     # merged group-header banner occupies row index 0 above it.
     struct_reqs = get_structural_format_reqs(ws.id, len(rows), num_cols, widths, freeze_rows=2, freeze_cols=1, header_row_idx=1)
-    group_header_reqs = get_group_header_merge_reqs(ws.id, group_ranges)
+    group_header_reqs = get_group_header_merge_reqs(ws.id, group_ranges, frozen_cols=FROZEN_COLS)
 
     reqs = struct_reqs + group_header_reqs
 
