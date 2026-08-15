@@ -31,6 +31,12 @@ def main():
     safe_print("==================================================")
     safe_print("")
     
+    import hashlib
+    sheet_id = os.environ.get("SHEET_ID", "")
+    sheet_fingerprint = hashlib.sha256(sheet_id.encode()).hexdigest() if sheet_id else "None"
+    safe_print(f"[SHEET DEBUG] SHEET_ID length={len(sheet_id)}, ending=...{sheet_id[-4:] if len(sheet_id)>=4 else 'None'}, sha256={sheet_fingerprint}")
+    safe_print("")
+    
     # ----------------------------------------------------
     # Step 1: Run Trade Importer
     # ----------------------------------------------------
