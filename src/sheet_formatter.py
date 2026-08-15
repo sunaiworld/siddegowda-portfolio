@@ -153,6 +153,56 @@ def get_group_header_merge_reqs(ws_id, group_ranges, frozen_cols=0):
     })
     return reqs
 
+def get_group_header_color_reqs(ws_id, group_ranges, frozen_cols=0):
+    """
+    Apply differentiated colors to each group header in row 0.
+    Subtle pastel palette to visually distinguish group boundaries.
+    group_ranges: list of (start_col_idx, end_col_idx_inclusive, label)
+    """
+    # Pastel color palette for 8 groups: (background, text)
+    GROUP_COLORS = [
+        ("cfe2f3", "1f4e78"),  # Group 1: light blue
+        ("e2d7f3", "5b2c6f"),  # Group 2: light purple
+        ("fef5d9", "7f6000"),  # Group 3: light yellow
+        ("d9f0d3", "1b5e20"),  # Group 4: light green
+        ("d0e8e8", "004d40"),  # Group 5: light teal
+        ("ffe8d1", "b8860b"),  # Group 6: light orange
+        ("e8e8f0", "424242"),  # Group 7: light blue-grey
+        ("f3e5f5", "6a1b9a"),  # Group 8: light lavender
+    ]
+    
+    reqs = []
+    for idx, (start_col, end_col, label) in enumerate(group_ranges):
+        if idx >= len(GROUP_COLORS):
+            # Fallback to default dark blue if more than 8 groups
+            bg_color = "1f4e78"
+            fg_color = "ffffff"
+        else:
+            bg_color, fg_color = GROUP_COLORS[idx]
+        
+        # Determine merge start (accounting for frozen columns)
+        merge_start = frozen_cols if (start_col < frozen_cols <= end_col) else start_col
+        
+        # Apply color to the full group range (will show in merged cells)
+        reqs.append({
+            "repeatCell": {
+                "range": {
+                    "sheetId": ws_id,
+                    "startRowIndex": 0, "endRowIndex": 1,
+                    "startColumnIndex": start_col, "endColumnIndex": end_col + 1
+                },
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": hex_rgb(bg_color),
+                    "textFormat": {"foregroundColor": hex_rgb(fg_color), "bold": True, "fontSize": 9},
+                    "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE",
+                    "wrapStrategy": "WRAP"
+                }},
+                "fields": "userEnteredFormat"
+            }
+        })
+    
+    return reqs
+
 def get_structural_format_reqs(ws_id, num_rows, num_cols, widths=None, freeze_rows=1, freeze_cols=1, header_row_idx=0):
     profiler.increment("Formatting operations")
     reqs = []
