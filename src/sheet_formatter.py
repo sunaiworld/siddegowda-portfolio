@@ -141,7 +141,7 @@ def get_group_header_merge_reqs(ws_id, group_ranges):
     reqs.append({
         "updateDimensionProperties": {
             "range": {"sheetId": ws_id, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
-            "properties": {"pixelSize": 34}, "fields": "pixelSize"
+            "properties": {"pixelSize": 30}, "fields": "pixelSize"
         }
     })
     return reqs
@@ -271,4 +271,3 @@ def color_action_signal(ws_id, rn, col_idx, action):
         bg, fg = ACTION_COLORS[action]
         return color_cell_req(ws_id, rn, col_idx, bg, fg)
     return None
-
