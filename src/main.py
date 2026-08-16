@@ -391,12 +391,16 @@ def run_portfolio_update(sh):
         portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
 
     try:
-        log.info("Building Dividends tab...")
+        log.info("[DIVIDENDS DEBUG] Calling write_dividends_tab()")
         with profiler.stage("[06] Dividend processing", category="Python processing"):
             div_rows = dividend_builder.process_dividends(fund_map)
         if div_rows:
+            log.info(f"[DIVIDENDS DEBUG] Rows prepared: {len(div_rows)}")
             with profiler.stage("[10] Dividends sheet write", category="Google Sheets"):
                 dividend_builder.write_dividends_tab(sh, div_rows, fund_map)
+            log.info("[DIVIDENDS DEBUG] Dividends processing completed successfully")
+        else:
+            log.info("[DIVIDENDS DEBUG] No div_rows returned, skipping write_dividends_tab")
     except Exception as e:
         log.error(f"Dividend tab build/write FAILED: {e}", exc_info=True)
 

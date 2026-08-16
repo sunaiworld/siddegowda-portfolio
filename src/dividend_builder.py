@@ -42,39 +42,19 @@ def _get_invested_map(imports_dir="data/imports"):
 
 
 def process_dividends(fund_map):
-    """
-    Reads Zerodha dividend CSVs and computes the year-wise dividend
-    summary for the 'Dividends' tab:
-
-        Stock | <year> Dividend ... | Total Dividend | Amount Invested
-        | Dividend % | Market Dividend Yield %
-
-    sorted by Total Dividend descending. Amount Invested is the true cost
-    basis reused from the Portfolio tab's data source (see
-    _get_invested_map); Dividend % = Total Dividend / Amount Invested x 100
-    (historical dividend received relative to invested capital — a personal
-    return metric). Market Dividend Yield % is a completely separate,
-    portfolio-independent market metric (Annual Dividend Per Share / CMP x
-    100) reused as-is from fund_map[sym]["div"] — the same yfinance-based
-    field fetch_fundamentals() already computes and main.py already passes
-    into this function. If a stock has no investment data, Amount Invested
-    and Dividend % are left blank; if fund_map has no dividend-yield data
-    for a stock, Market Dividend Yield % is left blank. Nothing is
-    estimated.
-
-    The per-transaction detail (Ex-Date/Qty/Div-per-share) is used only
-    internally to compute the yearly sums — it is not written to the sheet.
-    """
+    log.info("[DIVIDENDS DEBUG] Starting dividend processing")
     PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     div_dir = os.path.join(PROJECT_ROOT, "data", "imports", "Dividend_Zerodha")
     csv_files = glob.glob(os.path.join(div_dir, "*.csv"))
 
+    log.info(f"[DIVIDENDS DEBUG] Input files found: {len(csv_files)}")
     if not csv_files:
         log.warning(f"No dividend CSVs found in {div_dir}")
         return []
 
     dfs = []
     for f in csv_files:
+        log.info(f"[DIVIDENDS DEBUG] Input file: {os.path.basename(f)}")
         try:
             df = pd.read_csv(f)
             dfs.append(df)
@@ -85,6 +65,7 @@ def process_dividends(fund_map):
         return []
 
     combined = pd.concat(dfs, ignore_index=True)
+    log.info(f"[DIVIDENDS DEBUG] Raw rows loaded: {len(combined)}")
 
     # Clean column names
     combined.columns = [c.strip() for c in combined.columns]
@@ -101,6 +82,7 @@ def process_dividends(fund_map):
 
     # Year-wise Summary: group by Symbol and Year
     summary = combined.groupby(['Symbol', 'Dividend Year'])['Total dividend'].sum().reset_index()
+    log.info(f"[DIVIDENDS DEBUG] Valid dividend rows after grouping: {len(summary)}")
 
     # Pivot to get years as columns
     pivot = summary.pivot(index='Symbol', columns='Dividend Year', values='Total dividend').fillna(0)
@@ -189,7 +171,7 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
     This matches write_github_data exactly and guarantees colours appear.
     """
     import gspread.exceptions as _gse
-    from sheet_writer import batch_update_safe, clear_sheet_safe
+    from sheet_writer import batch_update_safe, clear_sheet_safe, update_sheet_safe
     from sheet_formatter import (
         get_structural_format_reqs,
         get_currency_format_reqs,
@@ -210,8 +192,10 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
 
     try:
         ws = sh.worksheet(tab_name)
+        log.info(f"[DIVIDENDS DEBUG] Worksheet found: {tab_name}")
     except _gse.WorksheetNotFound:
         ws = sh.add_worksheet(tab_name, rows=max(len(sum_rows) + 20, 100), cols=max(num_cols, 10))
+        log.info(f"[DIVIDENDS DEBUG] Worksheet {tab_name} not found, created new.")
 
     ws_id = ws.id
     clear_sheet_safe(ws)
@@ -220,6 +204,7 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
     except Exception:
         pass
     update_sheet_safe(ws, sum_rows)
+    log.info(f"[DIVIDENDS DEBUG] Data write completed: {len(sum_rows)} rows")
 
     # ── Column widths (GITHUB DATA compact philosophy) ─────────────────────
     # Stock: 90, each year-dividend col: 75, Total Dividend: 85,
