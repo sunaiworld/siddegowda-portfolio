@@ -7,12 +7,19 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Broker import files (raw broker exports — private data, do NOT commit)
-data/imports/zerodha/Tradebook_*.csv
-data/imports/groww/Stocks_Order_History_*.xlsx
+# Personal financial / broker data — never commit
+data/*.csv
+data/*.xlsx
+data/imports/**/*.csv
+data/imports/**/*.xlsx
+!data/imports/**/*.py
 
-# Keep the generated master CSV (this is the source of truth for Apps Script)
-!data/trade_log.csv
+# Credentials / secrets — never commit
+.env
+*.env
+credentials.json
+*credentials*.json
+service-account*.json
 
 # OS artefacts
 .DS_Store
