@@ -100,23 +100,40 @@ def run_portfolio_update(sh):
     profiler.start_stage("[01] Load configuration")
     symbols = read_symbols(sh)
     if not symbols:
-        profiler.stop_stage("[01] Load configuration", category="Python processing")
-        return None
+        log.warning("No symbols found in Portfolio tab! Bootstrapping from trades...")
     
     profiler.stop_stage("[01] Load configuration", category="Python processing")
 
-
-    # Real trades live in data/imports/{zerodha,groww} now, not the legacy
-    # "Trade Log" sheet tab (which is empty/unused) — load_all_trades()
-    # reads both broker exports via the existing import_zerodha.py /
-    # import_groww.py importers, and trades_to_legacy_rows() adapts them
-    # into the row shape get_avg_buy_and_qty/get_xirr/get_entry_date
-    # already expect, so nothing downstream (Dashboard holdings dict,
-    # SL/target alerts, per-symbol XIRR) needs to change.
     with profiler.stage("[03] Load CSV data", category="Python processing"):
-        trades = trades_to_legacy_rows(load_all_trades())
+        raw_trades = load_all_trades()
+        trades = trades_to_legacy_rows(raw_trades)
+
+    # Build holdings for every symbol with active broker holdings.
+    # This ensures a stock first bought in a new broker import file
+    # (or when bootstrapping an empty sheet) is captured early and
+    # fully processed through the pipeline (prices, fundamentals, tech).
+    from portfolio_builder import compute_holdings
+    raw_held = compute_holdings(raw_trades)
     
-    log.info(f"Found {len(symbols)} symbols")
+    all_held = {}
+    for key, h in raw_held.items():
+        sym = h["symbol"]
+        if sym not in all_held:
+            all_held[sym] = {"qty": 0.0, "cost": 0.0}
+        all_held[sym]["qty"] += h["qty"]
+        all_held[sym]["cost"] += h["cost"]
+        
+    for sym in all_held:
+        q = all_held[sym]["qty"]
+        c = all_held[sym]["cost"]
+        all_held[sym] = (c / q if q else 0.0, q, c)
+
+    extra_syms = [s for s in all_held if s not in set(symbols)]
+    if extra_syms:
+        log.info(f"Adding {len(extra_syms)} holdings-only symbol(s) to pipeline: {extra_syms}")
+        symbols.extend(extra_syms)
+
+    log.info(f"Total symbols to process: {len(symbols)}")
 
     log.info("Fetching prices...")
     with profiler.stage("[04] yfinance price download", category="Yahoo/yfinance"):
@@ -178,34 +195,8 @@ def run_portfolio_update(sh):
         nc_cache, nc_row_map, nc_ws = {}, {}, None
     pending_news = {}
 
-    # Build holdings for every symbol with active broker holdings — not only
-    # watchlist symbols.  This ensures a stock first bought in a new broker
-    # import file (not yet in the Portfolio sheet's col B) is captured in
-    # the holdings dict and written to Portfolio on the next run.
-    from portfolio_builder import compute_holdings
-    raw_held = compute_holdings(load_all_trades())
-    
-    all_held = {}
-    for key, h in raw_held.items():
-        sym = h["symbol"]
-        if sym not in all_held:
-            all_held[sym] = {"qty": 0.0, "cost": 0.0}
-        all_held[sym]["qty"] += h["qty"]
-        all_held[sym]["cost"] += h["cost"]
-        
-    for sym in all_held:
-        q = all_held[sym]["qty"]
-        c = all_held[sym]["cost"]
-        all_held[sym] = (c / q if q else 0.0, q, c)
-
-    extra_syms = [s for s in all_held if s not in set(symbols)]
-    if extra_syms:
-        log.info(f"Fetching prices for {len(extra_syms)} holdings-only symbol(s): {extra_syms}")
-        extra_prices = fetch_prices_batch(extra_syms)
-        prices.update(extra_prices)
-
     holdings, portfolio_live_value = {}, 0.0
-    for sym in list(symbols) + extra_syms:
+    for sym in list(symbols):
         if sym in all_held:
             avg_buy, qty, _cost = all_held[sym]
         else:
