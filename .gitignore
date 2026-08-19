@@ -7,19 +7,22 @@ __pycache__/
 venv/
 *.egg-info/
 
-# Personal financial / broker data — never commit
+# Personal financial / broker data
+# Repository is PRIVATE -- broker CSV/XLSX files under data/imports/ are
+# intentionally committed so GitHub Actions can access them directly.
+# Root-level data files (generated / temporary) remain excluded.
 data/*.csv
 data/*.xlsx
-data/imports/**/*.csv
-data/imports/**/*.xlsx
-!data/imports/**/*.py
 
-# Credentials / secrets — never commit
+# Credentials / secrets -- NEVER commit regardless of repo visibility
 .env
 *.env
 credentials.json
 *credentials*.json
 service-account*.json
+*service_account*.json
+*.pem
+*.key
 
 # OS artefacts
 .DS_Store
