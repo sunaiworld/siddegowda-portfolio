@@ -51,11 +51,7 @@ from google.oauth2.service_account import Credentials
 
 import fund_cache
 
-import history_tracker
-
 import portfolio_analytics
-
-import news_engine.news_cache as news_cache
 
 from news_engine.sources import google_news_rss
 
@@ -169,13 +165,8 @@ def run_portfolio_update(sh):
                 rev_map[sym]  = rev_gr
                 log.info(f"  Technicals: {sym}")
 
-    # ── News Engine: load cached news for all symbols (Phase A) ──
-    try:
-        nc_cache, nc_row_map, nc_ws = news_cache.load(sh)
-        log.info(f"[news_cache] Loaded news for {len(nc_cache)} symbols")
-    except Exception as _e:
-        log.warning(f"[news_cache] Could not load news cache, skipping: {_e}")
-        nc_cache, nc_row_map, nc_ws = {}, {}, None
+    # News Engine cache removed
+    nc_cache = {}
     pending_news = {}
 
     # Build holdings for every symbol with active broker holdings — not only
@@ -251,11 +242,7 @@ def run_portfolio_update(sh):
                         log.warning(f"  News fetch failed {sym}: {e}")
                         continue
                     try:
-                        news_cache.stage_upsert(
-                            pending_news, sym, result.timestamp, result.summary, enriched,
-                            result.bullish_score, result.bearish_score,
-                            result.sentiment, result.reason, result.source
-                        )
+                        # stage_upsert removed
                         nc_cache[sym.upper()] = {
                             "last_fetched": result.timestamp,
                             "digest": result.summary,
@@ -313,8 +300,7 @@ def run_portfolio_update(sh):
     top_picks.sort(key=lambda x: x["total"], reverse=True)
     profiler.stop_stage("[07] Portfolio calculations", category="Python processing")
 
-    if nc_ws is not None:
-        news_cache.flush(nc_ws, nc_row_map, pending_news)
+    # flush removed
 # Belt-and-suspenders: the scoring loop above is sequential over
     # `symbols`, so `results` is already in original order — but threading
     # was introduced upstream (technicals/rev-growth/news fetch), so this
@@ -378,15 +364,13 @@ def run_portfolio_update(sh):
                 })
     watchlist_opportunities.sort(key=lambda x: x["score"], reverse=True)
 
-    with profiler.stage("[16] History & Analytics write", category="Google Sheets"):
-        changes = history_tracker.compute_todays_changes(sh, results)
-        prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
+    with profiler.stage("[16] Analytics write", category="Google Sheets"):
+        changes = None
+        prev_health_date, prev_health_score = None, None
 
         dash = portfolio_analytics.compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value)
         health = portfolio_analytics.compute_portfolio_health(results, holdings, fund_map, dash)
         health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
-
-        history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
 
         portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
 
@@ -431,7 +415,7 @@ def main():
 
     msg = build_alert_message(out["alerts"], out["portfolio_live_value"], out["top_picks"],
                                watchlist_opps=out.get("watchlist_opportunities"))
-    digest = history_tracker.format_telegram_digest(out.get("changes"))
+    digest = None
     if digest:
         msg = msg + "\n\n" + digest
     if len(msg) > 4000:

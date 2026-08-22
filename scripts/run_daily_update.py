@@ -90,8 +90,6 @@ def main():
     safe_print("✓ Portfolio updated")
     safe_print("✓ GITHUB DATA updated")
     safe_print("✓ Future Buy updated")
-    safe_print("✓ History updated")
-    safe_print("✓ Portfolio History updated")
     safe_print("")
     
     runtime = int(round(time.time() - start_time))

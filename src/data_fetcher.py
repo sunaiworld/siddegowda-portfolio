@@ -13,9 +13,9 @@ import yfinance as yf
 import gspread
 from google.oauth2.service_account import Credentials
 import fund_cache
-import history_tracker
+
 import portfolio_analytics
-import news_engine.news_cache as news_cache
+
 from news_engine.sources import google_news_rss
 from news_engine import classifier
 
