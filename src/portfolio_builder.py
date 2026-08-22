@@ -334,8 +334,10 @@ def compute_holdings(trades):
     book = {}
     for t in trades:
         sym = str(t.get("symbol", "")).strip().upper()
-        broker = str(t.get("broker", "")).strip()
-        if not sym:
+        isin = str(t.get("isin", "")).strip().upper()
+        if not isin:
+            isin = sym
+        if not isin:
             continue
         try:
             action = str(t.get("action", "")).strip().upper()
@@ -345,33 +347,26 @@ def compute_holdings(trades):
             continue
         if t_qty <= 0:
             continue
-        key = f"{broker}:{sym}"
-        cost, qty = book.get(key, (0.0, 0.0))
+            
+        key = isin
+        cost, qty, existing_sym = book.get(key, (0.0, 0.0, ""))
         if action == "BUY":
             cost += t_qty * t_price
             qty  += t_qty
         elif action == "SELL" and qty > 0:
-            # Clamp sell to available qty — older broker exports may start
-            # mid-stream (sells before tracked buys), which would otherwise
-            # produce negative qty/cost and corrupt the running avg cost basis.
             sell_qty = min(t_qty, qty)
             avg = cost / qty
             cost -= sell_qty * avg
             qty  -= sell_qty
-        book[key] = (cost, max(qty, 0.0))
+            
+        book[key] = (cost, max(qty, 0.0), sym or existing_sym)
 
     holdings = {}
-    for key, (cost, qty) in book.items():
+    for isin, (cost, qty, sym) in book.items():
         if qty > 1e-6:
-            parts = key.split(":", 1)
-            broker = parts[0]
-            sym = parts[1] if len(parts) > 1 else key
-            
-            # Return raw cost alongside avg_buy so callers can use the true
-            # invested amount for P&L/Return% without re-rounding errors.
-            holdings[key] = {
+            holdings[isin] = {
                 "symbol": sym,
-                "broker": broker,
+                "broker": "Combined",
                 "avg_buy": round(cost / qty, 2),
                 "qty": round(qty, 4),
                 "cost": round(cost, 2)
@@ -388,81 +383,36 @@ def build_portfolio(prices, imports_dir="data/imports"):
     trades = load_all_trades(imports_dir)
     holdings = compute_holdings(trades)
 
-    portfolio_live_value_g = sum(
-        h["qty"] * prices.get(h["symbol"], 0) for h in holdings.values() if is_valid_price(prices.get(h["symbol"])) and h["broker"].lower() == "groww"
-    )
-    portfolio_live_value_z = sum(
-        h["qty"] * prices.get(h["symbol"], 0) for h in holdings.values() if is_valid_price(prices.get(h["symbol"])) and h["broker"].lower() == "zerodha"
-    )
-
-    rows = []
+    # Compute combined natively
+    combined_dict = {}
     for key, h in holdings.items():
         sym = h["symbol"]
-        broker = h["broker"]
-        avg_buy = h["avg_buy"]
         qty = h["qty"]
         invested_raw = h["cost"]
-
         cmp = prices.get(sym)
         if not is_valid_price(cmp):
             continue
 
-        # Use the true total cost (not avg_buy * qty) so rounding of avg_buy
-        # does not distort Invested, P&L, and Return %.
         invested = round(invested_raw, 2)
         value    = round(cmp * qty, 2)
-        pnl      = round(value - invested, 2)
-        ret_pct  = round((pnl / invested) * 100, 2) if invested else 0
         
-        live_val = portfolio_live_value_g if broker.lower() == "groww" else portfolio_live_value_z
-        wt_pct   = round((value / live_val) * 100, 2) if live_val else 0
-        wt_status = "Underweight" if wt_pct < 2 else "Normal" if wt_pct <= 6 else "Overweight"
-
-        sl_price = round(avg_buy * (1 - SL_PCT), 2)
-        target   = round(avg_buy * (1 + TARGET_PCT), 2)
-        buy_more = round(avg_buy * 0.90, 2)
-
-        if cmp <= sl_price:
-            signal = "SELL - SL HIT"
-        elif cmp >= target:
-            signal = "TARGET HIT - TRIM"
-        elif cmp <= buy_more:
-            signal = "BUY MORE"
-        else:
-            signal = "HOLD"
-
-        rows.append({
-            "key": key,
-            "broker": broker,
-            "symbol": sym, "shares": qty, "avg_buy": avg_buy, "cmp": cmp,
-            "invested": invested, "value": value, "pnl": pnl, "return_pct": ret_pct,
-            "wt_pct": wt_pct, "wt_status": wt_status,
-            "sl_price": sl_price, "target": target, "buy_more": buy_more,
-            "signal": signal,
-        })
-    # Separate by broker
-    groww_rows = [r for r in rows if r["broker"].lower() == "groww"]
-    zerodha_rows = [r for r in rows if r["broker"].lower() == "zerodha"]
-
-    # Compute combined
-    combined_dict = {}
-    for r in rows:
-        sym = r["symbol"]
         if sym not in combined_dict:
             combined_dict[sym] = {
                 "symbol": sym,
-                "shares": 0,
+                "shares": 0.0,
                 "invested": 0.0,
                 "value": 0.0,
-                "avg_buy": 0.0,
-                "cmp": r["cmp"],
+                "cmp": cmp,
+                "isins": set()
             }
-        combined_dict[sym]["shares"] += r["shares"]
-        combined_dict[sym]["invested"] += r["invested"]
-        combined_dict[sym]["value"] += r["value"]
+        combined_dict[sym]["shares"] += qty
+        combined_dict[sym]["invested"] += invested
+        combined_dict[sym]["value"] += value
+        combined_dict[sym]["isins"].add(key)
 
     combined_rows = []
-    portfolio_live_value_c = sum(r["value"] for r in combined_dict.values())
+    portfolio_live_value_c = sum(c["value"] for c in combined_dict.values())
+    
     for sym, c in combined_dict.items():
         if c["shares"] <= 0: continue
         c["avg_buy"] = round(c["invested"] / c["shares"], 2)
@@ -475,7 +425,9 @@ def build_portfolio(prices, imports_dir="data/imports"):
         c["target"] = round(c["avg_buy"] * (1 + TARGET_PCT), 2)
         c["buy_more"] = round(c["avg_buy"] * 0.90, 2)
 
-        if c["cmp"] <= c["sl_price"]:
+        if len(c["isins"]) > 1:
+            c["signal"] = "REQUIRES REVIEW (Corp Action)"
+        elif c["cmp"] <= c["sl_price"]:
             c["signal"] = "SELL - SL HIT"
         elif c["cmp"] >= c["target"]:
             c["signal"] = "TARGET HIT - TRIM"
@@ -486,7 +438,8 @@ def build_portfolio(prices, imports_dir="data/imports"):
             
         combined_rows.append(c)
 
-    return {"groww": groww_rows, "zerodha": zerodha_rows, "combined": combined_rows}
+    # We return an empty list for groww and zerodha to avoid breaking unpacking downstream
+    return {"groww": [], "zerodha": [], "combined": combined_rows}
 
 
 def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):

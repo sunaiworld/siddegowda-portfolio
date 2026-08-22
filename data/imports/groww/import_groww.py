@@ -99,7 +99,7 @@ def import_groww(xlsx_path: str) -> List[Dict[str, str]]:
         row = {
             "trade_id": order_id,
             "date": _parse_datetime(raw.get("execution_date_and_time")),
-            "symbol": str(raw.get("symbol", "")).strip().upper(),
+            "symbol": str(raw.get("symbol", "")).strip().upper(), "isin": str(raw.get("isin", "")).strip(),
             "exchange": str(raw.get("exchange", "")).strip(),
             "segment": "EQ",                 # not provided; all rows are equity delivery
             "action": action,

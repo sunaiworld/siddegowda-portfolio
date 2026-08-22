@@ -70,7 +70,7 @@ def import_zerodha(csv_path: str) -> List[Dict[str, str]]:
             row = {
                 "trade_id": trade_id,
                 "date": _parse_date(raw.get("trade_date", "")),
-                "symbol": raw.get("symbol", "").strip(),
+                "symbol": raw.get("symbol", "").strip(), "isin": raw.get("isin", "").strip(),
                 "exchange": raw.get("exchange", "").strip(),
                 "segment": raw.get("segment", "").strip(),
                 "action": raw.get("trade_type", "").strip(),
