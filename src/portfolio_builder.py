@@ -419,7 +419,7 @@ def build_portfolio(prices, imports_dir="data/imports"):
         c["pnl"] = round(c["value"] - c["invested"], 2)
         c["return_pct"] = round((c["pnl"] / c["invested"]) * 100, 2) if c["invested"] else 0
         c["wt_pct"] = round((c["value"] / portfolio_live_value_c) * 100, 2) if portfolio_live_value_c else 0
-        c["wt_status"] = "Underweight" if c["wt_pct"] < 2 else "Normal" if c["wt_pct"] <= 6 else "Overweight"
+        
         
         c["sl_price"] = round(c["avg_buy"] * (1 - SL_PCT), 2)
         c["target"] = round(c["avg_buy"] * (1 + TARGET_PCT), 2)
@@ -456,9 +456,9 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
                 sym_name_map[sym] = name
 
     headers = ["Name", "Symbol", "Shares", "Avg Buy", "CMP", "Invested", "Value", "P&L", "Return %",
-               "Wt %", "Wt Status", "Stop Loss", "Target", "Buy More@", "Signal"]
+               "Wt %", "Stop Loss", "Target", "Buy More@", "Signal"]
     keys = ["shares", "avg_buy", "cmp", "invested", "value", "pnl", "return_pct",
-            "wt_pct", "wt_status", "sl_price", "target", "buy_more", "signal"]
+            "wt_pct", "sl_price", "target", "buy_more", "signal"]
 
     all_data = [headers]
     header_indices = []
@@ -490,6 +490,18 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     ])
 
     ws.clear()
+    
+    try:
+        rules = sh.fetch_sheet_metadata({"includeGridData": False})
+        sheet_meta = next((s for s in rules.get('sheets', []) if s.get('properties', {}).get('sheetId') == ws.id), None)
+        if sheet_meta:
+            cond_formats = sheet_meta.get("conditionalFormats", [])
+            if cond_formats:
+                clear_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws.id, "index": 0}} for _ in cond_formats]
+                sheet_writer.batch_update_safe(sh, clear_reqs)
+    except:
+        pass
+
     ws.update("A1", all_data, value_input_option="RAW")
     log.info(f"write_portfolio: wrote {len(all_data)} rows to '{tab_name}'")
     profiler.increment("Rows written", len(all_data))
@@ -499,12 +511,12 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     # Name(120), Symbol(70), Shares(55), Avg Buy(70), CMP(65),
     # Invested(85), Value(85), P&L(80), Return%(65), Wt%(55),
     # Wt Status(70), Stop Loss(70), Target(70), Buy More@(70), Signal(100)
-    widths = [120, 70, 55, 70, 65, 85, 85, 80, 65, 55, 70, 70, 70, 70, 100]
-    reqs = sheet_formatter.get_structural_format_reqs(
+    widths = [120, 70, 55, 70, 65, 85, 85, 80, 65, 55, 70, 70, 70, 100]
+    reqs = sheet_formatter.clear_all_formatting_reqs(ws.id) + sheet_formatter.get_structural_format_reqs(
         ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=2)
 
     # cols 0-indexed: Avg Buy(3), CMP(4), Invested(5), Value(6), P&L(7), Stop Loss(11), Target(12), Buy More@(13)
-    for col in [3, 4, 5, 6, 7, 11, 12, 13]:
+    for col in [3, 4, 5, 6, 7, 10, 11, 12]:
         reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, len(all_data), col, col + 1)
 
     # Return %(8), Wt %(9)
@@ -535,17 +547,12 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
             if req: reqs.append(req)
         except: pass
         
-        # Wt Status (col 10): Overweight=red, Underweight=blue, Normal=green
-        wt_status = str(row[10]).strip()
-        if wt_status == "Overweight":
-            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "fde9d9", "c62828"))
-        elif wt_status == "Underweight":
-            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "d9eaf7", "1565c0"))
-        elif wt_status == "Normal":
-            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "d9ead3", "0b8043"))
+        reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "fde9d9", "c62828", bold=False))
+        reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 11, "d9ead3", "0b8043", bold=False))
+        reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "e8f0fe", "1967d2", bold=False))
 
-        signal = str(row[14]).strip()
-        req_sig = sheet_formatter.color_action_signal(ws.id, rn, 14, signal)
+        signal = str(row[13]).strip()
+        req_sig = sheet_formatter.color_action_signal(ws.id, rn, 13, signal)
         if req_sig: reqs.append(req_sig)
 
     # Color the full width of section header and subtotal rows

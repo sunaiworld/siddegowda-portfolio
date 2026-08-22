@@ -315,14 +315,14 @@ def color_action_signal(ws_id, rn, col_idx, action):
         "STRONG BUY":  ("00c853", "ffffff"),
         "BUY":         ("0b8043", "ffffff"),
         "ACCUMULATE":  ("d9ead3", "0b8043"),
-        "HOLD":        ("fff2cc", "7f4f00"),
+        "HOLD":        ("d9ead3", "0b8043"),
         "WATCH":       ("fce8b2", "7f4f00"),
         "AVOID":       ("fde9d9", "c62828"),
         "SELL":        ("cc0000", "ffffff"),
         # Portfolio Signals
-        "BUY MORE":          ("0b8043", "ffffff"),
+        "BUY MORE":          ("e8f0fe", "1967d2"),
         "TARGET HIT - TRIM": ("d9ead3", "0b8043"),
-        "SELL - SL HIT":     ("cc0000", "ffffff"),
+        "SELL - SL HIT":     ("fde9d9", "c62828"),
     }
     if action in ACTION_COLORS:
         bg, fg = ACTION_COLORS[action]
