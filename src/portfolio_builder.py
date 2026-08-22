@@ -511,39 +511,9 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     header_indices = []
     subtotal_indices = []
 
-    def _add_section(title, rows_list, tot_inv, tot_val):
-        header_indices.append(len(all_data) + 1)
-        all_data.append([title] + [""] * (len(headers) - 1))
-        
-        for r in rows_list:
-            sym = r["symbol"]
-            name = sym_name_map.get(sym, sym)
-            row_data = [name, sym] + [r.get(k, "") for k in keys]
-            all_data.append(row_data)
-            
-        subtotal_indices.append(len(all_data) + 1)
-        tpnl = round(tot_val - tot_inv, 2)
-        tret = round((tpnl / tot_inv) * 100, 2) if tot_inv else 0
-        all_data.append([
-            f"{title} SUBTOTAL", "", "", "", "",
-            round(tot_inv, 2), round(tot_val, 2), tpnl, tret,
-            "", "", "", "", "", ""
-        ])
-        all_data.append([""] * len(headers))
 
-    groww_rows = portfolio_dict.get("groww", [])
-    zerodha_rows = portfolio_dict.get("zerodha", [])
+
     combined_rows = portfolio_dict.get("combined", [])
-
-    if groww_rows:
-        inv = sum(r["invested"] for r in groww_rows)
-        val = sum(r["value"] for r in groww_rows)
-        _add_section("GROWW - DAD", groww_rows, inv, val)
-
-    if zerodha_rows:
-        inv = sum(r["invested"] for r in zerodha_rows)
-        val = sum(r["value"] for r in zerodha_rows)
-        _add_section("ZERODHA - SELF", zerodha_rows, inv, val)
 
     header_indices.append(len(all_data) + 1)
     all_data.append(["COMBINED - PORTFOLIO VIEW ONLY"] + [""] * (len(headers) - 1))
