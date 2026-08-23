@@ -377,11 +377,11 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         
     for h_idx in header_indices:
         for col in range(nc):
-            reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, col, "0d1b2a", "ffffff"))
+            reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, col, "0d1b2a", "ffffff", font_size=8))
             
     for s_idx in subheader_indices:
         for col in range(nc):
-            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff"))
+            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff", font_size=8))
             
     for r_idx, c_idx, val in pos_neg_cells:
         req = sheet_formatter.color_positive_negative(ws.id, r_idx, c_idx, val)

@@ -468,7 +468,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
 
     combined_rows = portfolio_dict.get("combined", [])
 
-    header_indices.append(len(all_data) + 1)
+    header_indices.append(len(all_data))
     all_data.append(["COMBINED - PORTFOLIO VIEW ONLY"] + [""] * (len(headers) - 1))
     
     if combined_rows:
@@ -478,7 +478,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
             row_data = [name, sym] + [r.get(k, "") for k in keys]
             all_data.append(row_data)
             
-    subtotal_indices.append(len(all_data) + 1)
+    subtotal_indices.append(len(all_data))
     tot_inv = sum(r["invested"] for r in combined_rows)
     tot_val = sum(r["value"] for r in combined_rows)
     tot_pnl = round(tot_val - tot_inv, 2)
@@ -524,7 +524,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
         reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col, col + 1)
 
     for i, row in enumerate(all_data):
-        rn = i + 1
+        rn = i
         if i == 0 or len(row) <= 1 or row[0] == "" or "SUBTOTAL" in row[0] or "TOTAL" in row[0] or "GROWW" in row[0] or "ZERODHA" in row[0] or "COMBINED" in row[0]:
             continue
 
@@ -540,12 +540,6 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
             if req: reqs.append(req)
         except: pass
 
-        # Wt % (col 9): color_positive_negative treats it as a numeric
-        try:
-            wt_pct_val = float(row[9]) if row[9] else 0.0
-            req = sheet_formatter.color_positive_negative(ws.id, rn, 9, wt_pct_val)
-            if req: reqs.append(req)
-        except: pass
         
         reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "fde9d9", "c62828", bold=False))
         reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 11, "d9ead3", "0b8043", bold=False))
@@ -558,10 +552,18 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     # Color the full width of section header and subtotal rows
     for h_idx in header_indices:
         for col in range(nc):
-            reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, col, "0d1b2a", "ffffff"))
+            reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, col, "0d1b2a", "ffffff", font_size=8))
     for s_idx in subtotal_indices:
         for col in range(nc):
-            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff"))
+            if col in [7, 8]:
+                try:
+                    val = float(all_data[s_idx][col]) if all_data[s_idx][col] else 0.0
+                    bg = "d9ead3" if val > 0 else "fde9d9" if val < 0 else "f1f1f1"
+                    fg = "0b8043" if val > 0 else "c62828" if val < 0 else "666666"
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, bg, fg, bold=True, font_size=8))
+                    continue
+                except: pass
+            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff", font_size=8))
 
     # Filter over the full table
     reqs.append({

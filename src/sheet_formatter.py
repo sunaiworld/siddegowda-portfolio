@@ -80,7 +80,14 @@ def hex_rgb(h):
     return {"red": int(h[0:2], 16) / 255, "green": int(h[2:4], 16) / 255, "blue": int(h[4:6], 16) / 255}
 
 
-def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
+def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True, font_size=None):
+    fmt = {
+        "backgroundColor": hex_rgb(bg),
+        "textFormat": {"foregroundColor": hex_rgb(fg), "bold": bold}
+    }
+    if font_size:
+        fmt["textFormat"]["fontSize"] = font_size
+        
     return {
         "repeatCell": {
             "range": {
@@ -88,10 +95,7 @@ def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True):
                 "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
                 "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1
             },
-            "cell": {"userEnteredFormat": {
-                "backgroundColor": hex_rgb(bg),
-                "textFormat": {"foregroundColor": hex_rgb(fg), "bold": bold}
-            }},
+            "cell": {"userEnteredFormat": fmt},
             "fields": "userEnteredFormat.backgroundColor,userEnteredFormat.textFormat"
         }
     }
@@ -300,11 +304,11 @@ def color_positive_negative(ws_id, rn, col_idx, val):
     try:
         val_f = float(val)
         if val_f > 0:
-            return color_cell_req(ws_id, rn, col_idx, "d9ead3", "0b8043")
+            return color_cell_req(ws_id, rn, col_idx, "d9ead3", "0b8043", bold=False)
         elif val_f < 0:
-            return color_cell_req(ws_id, rn, col_idx, "fde9d9", "c62828")
+            return color_cell_req(ws_id, rn, col_idx, "fde9d9", "c62828", bold=False)
         else:
-            return color_cell_req(ws_id, rn, col_idx, "f1f1f1", "666666")
+            return color_cell_req(ws_id, rn, col_idx, "f1f1f1", "666666", bold=False)
     except:
         return None
 
@@ -326,5 +330,5 @@ def color_action_signal(ws_id, rn, col_idx, action):
     }
     if action in ACTION_COLORS:
         bg, fg = ACTION_COLORS[action]
-        return color_cell_req(ws_id, rn, col_idx, bg, fg)
+        return color_cell_req(ws_id, rn, col_idx, bg, fg, bold=False)
     return None
