@@ -248,88 +248,153 @@ def compute_portfolio_health(results, holdings, fund_map, dash):
 
 
 def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
-    """
-    health: dict from compute_portfolio_health(), rendered as the
-    first section of the Dashboard.
-    health_trend: (label, delta) tuple from compute_health_trend().
-    changes: dict from history_tracker.compute_todays_changes().
-    """
+    import sheet_formatter
+    import sheet_writer
     try:
         ws = sh.worksheet(DASHBOARD_TAB)
         ws.clear()
+        rules = sh.fetch_sheet_metadata({"includeGridData": False})
+        sheet_meta = next((s for s in rules.get('sheets', []) if s.get('properties', {}).get('sheetId') == ws.id), None)
+        if sheet_meta:
+            cond_formats = sheet_meta.get("conditionalFormats", [])
+            if cond_formats:
+                clear_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws.id, "index": 0}} for _ in cond_formats]
+                sheet_writer.batch_update_safe(sh, clear_reqs)
     except Exception:
         ws = sh.add_worksheet(DASHBOARD_TAB, rows=400, cols=4)
 
-    rows = [
-        ["SiddeGowda Portfolio — Dashboard", "", "", ""],
-        ["Updated", datetime.now().strftime("%d-%b-%Y %H:%M"), "", ""],
-        ["", "", "", ""],
-    ]
+    rows = []
+    header_indices = []
+    subheader_indices = []
+    pos_neg_cells = [] # (r_idx, c_idx, val)
+    currency_cells = [] # (r_idx, c_idx)
+    pct_cells = [] # (r_idx, c_idx)
+    
+    def add_row(r_data, is_header=False, is_subheader=False):
+        rows.append(r_data)
+        idx = len(rows)
+        if is_header:
+            header_indices.append(idx)
+        if is_subheader:
+            subheader_indices.append(idx)
+        return idx
+
+    add_row(["SiddeGowda Portfolio - Dashboard", "", "", ""], is_header=True)
+    add_row(["Updated", datetime.now().strftime("%d-%b-%Y %H:%M"), "", ""])
+    add_row(["", "", "", ""])
 
     if health:
-        trend_label, delta = health_trend if health_trend else ("—", None)
+        trend_label, delta = health_trend if health_trend else ("-", None)
         delta_str = ""
         if delta is not None:
             sign = "+" if delta > 0 else ""
             delta_str = f" ({sign}{delta} vs prior trading day)"
-        rows.append(["Portfolio Health Score", f"{health['overall']} / 100", health["grade"],
-                     f"{trend_label}{delta_str}"])
-        rows.append(["", "", "", ""])
+            
+        add_row(["Portfolio Health Score", f"{health['overall']} / 100", health["grade"], f"{trend_label}{delta_str}"], is_header=True)
+        add_row(["", "", "", ""])
+        add_row(["Component", "Score", "Bar", ""], is_subheader=True)
         for name, score in health["components"].items():
-            weight_pct = int(health["weights"][HEALTH_COMPONENT_KEYS[name]] * 100)
+            weight_pct = int(health["weights"].get(HEALTH_COMPONENT_KEYS.get(name, ""), 0) * 100)
             filled = int(round(score / 10))
-            bar = "█" * filled + "░" * (10 - filled)
-            rows.append([f"{name} ({weight_pct}%)", score, bar, ""])
-        rows.append(["", "", "", ""])
+            bar = "" * filled + "" * (10 - filled)
+            add_row([f"{name} ({weight_pct}%)", score, bar, ""])
+        add_row(["", "", "", ""])
 
-    rows += [
-        ["Portfolio Value", f"₹{dash['portfolio_value']:,.0f}", "", ""],
-        ["Portfolio XIRR%", dash["portfolio_xirr"] if dash["portfolio_xirr"] is not None else "N/A", "", ""],
-        ["Portfolio Beta", dash["portfolio_beta"] if dash["portfolio_beta"] is not None else "N/A", "", ""],
-        ["Expected Div Income (annual)", f"₹{dash['div_income']:,.0f}", "", ""],
-        ["", "", "", ""],
-    ]
+    add_row(["Portfolio KPIs", "", "", ""], is_header=True)
+    
+    idx = add_row(["Portfolio Value", dash['portfolio_value'], "", ""])
+    currency_cells.append((idx, 1))
+    
+    val = dash["portfolio_xirr"]
+    if val is not None:
+        idx = add_row(["Portfolio XIRR", val / 100.0, "", ""])
+        pct_cells.append((idx, 1))
+        pos_neg_cells.append((idx, 1, val))
+    else:
+        add_row(["Portfolio XIRR%", "N/A", "", ""])
+        
+    val = dash["portfolio_beta"]
+    idx = add_row(["Portfolio Beta", val if val is not None else "N/A", "", ""])
+    
+    idx = add_row(["Expected Div Income (annual)", dash['div_income'], "", ""])
+    currency_cells.append((idx, 1))
+    
+    add_row(["", "", "", ""])
 
     if changes and changes.get("prev_date"):
-        rows.append([f"Today's Changes (vs {changes['prev_date']})", "", "", ""])
-        rows.append(["", "", "", ""])
-        rows.append(["Top Improvements", "", "", "Priority"])
+        add_row([f"Today's Changes (vs {changes['prev_date']})", "", "", ""], is_header=True)
+        add_row(["", "", "", ""])
+        
+        add_row(["Top Improvements", "Score Delta", "Action Change", "Priority"], is_subheader=True)
         for i, c in enumerate(changes["top_improvements"], 1):
-            rows.append([f"{i}. {c['symbol']}", f"+{c['score_delta']}",
-                         f"{c['prev_action']} → {c['today_action']}", c["priority"]])
-            rows.append(["", f"Reason: {c['reason']}", "", ""])
-            rows.append(["", f"Why: {c['why']}", "", ""])
+            r_idx = add_row([f"{i}. {c['symbol']}", c['score_delta'], f"{c['prev_action']}   {c['today_action']}", c["priority"]])
+            pos_neg_cells.append((r_idx, 1, c['score_delta']))
+            add_row(["", f"Reason: {c['reason']}", "", ""])
+            add_row(["", f"Why: {c['why']}", "", ""])
         if not changes["top_improvements"]:
-            rows.append(["(none)", "", "", ""])
+            add_row(["(none)", "", "", ""])
 
-        rows.append(["", "", "", ""])
-        rows.append(["Top Deteriorations", "", "", "Priority"])
+        add_row(["", "", "", ""])
+        add_row(["Top Deteriorations", "Score Delta", "Action Change", "Priority"], is_subheader=True)
         for i, c in enumerate(changes["top_deteriorations"], 1):
-            rows.append([f"{i}. {c['symbol']}", f"{c['score_delta']}",
-                         f"{c['prev_action']} → {c['today_action']}", c["priority"]])
-            rows.append(["", f"Reason: {c['reason']}", "", ""])
-            rows.append(["", f"Why: {c['why']}", "", ""])
+            r_idx = add_row([f"{i}. {c['symbol']}", c['score_delta'], f"{c['prev_action']}   {c['today_action']}", c["priority"]])
+            pos_neg_cells.append((r_idx, 1, c['score_delta']))
+            add_row(["", f"Reason: {c['reason']}", "", ""])
+            add_row(["", f"Why: {c['why']}", "", ""])
         if not changes["top_deteriorations"]:
-            rows.append(["(none)", "", "", ""])
+            add_row(["(none)", "", "", ""])
 
-        rows.append(["", "", "", ""])
-        rows.append([f"Unchanged Holdings: {changes['unchanged_count']}", "", "", ""])
-        rows.append(["", "", "", ""])
+        add_row(["", "", "", ""])
+        add_row([f"Unchanged Holdings: {changes['unchanged_count']}", "", "", ""])
+        add_row(["", "", "", ""])
     elif changes is not None:
-        rows.append(["Today's Changes", "No prior trading day in History yet — check back tomorrow", "", ""])
-        rows.append(["", "", "", ""])
+        add_row(["Today's Changes", "No prior trading day in History yet - check back tomorrow", "", ""], is_header=True)
+        add_row(["", "", "", ""])
 
-    rows.append(["Sector Allocation", "", "", ""])
-    rows.append(["Sector", "Value (₹)", "% of Portfolio", ""])
+    add_row(["Sector Allocation", "", "", ""], is_header=True)
+    add_row(["Sector", "Value", "% of Portfolio", ""], is_subheader=True)
     for sector, val, pct in dash["sector_alloc"]:
-        rows.append([sector, val, f"{pct}%", ""])
+        r_idx = add_row([sector, val, pct / 100.0 if pct else 0.0, ""])
+        currency_cells.append((r_idx, 1))
+        pct_cells.append((r_idx, 2))
 
-    rows.append(["", "", "", ""])
-    rows.append(["Position Concentration", "", "", ""])
-    rows.append(["Symbol", "Value (₹)", "% of Portfolio", "Flag"])
+    add_row(["", "", "", ""])
+    add_row(["Position Concentration", "", "", ""], is_header=True)
+    add_row(["Symbol", "Value", "% of Portfolio", "Flag"], is_subheader=True)
     for sym, val, pct, flag in dash["positions"]:
-        rows.append([sym, val, f"{pct}%", flag])
+        r_idx = add_row([sym, val, pct / 100.0 if pct else 0.0, flag])
+        currency_cells.append((r_idx, 1))
+        pct_cells.append((r_idx, 2))
+        if "Overweight" in str(flag):
+            pos_neg_cells.append((r_idx, 3, -1))
 
-    ws.append_rows(rows)
-    log.info("Dashboard tab written")
+    ws.update("A1", rows, value_input_option="RAW")
+    
+    nc = 4
+    widths = [250, 150, 200, 250]
+    reqs = sheet_formatter.clear_all_formatting_reqs(ws.id) + sheet_formatter.get_structural_format_reqs(
+        ws.id, len(rows), nc, widths=widths, freeze_rows=0, freeze_cols=0)
+        
+    for h_idx in header_indices:
+        for col in range(nc):
+            reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, col, "0d1b2a", "ffffff"))
+            
+    for s_idx in subheader_indices:
+        for col in range(nc):
+            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff"))
+            
+    for r_idx, c_idx, val in pos_neg_cells:
+        req = sheet_formatter.color_positive_negative(ws.id, r_idx, c_idx, val)
+        if req: reqs.append(req)
+        
+    for r_idx, c_idx in currency_cells:
+        reqs += sheet_formatter.get_currency_format_reqs(ws.id, r_idx-1, r_idx, c_idx, c_idx+1)
+        
+    for r_idx, c_idx in pct_cells:
+        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, r_idx-1, r_idx, c_idx, c_idx+1)
+        
+    if reqs:
+        sheet_writer.batch_update_safe(sh, reqs)
+        
+    log.info("Dashboard tab written with enhanced formatting")
     return ws
