@@ -25,6 +25,12 @@ log = logging.getLogger(__name__)
 
 DASHBOARD_TAB = "Dashboard"
 CONCENTRATION_THRESHOLD_PCT = 5  # matches the 5%-weight-rule concept from the Apps Script build
+# No target/ideal sector-allocation source exists anywhere in this codebase, so
+# the Dashboard doesn't display a "Recommended %" column (would be a fabricated
+# number). Instead, a sector is flagged when its weight passes this threshold —
+# a conventional diversified-equity-portfolio guideline (no single sector above
+# ~25-30%), not a per-sector target pulled from any data source.
+SECTOR_CONCENTRATION_THRESHOLD_PCT = 25
 
 # Priority order for the "Action Required" list — most urgent first.
 ACTION_PRIORITY = {
@@ -230,10 +236,11 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
             s_pnl = round(agg["value"] - agg["invested"], 2)
             s_return_pct = round((s_pnl / agg["invested"]) * 100, 2) if agg["invested"] else None
             s_weight = round(agg["value"] / dash["portfolio_value"] * 100, 2) if dash["portfolio_value"] else 0
+            flag = "⚠️ Concentrated" if s_weight > SECTOR_CONCENTRATION_THRESHOLD_PCT else ""
             sector_detail.append({
                 "sector": sector, "count": agg["count"], "weight_pct": s_weight,
                 "invested": round(agg["invested"], 2), "value": round(agg["value"], 2),
-                "pnl": s_pnl, "return_pct": s_return_pct,
+                "pnl": s_pnl, "return_pct": s_return_pct, "flag": flag,
             })
 
         top3_sector_weight = round(sum(s["weight_pct"] for s in sector_detail[:3]), 2) if sector_detail else 0
@@ -377,9 +384,9 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
                     {"deleteEmbeddedObject": {"objectId": c["chartId"]}} for c in existing_charts
                 ])
     except Exception:
-        ws = sh.add_worksheet(DASHBOARD_TAB, rows=400, cols=7)
+        ws = sh.add_worksheet(DASHBOARD_TAB, rows=400, cols=8)
 
-    nc = 7  # widened from 4 to fit the Sector Allocation table's 7 columns; other sections just leave the extra columns blank
+    nc = 8  # widened from 4 to fit the Sector Allocation table's 8 columns (incl. concentration flag); other sections just leave the extra columns blank
     rows = []
     header_indices = []
     subheader_indices = []
@@ -464,17 +471,19 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         add_row([])
 
     # ── 5. Sector Allocation (holdings count, weight%, invested,
-    #    value, P&L, return% per sector) + horizontal bar chart ──
+    #    value, P&L, return%, concentration flag per sector) +
+    #    horizontal bar chart ──
     sector_detail = dash.get("sector_detail")
     if sector_detail:
         add_row(["Sector Allocation"], is_header=True)
-        add_row(["Sector", "Holdings", "Weight %", "Invested", "Value", "P&L", "Return %"], is_subheader=True)
+        add_row(["Sector", "Holdings", "Weight %", "Invested", "Value", "P&L", "Return %", "Flag"], is_subheader=True)
         first_data_row = len(rows) + 1
         for s in sector_detail:
             row = [
                 s["sector"], s["count"], s["weight_pct"],
                 s["invested"], s["value"], s["pnl"],
                 s["return_pct"] if s["return_pct"] is not None else "N/A",
+                s.get("flag", ""),
             ]
             r_idx = add_row(row)
             pct_cells.append((r_idx, 2))
@@ -618,7 +627,7 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
 
     ws.update("A1", rows, value_input_option="RAW")
 
-    widths = [220, 110, 100, 130, 130, 120, 100]
+    widths = [220, 110, 100, 130, 130, 120, 100, 120]
     reqs = sheet_formatter.clear_all_formatting_reqs(ws.id) + sheet_formatter.get_structural_format_reqs(
         ws.id, len(rows), nc, widths=widths, freeze_rows=0, freeze_cols=0)
 
