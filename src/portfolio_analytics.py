@@ -4,13 +4,19 @@ Portfolio-level dashboard + Portfolio Health Score.
 Everything main.py currently reports is stock-centric (one row per
 symbol). This module aggregates data run_portfolio_update() already
 computed — holdings, fund_map, trades, portfolio_live_value, results,
-and (for the Dashboard KPIs/gainers/losers/signals) portfolio_builder's
-combined_rows — into sector allocation, position concentration,
-portfolio beta, portfolio XIRR, expected dividend income, and a
-deterministic Portfolio Health Score. No new yfinance/API calls
-anywhere in this file, and no portfolio math is recomputed — KPIs,
-P&L, Return %, Weight %, and Signal all come straight from
-portfolio_builder.build_portfolio()'s combined_rows.
+and (for the Dashboard KPIs/gainers/losers/signals/sector P&L)
+portfolio_builder's combined_rows — into sector allocation, position
+concentration, portfolio beta, portfolio XIRR, expected dividend
+income, and a deterministic Portfolio Health Score. No new
+yfinance/API calls anywhere in this file, and no portfolio math is
+recomputed — KPIs, P&L, Return %, Weight %, and Signal all come
+straight from portfolio_builder.build_portfolio()'s combined_rows.
+
+Sector classification: fund_map[sym]["sector"] (from yfinance, cached
+by fund_cache.py) is the only sector source anywhere in this codebase
+— reused as-is here, never guessed from a symbol name. A symbol with
+no sector data from yfinance falls into an "Unknown" bucket rather
+than being assigned a sector.
 """
 import logging
 from datetime import datetime, date
@@ -91,13 +97,15 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
         has invested/value/pnl/return_pct/wt_pct/signal per symbol.
         Passed in (not recomputed) so the Dashboard KPIs always match
         the Portfolio tab exactly. Optional for backward compatibility;
-        KPI/gainers/losers/signal keys are omitted if not supplied.
+        KPI/gainers/losers/signal/sector-P&L keys are omitted if not
+        supplied.
     """
     from portfolio_builder import compute_xirr  # avoids circular import: portfolio_builder doesn't import portfolio_analytics
 
     log.info(f"[DEBUG] compute_portfolio_dashboard: holdings received = {len(holdings)}")
 
-    # ── Sector allocation ────────────────────
+    # ── Sector allocation (value/weight only — used by the Health
+    #    Score's diversification calc, kept exactly as before) ──────
     sector_value = {}
     for sym, (qty, cmp, avg_buy) in holdings.items():
         sector = fund_map.get(sym, {}).get("sector") or "Unknown"
@@ -180,11 +188,13 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
         "portfolio_value": round(portfolio_live_value, 2),
     }
 
-    # ── KPIs, Top Gainers/Losers, Signal counts, Action Required ────
+    # ── KPIs, Top Gainers/Losers, Signal counts, Action Required,
+    #    Sector P&L/Return% breakdown ─────────
     # Sourced entirely from portfolio_builder's combined_rows (already
     # computed invested/value/pnl/return_pct/wt_pct/signal per symbol)
     # so these numbers always reconcile with the Portfolio tab — no
-    # second calculation of the same metric.
+    # second calculation of the same metric. Sector is joined in from
+    # fund_map (the same source sector_alloc above already uses).
     combined_rows = combined_rows or []
     if combined_rows:
         invested_value = round(sum(r.get("invested", 0) for r in combined_rows), 2)
@@ -205,6 +215,29 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
             key=lambda r: ACTION_PRIORITY.get(r.get("signal"), 9)
         )
 
+        # Sector-level rollup: holdings count, weight%, invested, value, P&L, return%
+        sector_agg = {}
+        for r in combined_rows:
+            sym = r.get("symbol")
+            sector = fund_map.get(sym, {}).get("sector") or "Unknown"
+            agg = sector_agg.setdefault(sector, {"count": 0, "invested": 0.0, "value": 0.0})
+            agg["count"] += 1
+            agg["invested"] += r.get("invested", 0) or 0
+            agg["value"] += r.get("value", 0) or 0
+
+        sector_detail = []
+        for sector, agg in sorted(sector_agg.items(), key=lambda x: x[1]["value"], reverse=True):
+            s_pnl = round(agg["value"] - agg["invested"], 2)
+            s_return_pct = round((s_pnl / agg["invested"]) * 100, 2) if agg["invested"] else None
+            s_weight = round(agg["value"] / dash["portfolio_value"] * 100, 2) if dash["portfolio_value"] else 0
+            sector_detail.append({
+                "sector": sector, "count": agg["count"], "weight_pct": s_weight,
+                "invested": round(agg["invested"], 2), "value": round(agg["value"], 2),
+                "pnl": s_pnl, "return_pct": s_return_pct,
+            })
+
+        top3_sector_weight = round(sum(s["weight_pct"] for s in sector_detail[:3]), 2) if sector_detail else 0
+
         dash.update({
             "invested_value": invested_value,
             "total_pnl": total_pnl,
@@ -216,6 +249,9 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
             "num_holdings": len(combined_rows),
             "largest_holding": positions[0] if positions else None,
             "top5_weight": round(sum(p[2] for p in positions[:5]), 2) if positions else 0,
+            "sector_detail": sector_detail,
+            "num_sectors": len(sector_detail),
+            "top3_sector_weight": top3_sector_weight,
         })
 
     log.info(f"[DEBUG] compute_portfolio_dashboard: portfolio_value={round(portfolio_live_value, 2)} "
@@ -310,11 +346,18 @@ def compute_portfolio_health(results, holdings, fund_map, dash):
 def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
     """
     Redesigned Dashboard: KPI band -> Health Score -> Top-5 Allocation
-    -> Sector Allocation -> Top Gainers/Losers -> Signals & Action
-    Required -> Concentration Summary -> Today's Changes. No per-symbol
-    values are recomputed here — everything comes from `dash` (built by
-    compute_portfolio_dashboard, which itself reuses portfolio_builder's
-    combined_rows for anything money-related).
+    -> Sector Allocation (+ bar chart) -> Top Gainers/Losers -> Signals
+    & Action Required -> Concentration Summary -> Today's Changes. No
+    per-symbol values are recomputed here — everything comes from
+    `dash` (built by compute_portfolio_dashboard, which itself reuses
+    portfolio_builder's combined_rows for anything money-related).
+
+    Row/column indexing convention used throughout this function:
+    add_row() returns a 1-based row number matching the sheet's visible
+    row (row 1 = the first row written). sheet_formatter helpers take
+    0-indexed API row numbers, so every reference below subtracts 1
+    (r_idx - 1) when calling them — get this wrong and colours land one
+    row below the content they're meant to highlight.
     """
     import sheet_formatter
     import sheet_writer
@@ -328,9 +371,15 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
             if cond_formats:
                 clear_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws.id, "index": 0}} for _ in cond_formats]
                 sheet_writer.batch_update_safe(sh, clear_reqs)
+            existing_charts = sheet_meta.get("charts", [])
+            if existing_charts:
+                sheet_writer.batch_update_safe(sh, [
+                    {"deleteEmbeddedObject": {"objectId": c["chartId"]}} for c in existing_charts
+                ])
     except Exception:
-        ws = sh.add_worksheet(DASHBOARD_TAB, rows=400, cols=4)
+        ws = sh.add_worksheet(DASHBOARD_TAB, rows=400, cols=7)
 
+    nc = 7  # widened from 4 to fit the Sector Allocation table's 7 columns; other sections just leave the extra columns blank
     rows = []
     header_indices = []
     subheader_indices = []
@@ -339,9 +388,13 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
     pct_cells = []       # (r_idx, c_idx)
     signal_cells = []    # (r_idx, c_idx, signal_str)
     kpi_band_row = None  # row index of the 4-up KPI value row, for larger font
+    sector_table_rows = None  # (first_data_row_1idx, last_data_row_1idx) for the chart source range
+
+    def pad(r_data):
+        return r_data + [""] * (nc - len(r_data))
 
     def add_row(r_data, is_header=False, is_subheader=False):
-        rows.append(r_data)
+        rows.append(pad(r_data))
         idx = len(rows)
         if is_header:
             header_indices.append(idx)
@@ -350,9 +403,9 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         return idx
 
     # ── 1. Header ─────────────────────────────
-    add_row(["PORTFOLIO DASHBOARD", "", "", ""], is_header=True)
-    add_row([f"Last Updated: {datetime.now().strftime('%d-%b-%Y %H:%M')}", "", "", ""])
-    add_row(["", "", "", ""])
+    add_row(["PORTFOLIO DASHBOARD"], is_header=True)
+    add_row([f"Last Updated: {datetime.now().strftime('%d-%b-%Y %H:%M')}"])
+    add_row([])
 
     # ── 2. KPI band ───────────────────────────
     has_kpis = "invested_value" in dash
@@ -360,7 +413,7 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         add_row(["PORTFOLIO VALUE", "INVESTED VALUE", "TOTAL P&L", "RETURN %"], is_subheader=True)
         kpi_band_row = add_row([
             dash["portfolio_value"], dash["invested_value"], dash["total_pnl"],
-            (dash["return_pct"] / 100.0) if dash.get("return_pct") is not None else "N/A",
+            dash["return_pct"] if dash.get("return_pct") is not None else "N/A",
         ])
         currency_cells.append((kpi_band_row, 0))
         currency_cells.append((kpi_band_row, 1))
@@ -369,10 +422,10 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         if dash.get("return_pct") is not None:
             pct_cells.append((kpi_band_row, 3))
             pos_neg_cells.append((kpi_band_row, 3, dash["return_pct"]))
-        add_row(["", "", "", ""])
+        add_row([])
     else:
-        add_row(["Portfolio Value", dash["portfolio_value"], "", ""], is_subheader=True)
-        add_row(["", "", "", ""])
+        add_row(["Portfolio Value", dash["portfolio_value"]], is_subheader=True)
+        add_row([])
 
     # ── 3. Portfolio Health Score ─────────────
     if health:
@@ -383,71 +436,97 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
             delta_str = f" ({sign}{delta} vs prior trading day)"
 
         add_row(["Portfolio Health Score", f"{health['overall']} / 100", health["grade"], f"{trend_label}{delta_str}"], is_header=True)
-        add_row(["", "", "", ""])
-        add_row(["Component", "Score", "Bar", ""], is_subheader=True)
+        add_row([])
+        add_row(["Component", "Score", "Bar"], is_subheader=True)
         for name, score in health["components"].items():
             weight_pct = int(health["weights"].get(HEALTH_COMPONENT_KEYS.get(name, ""), 0) * 100)
             filled = int(round(score / 10))
             bar = "█" * filled + "░" * (10 - filled)
-            add_row([f"{name} ({weight_pct}%)", score, bar, ""])
-        add_row(["", "", "", ""])
+            add_row([f"{name} ({weight_pct}%)", score, bar])
+        add_row([])
 
     # ── 4. Portfolio allocation: Top 5 holdings + Others ──
     if dash.get("positions"):
-        add_row(["Top Holdings", "", "", ""], is_header=True)
-        add_row(["Symbol", "Value", "% of Portfolio", ""], is_subheader=True)
+        add_row(["Top Holdings"], is_header=True)
+        add_row(["Symbol", "Value", "% of Portfolio"], is_subheader=True)
         top5 = dash["positions"][:5]
         rest = dash["positions"][5:]
         for sym, val, pct, flag in top5:
-            r_idx = add_row([sym, val, pct / 100.0 if pct else 0.0, flag])
+            r_idx = add_row([sym, val, pct if pct else 0.0, flag])
             currency_cells.append((r_idx, 1))
             pct_cells.append((r_idx, 2))
         if rest:
             other_val = round(sum(p[1] for p in rest), 2)
             other_pct = round(sum(p[2] for p in rest), 2)
-            r_idx = add_row([f"Others ({len(rest)})", other_val, other_pct / 100.0 if other_pct else 0.0, ""])
+            r_idx = add_row([f"Others ({len(rest)})", other_val, other_pct if other_pct else 0.0])
             currency_cells.append((r_idx, 1))
             pct_cells.append((r_idx, 2))
-        add_row(["", "", "", ""])
+        add_row([])
 
-    # ── 5. Sector allocation ──────────────────
-    if dash.get("sector_alloc"):
-        add_row(["Sector Allocation", "", "", ""], is_header=True)
-        add_row(["Sector", "Value", "% of Portfolio", ""], is_subheader=True)
+    # ── 5. Sector Allocation (holdings count, weight%, invested,
+    #    value, P&L, return% per sector) + horizontal bar chart ──
+    sector_detail = dash.get("sector_detail")
+    if sector_detail:
+        add_row(["Sector Allocation"], is_header=True)
+        add_row(["Sector", "Holdings", "Weight %", "Invested", "Value", "P&L", "Return %"], is_subheader=True)
+        first_data_row = len(rows) + 1
+        for s in sector_detail:
+            row = [
+                s["sector"], s["count"], s["weight_pct"],
+                s["invested"], s["value"], s["pnl"],
+                s["return_pct"] if s["return_pct"] is not None else "N/A",
+            ]
+            r_idx = add_row(row)
+            pct_cells.append((r_idx, 2))
+            currency_cells.append((r_idx, 3))
+            currency_cells.append((r_idx, 4))
+            currency_cells.append((r_idx, 5))
+            pos_neg_cells.append((r_idx, 5, s["pnl"]))
+            if s["return_pct"] is not None:
+                pct_cells.append((r_idx, 6))
+                pos_neg_cells.append((r_idx, 6, s["return_pct"]))
+        last_data_row = len(rows)
+        sector_table_rows = (first_data_row, last_data_row)
+        add_row([])
+    elif dash.get("sector_alloc"):
+        # combined_rows wasn't supplied — fall back to the value/weight-only
+        # view rather than fabricating per-sector P&L.
+        add_row(["Sector Allocation"], is_header=True)
+        add_row(["Sector", "Value", "% of Portfolio"], is_subheader=True)
         for sector, val, pct in dash["sector_alloc"]:
-            r_idx = add_row([sector, val, pct / 100.0 if pct else 0.0, ""])
+            r_idx = add_row([sector, val, pct if pct else 0.0])
             currency_cells.append((r_idx, 1))
             pct_cells.append((r_idx, 2))
-        add_row(["", "", "", ""])
+        add_row([])
 
     # ── 6. Top Gainers / Top Losers ───────────
     if has_kpis:
-        add_row(["Top Gainers", "P&L", "Return %", ""], is_subheader=True)
+        add_row(["Top Gainers", "P&L", "Return %"], is_subheader=True)
         if dash["top_gainers"]:
             for r in dash["top_gainers"]:
-                r_idx = add_row([r["symbol"], r["pnl"], r["return_pct"] / 100.0, ""])
+                r_idx = add_row([r["symbol"], r["pnl"], r["return_pct"]])
                 currency_cells.append((r_idx, 1))
                 pct_cells.append((r_idx, 2))
                 pos_neg_cells.append((r_idx, 1, r["pnl"]))
                 pos_neg_cells.append((r_idx, 2, r["return_pct"]))
         else:
-            add_row(["(none)", "", "", ""])
-        add_row(["", "", "", ""])
+            add_row(["(none)"])
+        add_row([])
 
-        add_row(["Top Losers", "P&L", "Return %", ""], is_subheader=True)
+        add_row(["Top Losers", "P&L", "Return %"], is_subheader=True)
         if dash["top_losers"]:
             for r in dash["top_losers"]:
-                r_idx = add_row([r["symbol"], r["pnl"], r["return_pct"] / 100.0, ""])
+                r_idx = add_row([r["symbol"], r["pnl"], r["return_pct"]])
                 currency_cells.append((r_idx, 1))
                 pct_cells.append((r_idx, 2))
                 pos_neg_cells.append((r_idx, 1, r["pnl"]))
                 pos_neg_cells.append((r_idx, 2, r["return_pct"]))
         else:
-            add_row(["(none)", "", "", ""])
-        add_row(["", "", "", ""])
+            add_row(["(none)"])
+        add_row([])
 
         # ── 7. Portfolio Signals + Action Required ──
-        add_row(["Portfolio Signals", "", "", ""], is_header=True)
+        add_row(["Portfolio Signals"], is_header=True)
         sc = dash["signal_counts"]
         signal_summary_row = [
             f"HOLD: {sc.get('HOLD', 0)}",
@@ -456,99 +535,103 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
             f"TARGET HIT: {sc.get('TARGET HIT - TRIM', 0)}",
         ]
         add_row(signal_summary_row, is_subheader=True)
-        add_row(["", "", "", ""])
+        add_row([])
 
         add_row(["Action Required", "Signal", "P&L", "Return %"], is_subheader=True)
         if dash["action_required"]:
             for r in dash["action_required"]:
-                r_idx = add_row([r["symbol"], r["signal"], r["pnl"], r["return_pct"] / 100.0])
+                r_idx = add_row([r["symbol"], r["signal"], r["pnl"], r["return_pct"]])
                 currency_cells.append((r_idx, 2))
                 pct_cells.append((r_idx, 3))
                 signal_cells.append((r_idx, 1, r["signal"]))
         else:
-            add_row(["(none — all holdings within Hold range)", "", "", ""])
-        add_row(["", "", "", ""])
+            add_row(["(none — all holdings within Hold range)"])
+        add_row([])
 
         # ── 8. Concentration / Summary ────────────
-        add_row(["Portfolio Summary", "", "", ""], is_header=True)
-        idx = add_row(["Number of Holdings", dash["num_holdings"], "", ""])
+        add_row(["Portfolio Summary"], is_header=True)
+        add_row(["Number of Holdings", dash["num_holdings"]])
         if dash.get("largest_holding"):
             lh = dash["largest_holding"]
-            add_row(["Largest Holding", f"{lh[0]} ({lh[2]}%)", "", ""])
-        add_row(["Top 5 Holdings Combined Weight", f"{dash['top5_weight']}%", "", ""])
+            add_row(["Largest Holding", f"{lh[0]} ({lh[2]}%)"])
+        add_row(["Top 5 Holdings Combined Weight", f"{dash['top5_weight']}%"])
+        add_row(["Number of Sectors", dash.get("num_sectors", "N/A")])
         if dash.get("sector_alloc"):
             top_sector = dash["sector_alloc"][0]
-            add_row(["Largest Sector", f"{top_sector[0]} ({top_sector[2]}%)", "", ""])
+            add_row(["Largest Sector", f"{top_sector[0]} ({top_sector[2]}%)"])
+        add_row(["Top 3 Sectors Combined Weight", f"{dash.get('top3_sector_weight', 'N/A')}%"])
         val = dash["portfolio_xirr"]
         if val is not None:
-            idx = add_row(["Portfolio XIRR", val / 100.0, "", ""])
+            idx = add_row(["Portfolio XIRR", val])
             pct_cells.append((idx, 1))
             pos_neg_cells.append((idx, 1, val))
         val = dash["portfolio_beta"]
-        add_row(["Portfolio Beta", val if val is not None else "N/A", "", ""])
-        idx = add_row(["Expected Div Income (annual)", dash['div_income'], "", ""])
+        add_row(["Portfolio Beta", val if val is not None else "N/A"])
+        idx = add_row(["Expected Div Income (annual)", dash['div_income']])
         currency_cells.append((idx, 1))
-        add_row(["", "", "", ""])
+        add_row([])
     else:
         # combined_rows wasn't supplied — fall back to the beta/XIRR/div-only
         # KPI set rather than fabricating P&L/Return%/gainers/losers.
-        add_row(["Portfolio KPIs", "", "", ""], is_header=True)
+        add_row(["Portfolio KPIs"], is_header=True)
         val = dash["portfolio_xirr"]
         if val is not None:
-            idx = add_row(["Portfolio XIRR", val / 100.0, "", ""])
+            idx = add_row(["Portfolio XIRR", val])
             pct_cells.append((idx, 1))
             pos_neg_cells.append((idx, 1, val))
         else:
-            add_row(["Portfolio XIRR%", "N/A", "", ""])
+            add_row(["Portfolio XIRR%", "N/A"])
         val = dash["portfolio_beta"]
-        add_row(["Portfolio Beta", val if val is not None else "N/A", "", ""])
-        idx = add_row(["Expected Div Income (annual)", dash['div_income'], "", ""])
+        add_row(["Portfolio Beta", val if val is not None else "N/A"])
+        idx = add_row(["Expected Div Income (annual)", dash['div_income']])
         currency_cells.append((idx, 1))
-        add_row(["", "", "", ""])
+        add_row([])
 
     # ── 9. Today's Changes (unchanged behaviour) ──
     if changes and changes.get("prev_date"):
-        add_row([f"Today's Changes (vs {changes['prev_date']})", "", "", ""], is_header=True)
-        add_row(["", "", "", ""])
+        add_row([f"Today's Changes (vs {changes['prev_date']})"], is_header=True)
+        add_row([])
 
         add_row(["Top Improvements", "Score Delta", "Action Change", "Priority"], is_subheader=True)
         for i, c in enumerate(changes["top_improvements"], 1):
             r_idx = add_row([f"{i}. {c['symbol']}", c['score_delta'], f"{c['prev_action']} → {c['today_action']}", c["priority"]])
             pos_neg_cells.append((r_idx, 1, c['score_delta']))
-            add_row(["", f"Reason: {c['reason']}", "", ""])
-            add_row(["", f"Why: {c['why']}", "", ""])
+            add_row(["", f"Reason: {c['reason']}"])
+            add_row(["", f"Why: {c['why']}"])
         if not changes["top_improvements"]:
-            add_row(["(none)", "", "", ""])
+            add_row(["(none)"])
 
-        add_row(["", "", "", ""])
+        add_row([])
         add_row(["Top Deteriorations", "Score Delta", "Action Change", "Priority"], is_subheader=True)
         for i, c in enumerate(changes["top_deteriorations"], 1):
             r_idx = add_row([f"{i}. {c['symbol']}", c['score_delta'], f"{c['prev_action']} → {c['today_action']}", c["priority"]])
             pos_neg_cells.append((r_idx, 1, c['score_delta']))
-            add_row(["", f"Reason: {c['reason']}", "", ""])
-            add_row(["", f"Why: {c['why']}", "", ""])
+            add_row(["", f"Reason: {c['reason']}"])
+            add_row(["", f"Why: {c['why']}"])
         if not changes["top_deteriorations"]:
-            add_row(["(none)", "", "", ""])
+            add_row(["(none)"])
 
-        add_row(["", "", "", ""])
-        add_row([f"Unchanged Holdings: {changes['unchanged_count']}", "", "", ""])
+        add_row([])
+        add_row([f"Unchanged Holdings: {changes['unchanged_count']}"])
     elif changes is not None:
-        add_row(["Today's Changes", "No prior trading day in History yet - check back tomorrow", "", ""], is_header=True)
+        add_row(["Today's Changes", "No prior trading day in History yet - check back tomorrow"], is_header=True)
 
     ws.update("A1", rows, value_input_option="RAW")
 
-    nc = 4
-    widths = [260, 150, 180, 220]
+    widths = [220, 110, 100, 130, 130, 120, 100]
     reqs = sheet_formatter.clear_all_formatting_reqs(ws.id) + sheet_formatter.get_structural_format_reqs(
         ws.id, len(rows), nc, widths=widths, freeze_rows=0, freeze_cols=0)
 
+    # NOTE: color_cell_req / color_positive_negative / color_action_signal
+    # all take a 0-indexed API row. add_row() above returns a 1-indexed
+    # sheet row number, so every call below passes (idx - 1).
     for h_idx in header_indices:
         for col in range(nc):
-            reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, col, "0d1b2a", "ffffff", font_size=8))
+            reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx - 1, col, "0d1b2a", "ffffff", font_size=8))
 
     for s_idx in subheader_indices:
         for col in range(nc):
-            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff", font_size=8))
+            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx - 1, col, "1c3144", "ffffff", font_size=8))
 
     if kpi_band_row is not None:
         for col in range(4):
@@ -568,7 +651,7 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         })
 
     for r_idx, c_idx, val in pos_neg_cells:
-        req = sheet_formatter.color_positive_negative(ws.id, r_idx, c_idx, val)
+        req = sheet_formatter.color_positive_negative(ws.id, r_idx - 1, c_idx, val)
         if req: reqs.append(req)
 
     for r_idx, c_idx in currency_cells:
@@ -580,11 +663,57 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
     # Action Required signal cells get the same subtle colour coding
     # used on the Portfolio tab (soft red/blue/green), for consistency.
     for r_idx, c_idx, sig in signal_cells:
-        req = sheet_formatter.color_action_signal(ws.id, r_idx, c_idx, sig)
+        req = sheet_formatter.color_action_signal(ws.id, r_idx - 1, c_idx, sig)
         if req: reqs.append(req)
 
     if reqs:
         sheet_writer.batch_update_safe(sh, reqs)
+
+    # ── Sector allocation bar chart (separate batch call: addChart
+    #    needs the cell values above already committed) ──────
+    if sector_table_rows:
+        first_row, last_row = sector_table_rows  # 1-indexed, inclusive
+        chart_req = {
+            "addChart": {
+                "chart": {
+                    "spec": {
+                        "title": "Sector Allocation — Weight %",
+                        "basicChart": {
+                            "chartType": "BAR",
+                            "legendPosition": "NO_LEGEND",
+                            "axis": [
+                                {"position": "BOTTOM_AXIS", "title": "Weight %"},
+                                {"position": "LEFT_AXIS", "title": "Sector"},
+                            ],
+                            "domains": [{
+                                "domain": {"sourceRange": {"sources": [{
+                                    "sheetId": ws.id, "startRowIndex": first_row - 1, "endRowIndex": last_row,
+                                    "startColumnIndex": 0, "endColumnIndex": 1,
+                                }]}}
+                            }],
+                            "series": [{
+                                "series": {"sourceRange": {"sources": [{
+                                    "sheetId": ws.id, "startRowIndex": first_row - 1, "endRowIndex": last_row,
+                                    "startColumnIndex": 2, "endColumnIndex": 3,
+                                }]}},
+                                "targetAxis": "BOTTOM_AXIS",
+                            }],
+                            "headerCount": 0,
+                        },
+                    },
+                    "position": {
+                        "overlayPosition": {
+                            "anchorCell": {"sheetId": ws.id, "rowIndex": first_row - 1, "columnIndex": nc + 1},
+                            "widthPixels": 480, "heightPixels": 320,
+                        }
+                    },
+                }
+            }
+        }
+        try:
+            sheet_writer.batch_update_safe(sh, [chart_req])
+        except Exception as e:
+            log.warning(f"Sector allocation chart insert failed (non-fatal): {e}")
 
     log.info("Dashboard tab written with enhanced formatting")
     return ws
