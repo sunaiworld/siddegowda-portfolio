@@ -38,13 +38,23 @@ def read_symbols(sh):
     symbols = []
     try:
         pws  = sh.worksheet("Portfolio")
-        rows = pws.get_all_values()[1:]
-        for row in rows:
-            sym = row[SYMBOL_COL].strip().upper() if len(row) > SYMBOL_COL else ""
+        all_rows = pws.get_all_values()
+        if not all_rows:
+            return symbols
+            
+        headers = all_rows[0]
+        actual_sym_col = SYMBOL_COL
+        for i, h in enumerate(headers):
+            if str(h).strip().upper() == "SYMBOL":
+                actual_sym_col = i
+                break
+                
+        for row in all_rows[1:]:
+            sym = row[actual_sym_col].strip().upper() if len(row) > actual_sym_col else ""
             if (sym and sym not in symbols and sym not in skip
                     and len(sym) <= 15 and sym.replace("&","").isalnum()):
                 symbols.append(sym)
-        log.info(f"Portfolio tab col B: {len(symbols)} symbols")
+        log.info(f"Portfolio tab found {len(symbols)} symbols in col index {actual_sym_col}")
     except Exception as e:
         log.warning(f"Could not read Portfolio: {e}")
     return symbols

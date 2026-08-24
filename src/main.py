@@ -413,8 +413,8 @@ def main():
         send_telegram(f"❌ Portfolio update FAILED — {type(e).__name__}: {e}")
         raise
     if out is None:
-        send_telegram("❌ Portfolio update FAILED — no symbols found in Portfolio tab col B")
-        return
+        send_telegram("❌ Portfolio update FAILED — no symbols found in Portfolio tab Symbol column")
+        sys.exit(1)
 
     msg = build_alert_message(out["alerts"], out["portfolio_live_value"], out["top_picks"],
                                watchlist_opps=out.get("watchlist_opportunities"))
