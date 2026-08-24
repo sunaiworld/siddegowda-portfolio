@@ -27,6 +27,7 @@ jobs:
 
     - name: Send Morning Buying Zone Update
       env:
+        SHEET_ID: ${{ secrets.SHEET_ID }}
         GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
