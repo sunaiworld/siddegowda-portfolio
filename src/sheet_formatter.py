@@ -332,3 +332,36 @@ def color_action_signal(ws_id, rn, col_idx, action):
         bg, fg = ACTION_COLORS[action]
         return color_cell_req(ws_id, rn, col_idx, bg, fg, bold=False)
     return None
+
+def get_weight_gradient_rule(ws_id, start_row, end_row, col_idx):
+    return {
+        "addConditionalFormatRule": {
+            "rule": {
+                "ranges": [{
+                    "sheetId": ws_id,
+                    "startRowIndex": start_row,
+                    "endRowIndex": end_row,
+                    "startColumnIndex": col_idx,
+                    "endColumnIndex": col_idx + 1
+                }],
+                "gradientRule": {
+                    "minpoint": {
+                        "color": {"red": 0.34, "green": 0.73, "blue": 0.54},
+                        "type": "NUMBER",
+                        "value": "0"
+                    },
+                    "midpoint": {
+                        "color": {"red": 1.0, "green": 0.88, "blue": 0.51},
+                        "type": "NUMBER",
+                        "value": "2.5"
+                    },
+                    "maxpoint": {
+                        "color": {"red": 0.9, "green": 0.49, "blue": 0.45},
+                        "type": "NUMBER",
+                        "value": "5"
+                    }
+                }
+            },
+            "index": 0
+        }
+    }

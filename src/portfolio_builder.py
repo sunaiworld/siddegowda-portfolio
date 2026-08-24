@@ -536,6 +536,9 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
         if col_name in headers:
             col_idx = headers.index(col_name)
             reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col_idx, col_idx + 1)
+            
+            if col_name == "Wt %":
+                reqs.append(sheet_formatter.get_weight_gradient_rule(ws.id, 1, len(all_data), col_idx))
 
     for i, row in enumerate(all_data):
         rn = i
@@ -558,13 +561,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
                 if req: reqs.append(req)
             except: pass
 
-        if "Wt %" in headers:
-            wt_idx = headers.index("Wt %")
-            try:
-                wt_pct = float(row[wt_idx]) if row[wt_idx] else 0.0
-                req = sheet_formatter.color_positive_negative(ws.id, rn, wt_idx, wt_pct)
-                if req: reqs.append(req)
-            except: pass
+
         
         if "Stop Loss" in headers:
             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Stop Loss"), "fde9d9", "c62828", bold=False))
