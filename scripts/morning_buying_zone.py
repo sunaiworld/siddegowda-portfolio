@@ -15,6 +15,7 @@ import sys
 import os
 import argparse
 import logging
+import html
 from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import yfinance as yf
@@ -24,13 +25,18 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 's
 from config import SHEET_ID, TECH_WORKERS
 from sheet_writer import get_gspread_client
 from telegram_alerts import send_telegram
-from github_data_builder import GITHUB_DATA_COLS, build_result_row, write_github_data
+from github_data_builder import GITHUB_DATA_COLS, GITHUB_DATA_HEADER_NAMES, build_result_row, write_github_data
 from data_fetcher import fetch_prices_batch, fetch_technicals, fetch_rev_growth
 import fund_cache
 import news_engine.news_cache as news_cache
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("morning_update")
+
+def html_escape(val):
+    if val is None:
+        return ""
+    return html.escape(str(val))
 
 def is_market_open():
     """
@@ -125,12 +131,12 @@ def send_telegram_morning_update(records, nifty_val, nifty_pct):
             msg += "None today.\n\n"
         else:
             for s in stocks:
-                sym = str(s.get("Symbol", "?")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                cmp = s.get("CMP", 0)
-                pe = s.get("PE", "-")
-                score = s.get("Total Score", "-")
-                action = str(s.get("Final Action", "-")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                price_rng = str(s.get("Buy/Sell Price Range", "")).replace("&", "&amp;")
+                sym = html_escape(s.get("Symbol", "?"))
+                cmp = html_escape(s.get("CMP", 0))
+                pe = html_escape(s.get("PE", "-"))
+                score = html_escape(s.get("Total Score", "-"))
+                action = html_escape(s.get("Final Action", "-"))
+                price_rng = html_escape(s.get("Buy/Sell Price Range", ""))
                 price_rng_line = f"Buy Zone: {price_rng}\n" if price_rng else ""
                 msg += f"<b>{sym}</b>\nCMP: ₹{cmp}\n{price_rng_line}PE: {pe} | Score: {score}\nFinal Action: {action}\n\n"
             msg += "\n"
@@ -143,9 +149,9 @@ def send_telegram_morning_update(records, nifty_val, nifty_pct):
              msg += "None today.\n"
         else:
              for s in stocks:
-                sym = str(s.get("Symbol", "?")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                cmp = s.get("CMP", 0)
-                action = str(s.get("Final Action", "-")).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                sym = html_escape(s.get("Symbol", "?"))
+                cmp = html_escape(s.get("CMP", 0))
+                action = html_escape(s.get("Final Action", "-"))
                 msg += f"• {sym} | ₹{cmp} | {action}\n"
     else:
         msg += f"{wait_count} stocks\n"
@@ -331,16 +337,12 @@ def main():
         log.error(f"[Morning] Failed to update Google Sheets: {e}")
         return
 
-    # Read updated values from sheet
+    # Build records array directly from updated_rows in memory
     log.info("[Morning] Reading updated GITHUB DATA")
-    try:
-        records = ws.get_all_records()
-    except Exception as e:
-        log.warning(f"[Morning] Sheet re-read error: {e}. Building records array from updated rows.")
-        headers = [all_vals[1][i] for i in range(len(all_vals[1]))] if len(all_vals) > 1 else []
-        records = []
-        for r in updated_rows:
-            records.append({headers[i]: r[i] for i in range(min(len(r), len(headers)))})
+    records = []
+    headers = [GITHUB_DATA_HEADER_NAMES.get(k, k) for k in GITHUB_DATA_COLS.keys()]
+    for r in updated_rows:
+        records.append({headers[i]: r[i] for i in range(min(len(r), len(headers)))})
 
     # Send Telegram message
     success = send_telegram_morning_update(records, nifty_val, nifty_pct)
