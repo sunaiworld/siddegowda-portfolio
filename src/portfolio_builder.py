@@ -499,17 +499,6 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
 
     ws.clear()
     
-    try:
-        rules = sh.fetch_sheet_metadata({"includeGridData": False})
-        sheet_meta = next((s for s in rules.get('sheets', []) if s.get('properties', {}).get('sheetId') == ws.id), None)
-        if sheet_meta:
-            cond_formats = sheet_meta.get("conditionalFormats", [])
-            if cond_formats:
-                clear_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws.id, "index": 0}} for _ in cond_formats]
-                sheet_writer.batch_update_safe(sh, clear_reqs)
-    except:
-        pass
-
     ws.update("A1", all_data, value_input_option="RAW")
     log.info(f"write_portfolio: wrote {len(all_data)} rows to '{tab_name}'")
     profiler.increment("Rows written", len(all_data))
@@ -537,44 +526,18 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
             col_idx = headers.index(col_name)
             reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col_idx, col_idx + 1)
             
-            if col_name == "Wt %":
-                reqs.append(sheet_formatter.get_weight_gradient_rule(ws.id, 1, len(all_data), col_idx))
 
     for i, row in enumerate(all_data):
         rn = i
         if i == 0 or len(row) <= SYMBOL_COL or row[SYMBOL_COL] == "" or "SUBTOTAL" in row[SYMBOL_COL] or "TOTAL" in row[SYMBOL_COL] or "GROWW" in row[SYMBOL_COL] or "ZERODHA" in row[SYMBOL_COL] or "COMBINED" in row[SYMBOL_COL]:
             continue
 
-        if "P&L" in headers:
-            pnl_idx = headers.index("P&L")
-            try:
-                pnl = float(row[pnl_idx]) if row[pnl_idx] else 0.0
-                req = sheet_formatter.color_positive_negative(ws.id, rn, pnl_idx, pnl)
-                if req: reqs.append(req)
-            except: pass
-        
-        if "Return %" in headers:
-            ret_idx = headers.index("Return %")
-            try:
-                ret_pct = float(row[ret_idx]) if row[ret_idx] else 0.0
-                req = sheet_formatter.color_positive_negative(ws.id, rn, ret_idx, ret_pct)
-                if req: reqs.append(req)
-            except: pass
-
-
-        
         if "Stop Loss" in headers:
             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Stop Loss"), "fde9d9", "c62828", bold=False))
         if "Target" in headers:
             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Target"), "d9ead3", "0b8043", bold=False))
         if "Buy More@" in headers:
             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Buy More@"), "e8f0fe", "1967d2", bold=False))
-
-        if "Signal" in headers:
-            sig_idx = headers.index("Signal")
-            signal = str(row[sig_idx]).strip()
-            req_sig = sheet_formatter.color_action_signal(ws.id, rn, sig_idx, signal)
-            if req_sig: reqs.append(req_sig)
 
     # Color the full width of section header and subtotal rows
     for h_idx in header_indices:
