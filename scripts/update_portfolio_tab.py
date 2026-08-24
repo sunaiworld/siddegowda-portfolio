@@ -107,16 +107,19 @@ def write_portfolio_tab(sh, holdings):
         ws = sh.worksheet(PORTFOLIO_TAB)
     except Exception:
         ws = sh.add_worksheet(PORTFOLIO_TAB, rows=200, cols=14)
-        ws.update_acell("B1", "Symbol")
+        sym_col_letter = chr(ord('A') + m.SYMBOL_COL)
+        ws.update_acell(f"{sym_col_letter}1", "Symbol")
 
     all_vals = ws.get_all_values()
     if not all_vals:
-        all_vals = [["", "Symbol"]]
+        empty_row = [""] * (m.SYMBOL_COL + 1)
+        empty_row[m.SYMBOL_COL] = "Symbol"
+        all_vals = [empty_row]
 
-    # Existing Symbol (col B) -> sheet row number (1-indexed)
+    # Existing Symbol -> sheet row number (1-indexed)
     row_by_symbol = {}
     for i, row in enumerate(all_vals[1:], start=2):
-        sym = row[1].strip().upper() if len(row) > 1 else ""
+        sym = row[m.SYMBOL_COL].strip().upper() if len(row) > m.SYMBOL_COL else ""
         if sym:
             row_by_symbol[sym] = i
 
@@ -153,7 +156,16 @@ def write_portfolio_tab(sh, holdings):
             r = row_by_symbol[sym]
             updates.append({"range": f"C{r}:N{r}", "values": [values]})
         else:
-            new_rows.append(["", sym] + values)
+            row_to_append = [""] * (m.SYMBOL_COL + 1 + len(values))
+            row_to_append[m.SYMBOL_COL] = sym
+            for i, v in enumerate(values):
+                row_to_append[m.SYMBOL_COL + 1 + i] = v
+            # If the original code meant C to N, and SYMBOL_COL is A (0), then C is 2. So values should start at col 2?
+            # Actually, `updates.append({"range": f"C{r}:N{r}", "values": [values]})` hardcodes C:N too.
+            # Let's just fix the `new_rows` to match the previous structure: if SYMBOL_COL=0, we shouldn't append `["", sym]`.
+            row_to_append = [""] * 2
+            row_to_append[m.SYMBOL_COL] = sym
+            new_rows.append(row_to_append + values)
 
     # Header row for the columns this script owns (C1:N1) - A1/B1 untouched.
     header_row = [HEADERS[k] for k in sorted(COLS, key=lambda k: COLS[k])]

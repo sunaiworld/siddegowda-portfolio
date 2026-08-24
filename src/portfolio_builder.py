@@ -40,7 +40,7 @@ def read_symbols(sh):
         pws  = sh.worksheet("Portfolio")
         rows = pws.get_all_values()[1:]
         for row in rows:
-            sym = row[1].strip().upper() if len(row) > 1 else ""
+            sym = row[SYMBOL_COL].strip().upper() if len(row) > SYMBOL_COL else ""
             if (sym and sym not in symbols and sym not in skip
                     and len(sym) <= 15 and sym.replace("&","").isalnum()):
                 symbols.append(sym)
@@ -446,36 +446,43 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     ws = sh.worksheet(tab_name)
     existing_rows = ws.get_all_values()
     
-    # Extract names for symbols to preserve Column A (Company Name)
+    # Extract names for symbols to preserve Name
     sym_name_map = {}
     if existing_rows:
         for row in existing_rows[1:]:
-            name = row[0].strip() if len(row) > 0 else ""
-            sym = row[1].strip().upper() if len(row) > 1 else ""
+            sym = row[SYMBOL_COL].strip().upper() if len(row) > SYMBOL_COL else ""
+            name = row[NAME_COL].strip() if len(row) > NAME_COL else ""
             if sym and sym not in sym_name_map and "SUBTOTAL" not in name and "TOTAL" not in name and name != "COMBINED TOTAL":
                 sym_name_map[sym] = name
 
-    headers = ["Name", "Symbol", "Shares", "Avg Buy", "CMP", "Invested", "Value", "P&L", "Return %",
-               "Wt %", "Stop Loss", "Target", "Buy More@", "Signal"]
-    keys = ["shares", "avg_buy", "cmp", "invested", "value", "pnl", "return_pct",
-            "wt_pct", "sl_price", "target", "buy_more", "signal"]
+    headers = PORTFOLIO_COLUMNS
+    col_keys = {
+        "Shares": "shares", "Avg Buy": "avg_buy", "CMP": "cmp", "Invested": "invested",
+        "Value": "value", "P&L": "pnl", "Return %": "return_pct", "Wt %": "wt_pct",
+        "Stop Loss": "sl_price", "Target": "target", "Buy More@": "buy_more", "Signal": "signal"
+    }
 
     all_data = [headers]
     header_indices = []
     subtotal_indices = []
 
-
-
     combined_rows = portfolio_dict.get("combined", [])
 
     header_indices.append(len(all_data))
-    all_data.append(["COMBINED - PORTFOLIO VIEW ONLY"] + [""] * (len(headers) - 1))
+    group_row = [""] * len(headers)
+    group_row[NAME_COL] = "COMBINED - PORTFOLIO VIEW ONLY"
+    all_data.append(group_row)
     
     if combined_rows:
         for r in combined_rows:
             sym = r["symbol"]
             name = sym_name_map.get(sym, sym)
-            row_data = [name, sym] + [r.get(k, "") for k in keys]
+            row_data = [""] * len(headers)
+            row_data[SYMBOL_COL] = sym
+            row_data[NAME_COL] = name
+            for col_name, key in col_keys.items():
+                if col_name in headers:
+                    row_data[headers.index(col_name)] = r.get(key, "")
             all_data.append(row_data)
             
     subtotal_indices.append(len(all_data))
@@ -483,11 +490,14 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     tot_val = sum(r["value"] for r in combined_rows)
     tot_pnl = round(tot_val - tot_inv, 2)
     tot_ret = round((tot_pnl / tot_inv) * 100, 2) if tot_inv else 0
-    all_data.append([
-        "COMBINED TOTAL", "", "", "", "",
-        round(tot_inv, 2), round(tot_val, 2), tot_pnl, tot_ret,
-        "", "", "", "", "", ""
-    ])
+    
+    subtotal_row = [""] * len(headers)
+    subtotal_row[NAME_COL] = "COMBINED TOTAL"
+    if "Invested" in headers: subtotal_row[headers.index("Invested")] = round(tot_inv, 2)
+    if "Value" in headers: subtotal_row[headers.index("Value")] = round(tot_val, 2)
+    if "P&L" in headers: subtotal_row[headers.index("P&L")] = tot_pnl
+    if "Return %" in headers: subtotal_row[headers.index("Return %")] = tot_ret
+    all_data.append(subtotal_row)
 
     ws.clear()
     
@@ -507,55 +517,72 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     profiler.increment("Rows written", len(all_data))
 
     nc = len(headers)
-    # Compact column widths — GITHUB DATA comparable sizes
-    # Name(120), Symbol(70), Shares(55), Avg Buy(70), CMP(65),
-    # Invested(85), Value(85), P&L(80), Return%(65), Wt%(55),
-    # Wt Status(70), Stop Loss(70), Target(70), Buy More@(70), Signal(100)
-    widths = [120, 70, 55, 70, 65, 85, 85, 80, 65, 55, 70, 70, 70, 100]
+    # Define widths dynamically by column name to ensure correct sizes regardless of order
+    width_map = {
+        "Name": 120, "Symbol": 70, "Shares": 55, "Avg Buy": 70, "CMP": 65,
+        "Invested": 85, "Value": 85, "P&L": 80, "Return %": 65, "Wt %": 55,
+        "Stop Loss": 70, "Target": 70, "Buy More@": 70, "Signal": 100
+    }
+    widths = [width_map.get(h, 70) for h in headers]
+    
+    # freeze_cols=1 because Symbol is now Column A
     reqs = sheet_formatter.clear_all_formatting_reqs(ws.id) + sheet_formatter.get_structural_format_reqs(
-        ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=2)
+        ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=1)
 
-    # cols 0-indexed: Avg Buy(3), CMP(4), Invested(5), Value(6), P&L(7), Stop Loss(11), Target(12), Buy More@(13)
-    for col in [3, 4, 5, 6, 7, 10, 11, 12]:
-        reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, len(all_data), col, col + 1)
+    currency_cols = ["Avg Buy", "CMP", "Invested", "Value", "P&L", "Stop Loss", "Target", "Buy More@"]
+    for col_name in currency_cols:
+        if col_name in headers:
+            col_idx = headers.index(col_name)
+            reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, len(all_data), col_idx, col_idx + 1)
 
-    # Return %(8), Wt %(9)
-    for col in [8, 9]:
-        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col, col + 1)
+    pct_cols = ["Return %", "Wt %"]
+    for col_name in pct_cols:
+        if col_name in headers:
+            col_idx = headers.index(col_name)
+            reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col_idx, col_idx + 1)
 
     for i, row in enumerate(all_data):
         rn = i
-        if i == 0 or len(row) <= 1 or row[0] == "" or "SUBTOTAL" in row[0] or "TOTAL" in row[0] or "GROWW" in row[0] or "ZERODHA" in row[0] or "COMBINED" in row[0]:
+        if i == 0 or len(row) <= NAME_COL or row[NAME_COL] == "" or "SUBTOTAL" in row[NAME_COL] or "TOTAL" in row[NAME_COL] or "GROWW" in row[NAME_COL] or "ZERODHA" in row[NAME_COL] or "COMBINED" in row[NAME_COL]:
             continue
 
-        try:
-            pnl = float(row[7]) if row[7] else 0.0
-            req = sheet_formatter.color_positive_negative(ws.id, rn, 7, pnl)
-            if req: reqs.append(req)
-        except: pass
+        if "P&L" in headers:
+            pnl_idx = headers.index("P&L")
+            try:
+                pnl = float(row[pnl_idx]) if row[pnl_idx] else 0.0
+                req = sheet_formatter.color_positive_negative(ws.id, rn, pnl_idx, pnl)
+                if req: reqs.append(req)
+            except: pass
         
-        try:
-            ret_pct = float(row[8]) if row[8] else 0.0
-            req = sheet_formatter.color_positive_negative(ws.id, rn, 8, ret_pct)
-            if req: reqs.append(req)
-        except: pass
-
+        if "Return %" in headers:
+            ret_idx = headers.index("Return %")
+            try:
+                ret_pct = float(row[ret_idx]) if row[ret_idx] else 0.0
+                req = sheet_formatter.color_positive_negative(ws.id, rn, ret_idx, ret_pct)
+                if req: reqs.append(req)
+            except: pass
         
-        reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "fde9d9", "c62828", bold=False))
-        reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 11, "d9ead3", "0b8043", bold=False))
-        reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "e8f0fe", "1967d2", bold=False))
+        if "Stop Loss" in headers:
+            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Stop Loss"), "fde9d9", "c62828", bold=False))
+        if "Target" in headers:
+            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Target"), "d9ead3", "0b8043", bold=False))
+        if "Buy More@" in headers:
+            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Buy More@"), "e8f0fe", "1967d2", bold=False))
 
-        signal = str(row[13]).strip()
-        req_sig = sheet_formatter.color_action_signal(ws.id, rn, 13, signal)
-        if req_sig: reqs.append(req_sig)
+        if "Signal" in headers:
+            sig_idx = headers.index("Signal")
+            signal = str(row[sig_idx]).strip()
+            req_sig = sheet_formatter.color_action_signal(ws.id, rn, sig_idx, signal)
+            if req_sig: reqs.append(req_sig)
 
     # Color the full width of section header and subtotal rows
     for h_idx in header_indices:
         for col in range(nc):
             reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, col, "0d1b2a", "ffffff", font_size=8))
+            
     for s_idx in subtotal_indices:
         for col in range(nc):
-            if col in [7, 8]:
+            if col in [headers.index("P&L") if "P&L" in headers else -1, headers.index("Return %") if "Return %" in headers else -1]:
                 try:
                     val = float(all_data[s_idx][col]) if all_data[s_idx][col] else 0.0
                     bg = "d9ead3" if val > 0 else "fde9d9" if val < 0 else "f1f1f1"
