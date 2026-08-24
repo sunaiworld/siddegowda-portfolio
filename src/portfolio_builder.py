@@ -454,17 +454,7 @@ def build_portfolio(prices, imports_dir="data/imports"):
 
 def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     ws = sh.worksheet(tab_name)
-    existing_rows = ws.get_all_values()
     
-    # Extract names for symbols to preserve Name
-    sym_name_map = {}
-    if existing_rows:
-        for row in existing_rows[1:]:
-            sym = row[SYMBOL_COL].strip().upper() if len(row) > SYMBOL_COL else ""
-            name = row[NAME_COL].strip() if len(row) > NAME_COL else ""
-            if sym and sym not in sym_name_map and "SUBTOTAL" not in name and "TOTAL" not in name and name != "COMBINED TOTAL":
-                sym_name_map[sym] = name
-
     headers = PORTFOLIO_COLUMNS
     col_keys = {
         "Shares": "shares", "Avg Buy": "avg_buy", "CMP": "cmp", "Invested": "invested",
@@ -480,16 +470,14 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
 
     header_indices.append(len(all_data))
     group_row = [""] * len(headers)
-    group_row[NAME_COL] = "COMBINED - PORTFOLIO VIEW ONLY"
+    group_row[SYMBOL_COL] = "COMBINED - PORTFOLIO VIEW ONLY"
     all_data.append(group_row)
     
     if combined_rows:
         for r in combined_rows:
             sym = r["symbol"]
-            name = sym_name_map.get(sym, sym)
             row_data = [""] * len(headers)
             row_data[SYMBOL_COL] = sym
-            row_data[NAME_COL] = name
             for col_name, key in col_keys.items():
                 if col_name in headers:
                     row_data[headers.index(col_name)] = r.get(key, "")
@@ -502,7 +490,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     tot_ret = round((tot_pnl / tot_inv) * 100, 2) if tot_inv else 0
     
     subtotal_row = [""] * len(headers)
-    subtotal_row[NAME_COL] = "COMBINED TOTAL"
+    subtotal_row[SYMBOL_COL] = "COMBINED TOTAL"
     if "Invested" in headers: subtotal_row[headers.index("Invested")] = round(tot_inv, 2)
     if "Value" in headers: subtotal_row[headers.index("Value")] = round(tot_val, 2)
     if "P&L" in headers: subtotal_row[headers.index("P&L")] = tot_pnl
@@ -527,15 +515,13 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     profiler.increment("Rows written", len(all_data))
 
     nc = len(headers)
-    # Define widths dynamically by column name to ensure correct sizes regardless of order
     width_map = {
-        "Name": 120, "Symbol": 70, "Shares": 55, "Avg Buy": 70, "CMP": 65,
+        "Symbol": 70, "Shares": 55, "Avg Buy": 70, "CMP": 65,
         "Invested": 85, "Value": 85, "P&L": 80, "Return %": 65, "Wt %": 55,
         "Stop Loss": 70, "Target": 70, "Buy More@": 70, "Signal": 100
     }
     widths = [width_map.get(h, 70) for h in headers]
     
-    # freeze_cols=1 because Symbol is now Column A
     reqs = sheet_formatter.clear_all_formatting_reqs(ws.id) + sheet_formatter.get_structural_format_reqs(
         ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=1)
 
@@ -553,7 +539,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
 
     for i, row in enumerate(all_data):
         rn = i
-        if i == 0 or len(row) <= NAME_COL or row[NAME_COL] == "" or "SUBTOTAL" in row[NAME_COL] or "TOTAL" in row[NAME_COL] or "GROWW" in row[NAME_COL] or "ZERODHA" in row[NAME_COL] or "COMBINED" in row[NAME_COL]:
+        if i == 0 or len(row) <= SYMBOL_COL or row[SYMBOL_COL] == "" or "SUBTOTAL" in row[SYMBOL_COL] or "TOTAL" in row[SYMBOL_COL] or "GROWW" in row[SYMBOL_COL] or "ZERODHA" in row[SYMBOL_COL] or "COMBINED" in row[SYMBOL_COL]:
             continue
 
         if "P&L" in headers:
@@ -569,6 +555,14 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
             try:
                 ret_pct = float(row[ret_idx]) if row[ret_idx] else 0.0
                 req = sheet_formatter.color_positive_negative(ws.id, rn, ret_idx, ret_pct)
+                if req: reqs.append(req)
+            except: pass
+
+        if "Wt %" in headers:
+            wt_idx = headers.index("Wt %")
+            try:
+                wt_pct = float(row[wt_idx]) if row[wt_idx] else 0.0
+                req = sheet_formatter.color_positive_negative(ws.id, rn, wt_idx, wt_pct)
                 if req: reqs.append(req)
             except: pass
         
