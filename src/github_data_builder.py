@@ -357,7 +357,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     for i, row in enumerate(rows):
         rn  = i + 2
 
-        cap       = str(row[C["cap_type"]]).strip() if len(row) > C["cap_type"] else ""
+        mcap_cr   = sf(row, "mcap")
         action    = str(row[C["action"]]).strip() if len(row) > C["action"] else ""
         b_zone    = str(row[C["buying_zone"]]).strip() if len(row) > C["buying_zone"] else ""
         tech_set  = str(row[C["technical_setup"]]).strip() if len(row) > C["technical_setup"] else ""
@@ -381,9 +381,9 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         tot_sc   = sf(row, "total")
 
         # ── Mkt Cap family: Symbol, Mkt Cap Cr ──
-        if cap == "Large Cap":       cb, cf = "d9ead3", "0b8043"
-        elif cap == "Mid Cap":       cb, cf = "d9eaf7", "1565c0"
-        elif cap == "Small Cap":     cb, cf = "fde9d9", "c62828"
+        if mcap_cr >= 25000:       cb, cf = "d9ead3", "0b8043"
+        elif mcap_cr >= 5000:       cb, cf = "d9eaf7", "1565c0"
+        elif mcap_cr > 0:           cb, cf = "fde9d9", "c62828"
         else:                        cb, cf = None, None
         if cb:
             for key in ("symbol", "mcap"):
