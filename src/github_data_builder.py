@@ -35,24 +35,24 @@ from sheet_writer import *
 GITHUB_DATA_COLS = {
     # Identity & Size
     "symbol": 0, "sector": 1, "industry": 2, "archetype": 3,
-    "econ_sens": 4, "inv_role": 5, "mcap": 6,
+    "econ_sens": 4, "inv_role": 5, "cap_type": 6, "mcap": 7,
     # Price Position
-    "low52": 7, "cmp": 8, "high52": 9, "pct_high": 10,
+    "low52": 8, "cmp": 9, "high52": 10, "pct_high": 11,
     # Immediate Momentum & Risk
-    "day_chg_pct": 11, "trend": 12, "technical_setup": 13,
-    "rsi": 14, "vol_spike": 15, "beta": 16,
+    "day_chg_pct": 12, "trend": 13, "technical_setup": 14,
+    "rsi": 15, "vol_spike": 16, "beta": 17,
     # Valuation
-    "eps": 17, "pe": 18, "bv": 19, "pb": 20, "div": 21, "fair_val": 22,
+    "eps": 18, "pe": 19, "bv": 20, "pb": 21, "div": 22, "fair_val": 23,
     # Financial Health & Efficiency
-    "rev_growth": 23, "roe": 24, "roa": 25, "debt_eq": 26,
+    "rev_growth": 24, "roe": 25, "roa": 26, "debt_eq": 27,
     # Sentiment & Qualitative Data
-    "news_summary": 27, "news_reason": 28, "news_source": 29,
-    "news_sentiment": 30, "bullish_score": 31, "bearish_score": 32,
-    "strengths": 33, "weaknesses": 34,
+    "news_summary": 28, "news_reason": 29, "news_source": 30,
+    "news_sentiment": 31, "bullish_score": 32, "bearish_score": 33,
+    "strengths": 34, "weaknesses": 35,
     # Automated Scoring
-    "quality": 35, "valuation": 36, "timing": 37, "total": 38,
+    "quality": 36, "valuation": 37, "timing": 38, "total": 39,
     # Final Decision (MUST stay last)
-    "buying_zone": 39, "price_range": 40, "action": 41,
+    "buying_zone": 40, "price_range": 41, "action": 42,
 }
 
 # Header text per column key
@@ -71,7 +71,8 @@ GITHUB_DATA_HEADER_NAMES = {
     "rev_growth": "Rev Growth%", "beta": "Beta",
     "strengths": "Strengths", "weaknesses": "Weaknesses",
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
-    "vol_spike": "Vol Spike", "mcap": "Mkt Cap Cr", "news_summary":   "News Summary",
+    "vol_spike": "Vol Spike", "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
+    "news_summary":   "News Summary",
     "bullish_score":  "Bullish Score",
     "bearish_score":  "Bearish Score",
     "news_sentiment": "News Sentiment",
@@ -95,7 +96,8 @@ GITHUB_DATA_COL_WIDTHS = {
     "rev_growth": 55, "beta": 45,
     "strengths": 200, "weaknesses": 200,
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
-    "vol_spike": 55, "mcap": 70, "news_summary":   220,
+    "vol_spike": 55, "mcap": 70, "cap_type": 65,
+    "news_summary":   220,
     "bullish_score":   55,
     "bearish_score":   55,
     "news_sentiment":  80,
@@ -132,6 +134,12 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
 
     archetype = get_archetype(sym, sector, industry)
     econ_sens, inv_role = get_archetype_risk_profile(archetype)
+
+    cap_type = ""
+    if mcap_cr:
+        if   mcap_cr >= 25000: cap_type = "Large Cap"
+        elif mcap_cr >= 5000:  cap_type = "Mid Cap"
+        else:                   cap_type = "Small Cap"
 
     pct_high         = round((cmp - high52) / high52 * 100, 2) if high52 else ""
     pct_high_display = f"{pct_high}%" if pct_high != "" else ""
@@ -233,6 +241,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["total"]]          = tot_sc
     row[C["vol_spike"]]      = vol_spike
     row[C["mcap"]]           = mcap_fmt
+    row[C["cap_type"]]       = cap_type
 
     # ── News Engine fields (Phase A) ─────────────────────────────
     nd = news_data or {}
@@ -357,7 +366,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     for i, row in enumerate(rows):
         rn  = i + 2
 
-        mcap_cr   = sf(row, "mcap")
+        cap       = str(row[C["cap_type"]]).strip() if len(row) > C["cap_type"] else ""
         action    = str(row[C["action"]]).strip() if len(row) > C["action"] else ""
         b_zone    = str(row[C["buying_zone"]]).strip() if len(row) > C["buying_zone"] else ""
         tech_set  = str(row[C["technical_setup"]]).strip() if len(row) > C["technical_setup"] else ""
@@ -380,16 +389,13 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         t_sc     = sf(row, "timing")
         tot_sc   = sf(row, "total")
 
-        # ── Mkt Cap family: Symbol, Mkt Cap Cr ──
-        if mcap_cr is not None:
-            if mcap_cr >= 25000:       cb, cf = "d9ead3", "0b8043"
-            elif mcap_cr >= 5000:      cb, cf = "d9eaf7", "1565c0"
-            elif mcap_cr > 0:          cb, cf = "fde9d9", "c62828"
-            else:                      cb, cf = None, None
-        else:
-            cb, cf = None, None
+        # ── Cap Type family: Symbol, Mkt Cap Cr, Cap Type ──
+        if cap == "Large Cap":       cb, cf = "d9ead3", "0b8043"
+        elif cap == "Mid Cap":       cb, cf = "d9eaf7", "1565c0"
+        elif cap == "Small Cap":     cb, cf = "fde9d9", "c62828"
+        else:                        cb, cf = None, None
         if cb:
-            for key in ("symbol", "mcap"):
+            for key in ("symbol", "mcap", "cap_type"):
                 reqs.append(color_cell_req(ws.id, rn, C[key], cb, cf))
 
         # ── 52W High / Low ──
@@ -542,20 +548,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         reqs.append(color_cell_req(ws.id, rn, C["news_summary"], "e8f5f9", "01579b", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["news_reason"],  "e8f5f9", "01579b", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["news_source"],    "f5f5f5", "757575", bold=False))
-
-    reqs.append({
-        "setBasicFilter": {
-            "filter": {
-                "range": {
-                    "sheetId": ws.id,
-                    "startRowIndex": 1,
-                    "endRowIndex": len(data),
-                    "startColumnIndex": 0,
-                    "endColumnIndex": num_cols,
-                }
-            }
-        }
-    })
 
     batch_update_safe(sh, reqs)
     log.info(f"{tab_name} tab written and formatted ({len(rows)} rows)")
