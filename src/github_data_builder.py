@@ -381,10 +381,13 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         tot_sc   = sf(row, "total")
 
         # ── Mkt Cap family: Symbol, Mkt Cap Cr ──
-        if mcap_cr >= 25000:       cb, cf = "d9ead3", "0b8043"
-        elif mcap_cr >= 5000:       cb, cf = "d9eaf7", "1565c0"
-        elif mcap_cr > 0:           cb, cf = "fde9d9", "c62828"
-        else:                        cb, cf = None, None
+        if mcap_cr is not None:
+            if mcap_cr >= 25000:       cb, cf = "d9ead3", "0b8043"
+            elif mcap_cr >= 5000:      cb, cf = "d9eaf7", "1565c0"
+            elif mcap_cr > 0:          cb, cf = "fde9d9", "c62828"
+            else:                      cb, cf = None, None
+        else:
+            cb, cf = None, None
         if cb:
             for key in ("symbol", "mcap"):
                 reqs.append(color_cell_req(ws.id, rn, C[key], cb, cf))
