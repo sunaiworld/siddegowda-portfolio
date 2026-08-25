@@ -104,6 +104,10 @@ def clear_all_formatting_reqs(ws_id):
     ws.clear() only wipes values, not backgrounds/borders/fonts — call
     this first so no formatting survives from a previous schema/writer."""
     return [{
+        "unmergeCells": {
+            "range": {"sheetId": ws_id}
+        }
+    }, {
         "repeatCell": {
             "range": {"sheetId": ws_id},
             "cell": {"userEnteredFormat": {}},
