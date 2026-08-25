@@ -33,25 +33,25 @@ from sheet_writer import *
 # without re-deriving indices.
 # ══════════════════════════════════════════════
 GITHUB_DATA_COLS = {
-    # Group 1: Identity & Size
+    # Identity & Size
     "symbol": 0, "sector": 1, "industry": 2, "archetype": 3,
     "econ_sens": 4, "inv_role": 5, "mcap": 6,
-    # Group 2: Price Position
+    # Price Position
     "low52": 7, "cmp": 8, "high52": 9, "pct_high": 10,
-    # Group 3: Immediate Momentum & Risk
+    # Immediate Momentum & Risk
     "day_chg_pct": 11, "trend": 12, "technical_setup": 13,
     "rsi": 14, "vol_spike": 15, "beta": 16,
-    # Group 4: Valuation
+    # Valuation
     "eps": 17, "pe": 18, "bv": 19, "pb": 20, "div": 21, "fair_val": 22,
-    # Group 5: Financial Health & Efficiency
+    # Financial Health & Efficiency
     "rev_growth": 23, "roe": 24, "roa": 25, "debt_eq": 26,
-    # Group 6: Sentiment & Qualitative Data
+    # Sentiment & Qualitative Data
     "news_summary": 27, "news_reason": 28, "news_source": 29,
     "news_sentiment": 30, "bullish_score": 31, "bearish_score": 32,
     "strengths": 33, "weaknesses": 34,
-    # Group 7: Automated Scoring
+    # Automated Scoring
     "quality": 35, "valuation": 36, "timing": 37, "total": 38,
-    # Group 8: Final Decision (MUST stay last)
+    # Final Decision (MUST stay last)
     "buying_zone": 39, "price_range": 40, "action": 41,
 }
 
