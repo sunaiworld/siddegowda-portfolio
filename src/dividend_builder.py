@@ -288,14 +288,16 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
         if val is None or col_max_val <= 0:
             return None, None
         ratio = val / col_max_val
+        
+        # Red & Green Style logic
         if ratio >= 0.75:
-            return "0b8043", "ffffff"   # Darkest green — top quartile
+            return "0b8043", "ffffff"   # Dark green (Top tier)
         elif ratio >= 0.50:
-            return "34a853", "ffffff"   # Strong green
+            return "d9ead3", "0b8043"   # Light green (Upper mid tier)
         elif ratio >= 0.25:
-            return "d9ead3", "0b8043"   # Light green
+            return "fde9d9", "c62828"   # Light red (Lower mid tier)
         elif ratio > 0:
-            return "f1f9f1", "0b8043"   # Very light green — some dividend
+            return "c62828", "ffffff"   # Dark red (Bottom tier)
         return None, None
 
     for i, row in enumerate(sum_rows[1:], start=1):
@@ -307,11 +309,11 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
             mcap_f = _safe_float(fund_map.get(sym, {}).get("mcap"))
             if mcap_f is not None:
                 if mcap_f >= 25000:
-                    reqs.append(color_cell_req(ws_id, rn, 0, "d9ead3", "0b8043"))
+                    reqs.append(color_cell_req(ws_id, rn, 0, "d9ead3", "0b8043")) # Large Cap -> Green
                 elif mcap_f >= 5000:
-                    reqs.append(color_cell_req(ws_id, rn, 0, "d9eaf7", "1565c0"))
+                    reqs.append(color_cell_req(ws_id, rn, 0, "fff2cc", "7f4f00")) # Mid Cap -> Yellow
                 else:
-                    reqs.append(color_cell_req(ws_id, rn, 0, "fde9d9", "c62828"))
+                    reqs.append(color_cell_req(ws_id, rn, 0, "fde9d9", "c62828")) # Small Cap -> Red
 
         # Year-dividend columns + Total Dividend — graduated heatmap
         for ci in div_col_indices:
@@ -322,24 +324,25 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
             if bg:
                 reqs.append(color_cell_req(ws_id, rn, ci, bg, fg, bold=False))
 
-        # Dividend % — same thresholds as GITHUB DATA div_v (stored as plain number)
+        # Dividend % — stored as plain number
+        # Red and Green colour logic based on 2% threshold
         if pct_idx is not None:
             pct_val = _safe_float(row[pct_idx])
             if pct_val is not None:
                 if pct_val >= 2:
-                    reqs.append(color_cell_req(ws_id, rn, pct_idx, "d9ead3", "0b8043"))
-                elif pct_val >= 1:
-                    reqs.append(color_cell_req(ws_id, rn, pct_idx, "fff2cc", "7f4f00"))
+                    reqs.append(color_cell_req(ws_id, rn, pct_idx, "d9ead3", "0b8043")) # >= 2% Green
+                else:
+                    reqs.append(color_cell_req(ws_id, rn, pct_idx, "fde9d9", "c62828")) # < 2% Red
 
         # Market Dividend Yield % — stored as fraction (0.0403 = 4.03%)
-        # thresholds: >= 0.02 (2%) green, >= 0.01 (1%) yellow
+        # Red and Green colour logic based on 2% threshold
         if market_yield_idx is not None:
             my_val = _safe_float(row[market_yield_idx])
             if my_val is not None:
                 if my_val >= 0.02:
-                    reqs.append(color_cell_req(ws_id, rn, market_yield_idx, "d9ead3", "0b8043"))
-                elif my_val >= 0.01:
-                    reqs.append(color_cell_req(ws_id, rn, market_yield_idx, "fff2cc", "7f4f00"))
+                    reqs.append(color_cell_req(ws_id, rn, market_yield_idx, "d9ead3", "0b8043")) # >= 2% Green
+                else:
+                    reqs.append(color_cell_req(ws_id, rn, market_yield_idx, "fde9d9", "c62828")) # < 2% Red
 
     # ── 4. Filter over full table ─────────────────────────────────────────────
     reqs.append({
