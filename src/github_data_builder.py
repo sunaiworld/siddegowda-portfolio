@@ -540,6 +540,20 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         reqs.append(color_cell_req(ws.id, rn, C["news_reason"],  "e8f5f9", "01579b", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["news_source"],    "f5f5f5", "757575", bold=False))
 
+    reqs.append({
+        "setBasicFilter": {
+            "filter": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": 1,
+                    "endRowIndex": len(data),
+                    "startColumnIndex": 0,
+                    "endColumnIndex": num_cols,
+                }
+            }
+        }
+    })
+
     batch_update_safe(sh, reqs)
     log.info(f"{tab_name} tab written and formatted ({len(rows)} rows)")
     return ws
