@@ -35,24 +35,24 @@ from sheet_writer import *
 GITHUB_DATA_COLS = {
     # Group 1: Identity & Size
     "symbol": 0, "sector": 1, "industry": 2, "archetype": 3,
-    "econ_sens": 4, "inv_role": 5, "cap_type": 6, "mcap": 7,
+    "econ_sens": 4, "inv_role": 5, "mcap": 6,
     # Group 2: Price Position
-    "low52": 8, "cmp": 9, "high52": 10, "pct_high": 11,
+    "low52": 7, "cmp": 8, "high52": 9, "pct_high": 10,
     # Group 3: Immediate Momentum & Risk
-    "day_chg_pct": 12, "trend": 13, "technical_setup": 14,
-    "rsi": 15, "vol_spike": 16, "beta": 17,
+    "day_chg_pct": 11, "trend": 12, "technical_setup": 13,
+    "rsi": 14, "vol_spike": 15, "beta": 16,
     # Group 4: Valuation
-    "eps": 18, "pe": 19, "bv": 20, "pb": 21, "div": 22, "fair_val": 23,
+    "eps": 17, "pe": 18, "bv": 19, "pb": 20, "div": 21, "fair_val": 22,
     # Group 5: Financial Health & Efficiency
-    "rev_growth": 24, "roe": 25, "roa": 26, "debt_eq": 27,
+    "rev_growth": 23, "roe": 24, "roa": 25, "debt_eq": 26,
     # Group 6: Sentiment & Qualitative Data
-    "news_summary": 28, "news_reason": 29, "news_source": 30,
-    "news_sentiment": 31, "bullish_score": 32, "bearish_score": 33,
-    "strengths": 34, "weaknesses": 35,
+    "news_summary": 27, "news_reason": 28, "news_source": 29,
+    "news_sentiment": 30, "bullish_score": 31, "bearish_score": 32,
+    "strengths": 33, "weaknesses": 34,
     # Group 7: Automated Scoring
-    "quality": 36, "valuation": 37, "timing": 38, "total": 39,
+    "quality": 35, "valuation": 36, "timing": 37, "total": 38,
     # Group 8: Final Decision (MUST stay last)
-    "buying_zone": 40, "price_range": 41, "action": 42,
+    "buying_zone": 39, "price_range": 40, "action": 41,
 }
 
 # Header text per column key
@@ -71,8 +71,7 @@ GITHUB_DATA_HEADER_NAMES = {
     "rev_growth": "Rev Growth%", "beta": "Beta",
     "strengths": "Strengths", "weaknesses": "Weaknesses",
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
-    "vol_spike": "Vol Spike", "mcap": "Mkt Cap Cr", "cap_type": "Cap Type",
-    "news_summary":   "News Summary",
+    "vol_spike": "Vol Spike", "mcap": "Mkt Cap Cr", "news_summary":   "News Summary",
     "bullish_score":  "Bullish Score",
     "bearish_score":  "Bearish Score",
     "news_sentiment": "News Sentiment",
@@ -96,8 +95,7 @@ GITHUB_DATA_COL_WIDTHS = {
     "rev_growth": 55, "beta": 45,
     "strengths": 200, "weaknesses": 200,
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
-    "vol_spike": 55, "mcap": 70, "cap_type": 65,
-    "news_summary":   220,
+    "vol_spike": 55, "mcap": 70, "news_summary":   220,
     "bullish_score":   55,
     "bearish_score":   55,
     "news_sentiment":  80,
@@ -134,12 +132,6 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
 
     archetype = get_archetype(sym, sector, industry)
     econ_sens, inv_role = get_archetype_risk_profile(archetype)
-
-    cap_type = ""
-    if mcap_cr:
-        if   mcap_cr >= 25000: cap_type = "Large Cap"
-        elif mcap_cr >= 5000:  cap_type = "Mid Cap"
-        else:                   cap_type = "Small Cap"
 
     pct_high         = round((cmp - high52) / high52 * 100, 2) if high52 else ""
     pct_high_display = f"{pct_high}%" if pct_high != "" else ""
@@ -241,7 +233,6 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["total"]]          = tot_sc
     row[C["vol_spike"]]      = vol_spike
     row[C["mcap"]]           = mcap_fmt
-    row[C["cap_type"]]       = cap_type
 
     # ── News Engine fields (Phase A) ─────────────────────────────
     nd = news_data or {}
@@ -389,13 +380,13 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         t_sc     = sf(row, "timing")
         tot_sc   = sf(row, "total")
 
-        # ── Cap Type family: Symbol, Mkt Cap Cr, Cap Type ──
+        # ── Mkt Cap family: Symbol, Mkt Cap Cr ──
         if cap == "Large Cap":       cb, cf = "d9ead3", "0b8043"
         elif cap == "Mid Cap":       cb, cf = "d9eaf7", "1565c0"
         elif cap == "Small Cap":     cb, cf = "fde9d9", "c62828"
         else:                        cb, cf = None, None
         if cb:
-            for key in ("symbol", "mcap", "cap_type"):
+            for key in ("symbol", "mcap"):
                 reqs.append(color_cell_req(ws.id, rn, C[key], cb, cf))
 
         # ── 52W High / Low ──

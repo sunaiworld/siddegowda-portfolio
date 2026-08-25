@@ -64,7 +64,6 @@ def write_growth_screener(sh, all_out):
         if not row or not row[0]: continue
         sym    = row[0].strip()
         action = _cell(row, "action")
-        cap    = _cell(row, "cap_type")
         tot_sc = sf_k(row, "total")
         q_sc   = sf_k(row, "quality")
         v_sc   = sf_k(row, "valuation")
@@ -73,7 +72,7 @@ def write_growth_screener(sh, all_out):
         trend  = _cell(row, "trend")
 
         growth.append([
-            sym, cap,
+            sym,
             _cell(row, "pe"),           # col  2: PE
             _cell(row, "roe"),          # col  3: ROE%
             _cell(row, "debt_eq"),      # col  4: Debt/Eq
@@ -87,17 +86,17 @@ def write_growth_screener(sh, all_out):
             rsi, trend,                 # col 15: RSI  col 16: Trend
         ])
 
-    growth.sort(key=lambda x: float(x[11]) if x[11] != "" else 0, reverse=True)
+    growth.sort(key=lambda x: float(x[10]) if x[10] != "" else 0, reverse=True)
 
 
     try:
         gsw = sh.worksheet("Growth Screener")
         gsw.clear()
     except:
-        gsw = sh.add_worksheet("Growth Screener", rows=200, cols=18)
+        gsw = sh.add_worksheet("Growth Screener", rows=200, cols=17)
 
     gsw.append_row([
-        "Symbol", "Cap Type",
+        "Symbol",
         "PE", "ROE%", "Debt/Eq", "Rev Growth%", "Div Yield%", "Buy 20% Less",
         "Quality", "Valuation", "Timing", "Total Score",
         "Final Action",
