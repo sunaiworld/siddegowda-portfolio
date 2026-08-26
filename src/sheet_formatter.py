@@ -102,7 +102,13 @@ def color_cell_req(sheet_id, row_idx, col_idx, bg, fg, bold=True, font_size=None
 def clear_all_formatting_reqs(ws_id):
     """Reset every cell's formatting to default across the whole sheet.
     ws.clear() only wipes values, not backgrounds/borders/fonts — call
-    this first so no formatting survives from a previous schema/writer."""
+    this first so no formatting survives from a previous schema/writer.
+    Also unmerges every cell first: a leftover merge from a previous run
+    (e.g. one written with a different column count) otherwise survives
+    ws.clear()/repeatCell and makes the next mergeCells request fail with
+    "You must select all cells in a merged range to merge or unmerge them"
+    whenever this run's group-header ranges don't line up with the old
+    merge boundaries exactly."""
     return [{
         "unmergeCells": {
             "range": {"sheetId": ws_id}
@@ -261,18 +267,6 @@ def get_structural_format_reqs(ws_id, num_rows, num_cols, widths=None, freeze_ro
             "fields": "userEnteredFormat.backgroundColor"
         }})
     return reqs
-
-def clear_all_formatting_reqs(ws_id):
-    """Reset every cell's formatting to default across the whole sheet.
-    ws.clear() only wipes values, not backgrounds/borders/fonts — call
-    this first so no formatting survives from a previous schema/writer."""
-    return [{
-        "repeatCell": {
-            "range": {"sheetId": ws_id},
-            "cell": {"userEnteredFormat": {}},
-            "fields": "userEnteredFormat"
-        }
-    }]
 
 def get_currency_format_reqs(ws_id, start_row, end_row, start_col, end_col):
     return [{
