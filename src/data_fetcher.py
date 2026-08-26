@@ -109,6 +109,27 @@ def fetch_fundamentals(sym, retries=3):
             tl   = info.get("totalCurrentLiabilities", 0) or 0
             roce = round(ebit / (ta_ - tl) * 100, 2) if (ta_ - tl) > 0 else None
             roa  = round(info.get("returnOnAssets", 0) * 100, 2) if info.get("returnOnAssets") else None
+
+            # ── Dividend yield — computed directly, not trusted from yfinance ──
+            # yfinance's info["dividendYield"] has flip-flopped between fraction
+            # (0.0403) and percent (4.03) scale across library/Yahoo-backend
+            # versions, and isn't guaranteed consistent across all tickers even
+            # within one version. Trusting it silently produces wrong yields
+            # whenever that scale shifts again. dividendRate (absolute Rs/share)
+            # has no such ambiguity, so we derive yield ourselves from it and
+            # the reference price — immune to any future change on Yahoo's side.
+            div_rate_raw = info.get("dividendRate")
+            ref_price = (
+                info.get("currentPrice")
+                or info.get("regularMarketPrice")
+                or info.get("previousClose")
+            )
+            div_yield_pct = (
+                round(div_rate_raw / ref_price * 100, 2)
+                if (div_rate_raw and ref_price)
+                else None
+            )
+
             return {
                 "shortName": info.get("shortName", ""),
                 "sector":   info.get("sector", ""),
@@ -120,7 +141,7 @@ def fetch_fundamentals(sym, retries=3):
                 "eps":      round(info.get("trailingEps", 0), 2)        if info.get("trailingEps")    else None,
                 "bv":       round(info.get("bookValue", 0), 2)          if info.get("bookValue")      else None,
                 "pb":       round(info.get("priceToBook", 0), 2)        if info.get("priceToBook")    else None,
-                "div":      round(info.get("dividendYield", 0), 6) if info.get("dividendYield") else None,
+                "div":      div_yield_pct,
                 "roe":      round(info.get("returnOnEquity", 0) * 100, 2)if info.get("returnOnEquity")else None,
                 "roa":      roa,
                 "roce":     roce,
@@ -128,7 +149,7 @@ def fetch_fundamentals(sym, retries=3):
                 "beta":     round(info.get("beta", 0), 2)               if info.get("beta")          else None,
                 "payout_ratio": round(info.get("payoutRatio", 0) * 100, 2) if info.get("payoutRatio") else None,
                 "div_yield_5y": round(info.get("fiveYearAvgDividendYield", 0), 2) if info.get("fiveYearAvgDividendYield") else None,
-                "div_rate": info.get("dividendRate") or None,
+                "div_rate": div_rate_raw or None,
                 "fcf": info.get("freeCashflow") or None,
                 "ocf": info.get("operatingCashflow") or None,
             }
@@ -193,4 +214,3 @@ def fetch_prices_batch(symbols):
                     break
         time.sleep(SLEEP_BATCH)
     return prices
-
