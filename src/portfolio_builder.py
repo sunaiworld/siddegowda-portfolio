@@ -59,6 +59,31 @@ def read_symbols(sh):
         log.warning(f"Could not read Portfolio: {e}")
     return symbols
 
+def read_portfolio_sources(sh):
+    source_map = {}
+    try:
+        pws = sh.worksheet("Portfolio")
+        all_rows = pws.get_all_values()
+        if not all_rows: return source_map
+        headers = all_rows[0]
+        sym_col = -1
+        src_col = -1
+        for i, h in enumerate(headers):
+            h_upper = str(h).strip().upper()
+            if h_upper == "SYMBOL": sym_col = i
+            if h_upper == "INVESTMENT SOURCE": src_col = i
+        
+        if sym_col >= 0 and src_col >= 0:
+            for row in all_rows[1:]:
+                if len(row) > max(sym_col, src_col):
+                    sym = row[sym_col].strip().upper()
+                    src = row[src_col].strip().upper()
+                    if sym and src:
+                        source_map[sym] = src
+    except Exception as e:
+        log.warning(f"Could not read source_map: {e}")
+    return source_map
+
 
 # ══════════════════════════════════════════════
 # READ TRADES
@@ -95,6 +120,8 @@ def trades_to_legacy_rows(trades):
             t.get("action", ""),
             t.get("quantity", ""),
             t.get("price", ""),
+            t.get("import_source", ""),
+            t.get("notes", ""),
         ])
     return rows
 
@@ -389,12 +416,19 @@ import math
 def is_valid_price(p):
     return p is not None and isinstance(p, (int, float)) and not math.isnan(p) and p > 0
 
-def build_portfolio(prices, imports_dir="data/imports"):
+def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_map=None):
+    if fund_map is None: fund_map = {}
+    if source_map is None: source_map = {}
     trades = load_all_trades(imports_dir)
     holdings = compute_holdings(trades)
 
     # Compute combined natively
     combined_dict = {}
+    smallcase_syms = set()
+    for t in trades:
+        if "smallcase" in str(t.get("import_source", "")).lower() or "smallcase" in str(t.get("notes", "")).lower():
+            smallcase_syms.add(str(t.get("symbol", "")).strip().upper())
+
     for key, h in holdings.items():
         sym = h["symbol"]
         qty = h["qty"]
@@ -434,6 +468,17 @@ def build_portfolio(prices, imports_dir="data/imports"):
         c["sl_price"] = round(c["avg_buy"] * (1 - SL_PCT), 2)
         c["target"] = round(c["avg_buy"] * (1 + TARGET_PCT), 2)
         c["buy_more"] = round(c["avg_buy"] * 0.90, 2)
+        
+        if sym in source_map and source_map[sym]:
+            c["investment_source"] = source_map[sym].upper()
+        elif fund_map.get(sym, {}).get("sector") == "ETFs":
+            c["investment_source"] = "ETF"
+        elif sym in smallcase_syms:
+            c["investment_source"] = "SMALLCASE"
+        elif c["invested"] > 0:
+            c["investment_source"] = "SELF"
+        else:
+            c["investment_source"] = "UNKNOWN"
 
         if len(c["isins"]) > 1:
             c["signal"] = "REQUIRES REVIEW (Corp Action)"
@@ -457,6 +502,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     
     headers = PORTFOLIO_COLUMNS
     col_keys = {
+        "Investment Source": "investment_source",
         "Shares": "shares", "Avg Buy": "avg_buy", "CMP": "cmp", "Invested": "invested",
         "Value": "value", "P&L": "pnl", "Return %": "return_pct", "Wt %": "wt_pct",
         "Stop Loss": "sl_price", "Target": "target", "Buy More@": "buy_more", "Signal": "signal"
@@ -505,7 +551,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
 
     nc = len(headers)
     width_map = {
-        "Symbol": 70, "Shares": 55, "Avg Buy": 70, "CMP": 65,
+        "Symbol": 70, "Investment Source": 120, "Shares": 55, "Avg Buy": 70, "CMP": 65,
         "Invested": 85, "Value": 85, "P&L": 80, "Return %": 65, "Wt %": 55,
         "Stop Loss": 70, "Target": 70, "Buy More@": 70, "Signal": 100
     }

@@ -95,6 +95,7 @@ def run_portfolio_update(sh):
     """
     profiler.start_stage("[01] Load configuration")
     symbols = read_symbols(sh)
+    source_map = read_portfolio_sources(sh)
     if not symbols:
         profiler.stop_stage("[01] Load configuration", category="Python processing")
         return None
@@ -314,7 +315,7 @@ def run_portfolio_update(sh):
     log.info(f"[CHECKPOINT] About to write GITHUB DATA — {len(results)} rows built")
 
     try:
-        portfolio_rows = build_portfolio(prices)
+        portfolio_rows = build_portfolio(prices, fund_map=fund_map, source_map=source_map)
         with profiler.stage("[09] Portfolio sheet write", category="Google Sheets"):
             write_portfolio(sh, portfolio_rows)
     except Exception as e:

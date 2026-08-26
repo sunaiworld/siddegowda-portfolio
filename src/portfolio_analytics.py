@@ -114,7 +114,7 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
     #    Score's diversification calc, kept exactly as before) ──────
     sector_value = {}
     for sym, (qty, cmp, avg_buy) in holdings.items():
-        sector = fund_map.get(sym, {}).get("sector") or "Unknown"
+        sector = fund_map.get(sym, {}).get("sector") or "ETFs"
         sector_value[sector] = sector_value.get(sector, 0) + qty * cmp
 
     sector_alloc = []
@@ -221,15 +221,43 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
             key=lambda r: ACTION_PRIORITY.get(r.get("signal"), 9)
         )
 
-        # Sector-level rollup: holdings count, weight%, invested, value, P&L, return%
+        # Sector-level rollup + Source counting + Portfolio Impact
         sector_agg = {}
+        source_summary = {
+            "SELF": {"count": 0, "invested": 0.0, "value": 0.0},
+            "SMALLCASE": {"count": 0, "invested": 0.0, "value": 0.0},
+            "ETF": {"count": 0, "invested": 0.0, "value": 0.0},
+            "LEGACY": {"count": 0, "invested": 0.0, "value": 0.0},
+            "UNKNOWN": {"count": 0, "invested": 0.0, "value": 0.0},
+        }
+
         for r in combined_rows:
             sym = r.get("symbol")
-            sector = fund_map.get(sym, {}).get("sector") or "Unknown"
-            agg = sector_agg.setdefault(sector, {"count": 0, "invested": 0.0, "value": 0.0})
+            val = r.get("value", 0) or 0
+            inv = r.get("invested", 0) or 0
+            wt = r.get("wt_pct", 0) or 0
+            ret = r.get("return_pct", 0) or 0
+            
+            # Portfolio Impact %
+            r["portfolio_impact"] = round((wt * ret) / 100, 2)
+
+            sector = fund_map.get(sym, {}).get("sector") or "ETFs"
+            agg = sector_agg.setdefault(sector, {"count": 0, "invested": 0.0, "value": 0.0, "beta_sum": 0.0, "beta_weight": 0.0})
             agg["count"] += 1
-            agg["invested"] += r.get("invested", 0) or 0
-            agg["value"] += r.get("value", 0) or 0
+            agg["invested"] += inv
+            agg["value"] += val
+            
+            beta = fund_map.get(sym, {}).get("beta")
+            if beta is not None:
+                agg["beta_sum"] += beta * val
+                agg["beta_weight"] += val
+
+            src = r.get("investment_source", "UNKNOWN").upper()
+            if src not in source_summary:
+                src = "LEGACY" if src == "LEGACY" else "UNKNOWN"
+            source_summary[src]["count"] += 1
+            source_summary[src]["invested"] += inv
+            source_summary[src]["value"] += val
 
         sector_detail = []
         for sector, agg in sorted(sector_agg.items(), key=lambda x: x[1]["value"], reverse=True):
@@ -237,13 +265,24 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
             s_return_pct = round((s_pnl / agg["invested"]) * 100, 2) if agg["invested"] else None
             s_weight = round(agg["value"] / dash["portfolio_value"] * 100, 2) if dash["portfolio_value"] else 0
             flag = "⚠️ Concentrated" if s_weight > SECTOR_CONCENTRATION_THRESHOLD_PCT else ""
+            
+            s_beta = round(agg["beta_sum"] / agg["beta_weight"], 2) if agg["beta_weight"] > 0 else None
+            
             sector_detail.append({
                 "sector": sector, "count": agg["count"], "weight_pct": s_weight,
                 "invested": round(agg["invested"], 2), "value": round(agg["value"], 2),
-                "pnl": s_pnl, "return_pct": s_return_pct, "flag": flag,
+                "pnl": s_pnl, "return_pct": s_return_pct, "beta": s_beta, "flag": flag,
             })
 
         top3_sector_weight = round(sum(s["weight_pct"] for s in sector_detail[:3]), 2) if sector_detail else 0
+        
+        impact_ranked = sorted(combined_rows, key=lambda r: r.get("portfolio_impact", 0) or 0, reverse=True)
+        top_positive_impact = [r for r in impact_ranked if (r.get("portfolio_impact") or 0) > 0][:5]
+        top_negative_impact = [r for r in impact_ranked if (r.get("portfolio_impact") or 0) < 0][-5:][::-1]
+        
+        sector_pnl_ranked = sorted(sector_detail, key=lambda s: s["pnl"], reverse=True)
+        top_positive_sectors = [s for s in sector_pnl_ranked if s["pnl"] > 0][:3]
+        top_negative_sectors = [s for s in sector_pnl_ranked if s["pnl"] < 0][-3:][::-1]
 
         dash.update({
             "invested_value": invested_value,
@@ -251,6 +290,11 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
             "return_pct": return_pct,
             "top_gainers": top_gainers,
             "top_losers": top_losers,
+            "top_positive_impact": top_positive_impact,
+            "top_negative_impact": top_negative_impact,
+            "top_positive_sectors": top_positive_sectors,
+            "top_negative_sectors": top_negative_sectors,
+            "source_summary": source_summary,
             "signal_counts": signal_counts,
             "action_required": action_required,
             "num_holdings": len(combined_rows),
@@ -386,7 +430,7 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
     except Exception:
         ws = sh.add_worksheet(DASHBOARD_TAB, rows=400, cols=8)
 
-    nc = 8  # widened from 4 to fit the Sector Allocation table's 8 columns (incl. concentration flag); other sections just leave the extra columns blank
+    nc = 9  # widened from 4 to fit the Sector Allocation table's 8 columns (incl. concentration flag); other sections just leave the extra columns blank
     rows = []
     header_indices = []
     subheader_indices = []
@@ -452,6 +496,47 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
             add_row([f"{name} ({weight_pct}%)", score, bar])
         add_row([])
 
+
+    # ── 3.5 Portfolio Management & Source ────────
+    if "source_summary" in dash:
+        add_row(["Portfolio Management Summary"], is_header=True)
+        ss = dash["source_summary"]
+        add_row(["Metric", "Value"], is_subheader=True)
+        add_row(["Total Holdings", dash["num_holdings"]])
+        add_row(["Self-Managed Holdings", ss.get("SELF", {}).get("count", 0)])
+        add_row(["Smallcase Holdings", ss.get("SMALLCASE", {}).get("count", 0)])
+        add_row(["ETF Holdings", ss.get("ETF", {}).get("count", 0)])
+        add_row(["Other / Legacy", ss.get("LEGACY", {}).get("count", 0) + ss.get("UNKNOWN", {}).get("count", 0)])
+        val = dash.get("portfolio_beta")
+        add_row(["Portfolio Beta", val if val is not None else "N/A"])
+        val = dash.get("portfolio_xirr")
+        idx = add_row(["Portfolio XIRR", val if val is not None else "N/A"])
+        if val is not None:
+            pct_cells.append((idx, 1))
+            pos_neg_cells.append((idx, 1, val))
+        add_row([])
+
+        add_row(["Investment Source Comparison"], is_header=True)
+        add_row(["Source", "Holdings", "Invested", "Current Value", "P&L", "Return %"], is_subheader=True)
+        for src in ["SELF", "SMALLCASE", "ETF", "LEGACY"]:
+            agg = ss.get(src, {"count": 0, "invested": 0.0, "value": 0.0})
+            if agg["count"] == 0 and src == "LEGACY":
+                # Check unknown
+                agg = ss.get("UNKNOWN", {"count": 0, "invested": 0.0, "value": 0.0})
+                if agg["count"] == 0: continue
+            
+            s_pnl = round(agg["value"] - agg["invested"], 2)
+            s_ret = round((s_pnl / agg["invested"]) * 100, 2) if agg["invested"] else None
+            r_idx = add_row([src, agg["count"], round(agg["invested"], 2), round(agg["value"], 2), s_pnl, s_ret if s_ret is not None else "N/A"])
+            currency_cells.append((r_idx, 2))
+            currency_cells.append((r_idx, 3))
+            currency_cells.append((r_idx, 4))
+            pos_neg_cells.append((r_idx, 4, s_pnl))
+            if s_ret is not None:
+                pct_cells.append((r_idx, 5))
+                pos_neg_cells.append((r_idx, 5, s_ret))
+        add_row([])
+
     # ── 4. Portfolio allocation: Top 5 holdings + Others ──
     if dash.get("positions"):
         add_row(["Top Holdings"], is_header=True)
@@ -476,13 +561,14 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
     sector_detail = dash.get("sector_detail")
     if sector_detail:
         add_row(["Sector Allocation"], is_header=True)
-        add_row(["Sector", "Holdings", "Weight %", "Invested", "Value", "P&L", "Return %", "Flag"], is_subheader=True)
+        add_row(["Sector", "Holdings", "Weight %", "Invested", "Value", "P&L", "Return %", "Beta", "Flag"], is_subheader=True)
         first_data_row = len(rows) + 1
         for s in sector_detail:
             row = [
                 s["sector"], s["count"], s["weight_pct"],
                 s["invested"], s["value"], s["pnl"],
                 s["return_pct"] if s["return_pct"] is not None else "N/A",
+                s["beta"] if s["beta"] is not None else "N/A",
                 s.get("flag", ""),
             ]
             r_idx = add_row(row)
@@ -508,6 +594,27 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
             pct_cells.append((r_idx, 2))
         add_row([])
 
+
+        add_row(["Top Positive Sector Contributors", "P&L"], is_subheader=True)
+        if dash.get("top_positive_sectors"):
+            for s in dash["top_positive_sectors"]:
+                r_idx = add_row([s["sector"], s["pnl"]])
+                currency_cells.append((r_idx, 1))
+                pos_neg_cells.append((r_idx, 1, s["pnl"]))
+        else:
+            add_row(["(none)"])
+        add_row([])
+
+        add_row(["Top Negative Sector Contributors", "P&L"], is_subheader=True)
+        if dash.get("top_negative_sectors"):
+            for s in dash["top_negative_sectors"]:
+                r_idx = add_row([s["sector"], s["pnl"]])
+                currency_cells.append((r_idx, 1))
+                pos_neg_cells.append((r_idx, 1, s["pnl"]))
+        else:
+            add_row(["(none)"])
+        add_row([])
+
     # ── 6. Top Gainers / Top Losers ───────────
     if has_kpis:
         add_row(["Top Gainers", "P&L", "Return %"], is_subheader=True)
@@ -530,6 +637,37 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
                 pct_cells.append((r_idx, 2))
                 pos_neg_cells.append((r_idx, 1, r["pnl"]))
                 pos_neg_cells.append((r_idx, 2, r["return_pct"]))
+        else:
+            add_row(["(none)"])
+        add_row([])
+
+
+        add_row(["Top Positive Portfolio Contributors", "Weight %", "Return %", "P&L", "Impact %"], is_subheader=True)
+        if dash.get("top_positive_impact"):
+            for r in dash["top_positive_impact"]:
+                r_idx = add_row([r["symbol"], r["wt_pct"], r["return_pct"], r["pnl"], r["portfolio_impact"]])
+                pct_cells.append((r_idx, 1))
+                pct_cells.append((r_idx, 2))
+                currency_cells.append((r_idx, 3))
+                pct_cells.append((r_idx, 4))
+                pos_neg_cells.append((r_idx, 2, r["return_pct"]))
+                pos_neg_cells.append((r_idx, 3, r["pnl"]))
+                pos_neg_cells.append((r_idx, 4, r["portfolio_impact"]))
+        else:
+            add_row(["(none)"])
+        add_row([])
+
+        add_row(["Top Negative Portfolio Contributors", "Weight %", "Return %", "P&L", "Impact %"], is_subheader=True)
+        if dash.get("top_negative_impact"):
+            for r in dash["top_negative_impact"]:
+                r_idx = add_row([r["symbol"], r["wt_pct"], r["return_pct"], r["pnl"], r["portfolio_impact"]])
+                pct_cells.append((r_idx, 1))
+                pct_cells.append((r_idx, 2))
+                currency_cells.append((r_idx, 3))
+                pct_cells.append((r_idx, 4))
+                pos_neg_cells.append((r_idx, 2, r["return_pct"]))
+                pos_neg_cells.append((r_idx, 3, r["pnl"]))
+                pos_neg_cells.append((r_idx, 4, r["portfolio_impact"]))
         else:
             add_row(["(none)"])
         add_row([])
@@ -627,7 +765,7 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
 
     ws.update("A1", rows, value_input_option="RAW")
 
-    widths = [220, 110, 100, 130, 130, 120, 100, 120]
+    widths = [220, 110, 100, 130, 130, 120, 100, 100, 120]
     reqs = sheet_formatter.clear_all_formatting_reqs(ws.id) + sheet_formatter.get_structural_format_reqs(
         ws.id, len(rows), nc, widths=widths, freeze_rows=0, freeze_cols=0)
 
