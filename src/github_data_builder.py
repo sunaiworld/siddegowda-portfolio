@@ -71,7 +71,8 @@ GITHUB_DATA_HEADER_NAMES = {
     "rev_growth": "Rev Growth%", "beta": "Beta",
     "strengths": "Strengths", "weaknesses": "Weaknesses",
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
-    "vol_spike": "Vol Spike", "mcap": "Mkt Cap Cr", "news_summary":   "News Summary",
+    "vol_spike": "Vol Spike", "mcap": "Mkt Cap Cr",
+    "news_summary":   "News Summary",
     "bullish_score":  "Bullish Score",
     "bearish_score":  "Bearish Score",
     "news_sentiment": "News Sentiment",
@@ -95,7 +96,8 @@ GITHUB_DATA_COL_WIDTHS = {
     "rev_growth": 55, "beta": 45,
     "strengths": 200, "weaknesses": 200,
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
-    "vol_spike": 55, "mcap": 70, "news_summary":   220,
+    "vol_spike": 55, "mcap": 70,
+    "news_summary":   220,
     "bullish_score":   55,
     "bearish_score":   55,
     "news_sentiment":  80,
@@ -357,7 +359,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     for i, row in enumerate(rows):
         rn  = i + 2
 
-        mcap_cr   = sf(row, "mcap")
         action    = str(row[C["action"]]).strip() if len(row) > C["action"] else ""
         b_zone    = str(row[C["buying_zone"]]).strip() if len(row) > C["buying_zone"] else ""
         tech_set  = str(row[C["technical_setup"]]).strip() if len(row) > C["technical_setup"] else ""
@@ -380,12 +381,14 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         t_sc     = sf(row, "timing")
         tot_sc   = sf(row, "total")
 
-        # ── Mkt Cap family: Symbol, Mkt Cap Cr ──
-        if mcap_cr is not None:
-            if mcap_cr >= 25000:       cb, cf = "d9ead3", "0b8043"
-            elif mcap_cr >= 5000:      cb, cf = "d9eaf7", "1565c0"
-            elif mcap_cr > 0:          cb, cf = "fde9d9", "c62828"
-            else:                      cb, cf = None, None
+        # ── Market-cap tier family: Symbol, Mkt Cap Cr ──
+        # (Cap Type column removed — tier is now derived directly from the
+        # Mkt Cap Cr value using the same thresholds the old column used.)
+        mcap_tier_v = sf(row, "mcap")
+        if mcap_tier_v is not None:
+            if mcap_tier_v >= 25000:     cb, cf = "d9ead3", "0b8043"   # Large Cap
+            elif mcap_tier_v >= 5000:    cb, cf = "d9eaf7", "1565c0"   # Mid Cap
+            else:                        cb, cf = "fde9d9", "c62828"  # Small Cap
         else:
             cb, cf = None, None
         if cb:
@@ -543,13 +546,15 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         reqs.append(color_cell_req(ws.id, rn, C["news_reason"],  "e8f5f9", "01579b", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["news_source"],    "f5f5f5", "757575", bold=False))
 
+    # ── Default filter — starts at the column-header row (sheet row 2,
+    # index 1), since the merged group banner sits above it in row 1. ──
     reqs.append({
         "setBasicFilter": {
             "filter": {
                 "range": {
                     "sheetId": ws.id,
                     "startRowIndex": 1,
-                    "endRowIndex": len(data),
+                    "endRowIndex": len(rows) + 2,
                     "startColumnIndex": 0,
                     "endColumnIndex": num_cols,
                 }
