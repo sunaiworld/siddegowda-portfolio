@@ -39,20 +39,20 @@ GITHUB_DATA_COLS = {
     # Price Position
     "low52": 7, "cmp": 8, "high52": 9, "pct_high": 10,
     # Immediate Momentum & Risk
-    "day_chg_pct": 11, "trend": 12, "technical_setup": 13,
-    "rsi": 14, "vol_spike": 15, "beta": 16,
+    "day_chg_pct": 11, "return_1w": 12, "return_1m": 13, "trend": 14, "technical_setup": 15,
+    "rsi": 16, "vol_spike": 17, "beta": 18,
     # Valuation
-    "eps": 17, "pe": 18, "bv": 19, "pb": 20, "div": 21, "fair_val": 22,
+    "eps": 19, "pe": 20, "bv": 21, "pb": 22, "div": 23, "fair_val": 24,
     # Financial Health & Efficiency
-    "rev_growth": 23, "roe": 24, "roa": 25, "debt_eq": 26,
+    "rev_growth": 25, "roe": 26, "roa": 27, "debt_eq": 28,
     # Sentiment & Qualitative Data
-    "news_summary": 27, "news_reason": 28, "news_source": 29,
-    "news_sentiment": 30, "bullish_score": 31, "bearish_score": 32,
-    "strengths": 33, "weaknesses": 34,
+    "news_summary": 29, "news_reason": 30, "news_source": 31,
+    "news_sentiment": 32, "bullish_score": 33, "bearish_score": 34,
+    "strengths": 35, "weaknesses": 36,
     # Automated Scoring
-    "quality": 35, "valuation": 36, "timing": 37, "total": 38,
+    "quality": 37, "valuation": 38, "timing": 39, "total": 40,
     # Final Decision (MUST stay last)
-    "buying_zone": 39, "price_range": 40, "action": 41,
+    "buying_zone": 41, "price_range": 42, "action": 43,
 }
 
 # Header text per column key
@@ -63,7 +63,7 @@ GITHUB_DATA_HEADER_NAMES = {
     "low52": "52W Low", "cmp": "CMP", "high52": "52W High",
     "buying_zone": "Buying Zone", "fair_val": "Fair Val", "price_range": "Buy/Sell Price Range",
     "action": "Final Action", "trend": "Trend",
-    "day_chg_pct": "Day Chg%", "pct_high": "Buy 20% Less",
+    "day_chg_pct": "Day Chg%", "return_1w": "1W Return %", "return_1m": "1M Return %", "pct_high": "Buy 20% Less",
     "pe": "PE", "eps": "EPS", "bv": "Book Value", "pb": "P/B",
     "div": "Div Yield%",
     "rsi": "RSI",
@@ -88,7 +88,7 @@ GITHUB_DATA_COL_WIDTHS = {
     "low52": 60, "cmp": 65, "high52": 60,
     "buying_zone": 115, "fair_val": 70, "price_range": 150,
     "action": 90, "trend": 90,
-    "day_chg_pct": 55, "pct_high": 75,
+    "day_chg_pct": 55, "return_1w": 65, "return_1m": 65, "pct_high": 75,
     "pe": 45, "eps": 45, "bv": 55, "pb": 45,
     "div": 50,
     "rsi": 45,
@@ -145,6 +145,8 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     trend       = tech.get("trend", "")
     cross       = tech.get("cross", "")
     day_chg_pct = tech.get("day_chg_pct", "")
+    return_1w   = tech.get("return_1w", "")
+    return_1m   = tech.get("return_1m", "")
 
     # News signals (already fetched by the news engine; zero cost here).
     # Passed as optional keys — scoring degrades gracefully to zero if absent.
@@ -215,6 +217,8 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["action"]]         = final_action
     row[C["trend"]]          = trend
     row[C["day_chg_pct"]]    = day_chg_pct
+    row[C["return_1w"]]      = return_1w
+    row[C["return_1m"]]      = return_1m
     row[C["pct_high"]]       = pct_high_display
     row[C["pe"]]             = f.get("pe") or ""
     row[C["eps"]]            = f.get("eps") or ""
@@ -408,6 +412,26 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
                 reqs.append(color_cell_req(ws.id, rn, C["day_chg_pct"], "fde9d9", "c62828"))
             else:
                 reqs.append(color_cell_req(ws.id, rn, C["day_chg_pct"], "f1f1f1", "666666"))
+
+        # ── 1W Return % — Positive/Negative/Neutral colour coding ──
+        ret1w_v = sf(row, "return_1w")
+        if ret1w_v is not None:
+            if ret1w_v > 0:
+                reqs.append(color_cell_req(ws.id, rn, C["return_1w"], "d9ead3", "0b8043"))
+            elif ret1w_v < 0:
+                reqs.append(color_cell_req(ws.id, rn, C["return_1w"], "fde9d9", "c62828"))
+            else:
+                reqs.append(color_cell_req(ws.id, rn, C["return_1w"], "f1f1f1", "666666"))
+
+        # ── 1M Return % — Positive/Negative/Neutral colour coding ──
+        ret1m_v = sf(row, "return_1m")
+        if ret1m_v is not None:
+            if ret1m_v > 0:
+                reqs.append(color_cell_req(ws.id, rn, C["return_1m"], "d9ead3", "0b8043"))
+            elif ret1m_v < 0:
+                reqs.append(color_cell_req(ws.id, rn, C["return_1m"], "fde9d9", "c62828"))
+            else:
+                reqs.append(color_cell_req(ws.id, rn, C["return_1m"], "f1f1f1", "666666"))
 
         # ── Buy 20% Less (% from 52W high) — discount attractiveness ──
         pct_high_v = sf(row, "pct_high")

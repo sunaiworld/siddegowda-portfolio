@@ -81,12 +81,30 @@ def fetch_technicals(sym):
         prev_close = round(float(close.iloc[-2]), 2) if len(close) >= 2 else None
         day_chg_pct = round((cmp - prev_close) / prev_close * 100, 2) if prev_close else ""
 
+        # 1W Return % (approx 5 trading sessions ago)
+        return_1w = ""
+        if len(close) >= 6:
+            p5 = float(close.iloc[-6])
+            if p5 > 0:
+                ret_1w_val = round((cmp / p5 - 1) * 100, 2)
+                return_1w = f"{ret_1w_val:+.2f}%" if ret_1w_val != 0 else "0.00%"
+
+        # 1M Return % (approx 21 trading sessions ago)
+        return_1m = ""
+        if len(close) >= 22:
+            p21 = float(close.iloc[-22])
+            if p21 > 0:
+                ret_1m_val = round((cmp / p21 - 1) * 100, 2)
+                return_1m = f"{ret_1m_val:+.2f}%" if ret_1m_val != 0 else "0.00%"
+
         return {
             "rsi": rsi, "sma50": sma50,
             "sma200": sma200 or "", "ema20": ema20,
             "vol_spike": vol_spike, "trend": trend,
             "cross": cross, "cmp_tech": cmp,
             "day_chg_pct": day_chg_pct,
+            "return_1w": return_1w,
+            "return_1m": return_1m,
         }
     except Exception as e:
         log.warning(f"  technicals failed {sym}: {e}")
