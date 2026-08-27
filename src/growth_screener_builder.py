@@ -71,29 +71,33 @@ def write_growth_screener(sh, all_out):
         rsi    = _cell(row, "rsi")
         trend  = _cell(row, "trend")
 
+        # Row layout (16 columns, indices 0-15) — must stay in sync with
+        # the header list and every hardcoded column index used below
+        # (row-color loop, gs_widths, wrap-format loop).
         growth.append([
-            sym,
-            _cell(row, "pe"),           # col  2: PE
-            _cell(row, "roe"),          # col  3: ROE%
-            _cell(row, "debt_eq"),      # col  4: Debt/Eq
-            _cell(row, "rev_growth"),   # col  5: Rev Growth%
-            _cell(row, "div"),          # col  6: Div Yield%
-            _cell(row, "pct_high"),     # col  7: Buy 20% Less
-            q_sc or "", v_sc or "", t_sc or "", tot_sc or "",  # 8 9 10 11
-            action,                     # col 12: Final Action
-            _cell(row, "strengths"),    # col 13: Strengths
-            _cell(row, "weaknesses"),   # col 14: Weaknesses
-            rsi, trend,                 # col 15: RSI  col 16: Trend
+            sym,                         # 0:  Symbol
+            _cell(row, "pe"),            # 1:  PE
+            _cell(row, "roe"),           # 2:  ROE%
+            _cell(row, "debt_eq"),       # 3:  Debt/Eq
+            _cell(row, "rev_growth"),    # 4:  Rev Growth%
+            _cell(row, "div"),           # 5:  Div Yield%
+            _cell(row, "pct_high"),      # 6:  Buy 20% Less
+            q_sc or "", v_sc or "", t_sc or "", tot_sc or "",  # 7 8 9 10: Quality, Valuation, Timing, Total Score
+            action,                      # 11: Final Action
+            _cell(row, "strengths"),     # 12: Strengths
+            _cell(row, "weaknesses"),    # 13: Weaknesses
+            rsi, trend,                  # 14: RSI   15: Trend
         ])
 
     growth.sort(key=lambda x: float(x[10]) if x[10] != "" else 0, reverse=True)
 
+    NUM_COLS = 16  # must match the row layout above and the header list below
 
     try:
         gsw = sh.worksheet("Growth Screener")
         gsw.clear()
     except:
-        gsw = sh.add_worksheet("Growth Screener", rows=200, cols=17)
+        gsw = sh.add_worksheet("Growth Screener", rows=200, cols=NUM_COLS)
 
     gsw.append_row([
         "Symbol",
@@ -107,7 +111,7 @@ def write_growth_screener(sh, all_out):
 
     reqs = [{"repeatCell": {
         "range": {"sheetId": gsw.id, "startRowIndex": 0, "endRowIndex": 1,
-                  "startColumnIndex": 0, "endColumnIndex": 17},
+                  "startColumnIndex": 0, "endColumnIndex": NUM_COLS},
         "cell": {"userEnteredFormat": {
             "backgroundColor": hex_rgb("0d1b2a"),
             "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 8},
@@ -119,7 +123,8 @@ def write_growth_screener(sh, all_out):
         "properties": {"sheetId": gsw.id, "gridProperties": {"frozenRowCount": 1, "frozenColumnCount": 1}},
         "fields": "gridProperties.frozenRowCount,gridProperties.frozenColumnCount"
     }})
-    gs_widths = [80, 80, 50, 55, 60, 70, 65, 80, 55, 60, 55, 60, 90, 220, 220, 50, 90]
+    # One width per column, in header order (Symbol..Trend) — 16 entries for NUM_COLS=16.
+    gs_widths = [80, 60, 55, 60, 70, 70, 75, 60, 65, 55, 60, 90, 220, 220, 50, 90]
     reqs += [{"updateDimensionProperties": {
         "range": {"sheetId": gsw.id, "dimension": "COLUMNS", "startIndex": i, "endIndex": i + 1},
         "properties": {"pixelSize": w}, "fields": "pixelSize"
@@ -128,38 +133,33 @@ def write_growth_screener(sh, all_out):
     for i, row in enumerate(growth):
         rn  = i + 1
         alt = "f8f9fa" if i % 2 == 0 else "ffffff"
-        action = str(row[12])
+        action = str(row[11])
         reqs.append({"repeatCell": {
             "range": {"sheetId": gsw.id, "startRowIndex": rn, "endRowIndex": rn + 1,
-                      "startColumnIndex": 0, "endColumnIndex": 17},
+                      "startColumnIndex": 0, "endColumnIndex": NUM_COLS},
             "cell": {"userEnteredFormat": {"backgroundColor": hex_rgb(alt)}},
             "fields": "userEnteredFormat.backgroundColor"
         }})
 
         if action in ACTION_COLORS:
             fg_a, bg_a = ACTION_COLORS[action]
-            reqs.append(color_cell_req(gsw.id, rn, 12, bg_a, fg_a))
-
-        cap = str(row[1])
-        if   cap == "Large Cap": reqs.append(color_cell_req(gsw.id, rn, 1, "d9ead3", "0b8043"))
-        elif cap == "Mid Cap":   reqs.append(color_cell_req(gsw.id, rn, 1, "d9eaf7", "1565c0"))
-        elif cap == "Small Cap": reqs.append(color_cell_req(gsw.id, rn, 1, "fde9d9", "c62828"))
+            reqs.append(color_cell_req(gsw.id, rn, 11, bg_a, fg_a))
 
         try:
-            rsi_val = float(str(row[15]).replace("%", ""))
-            if   rsi_val < 35: reqs.append(color_cell_req(gsw.id, rn, 15, "d9ead3", "0b8043"))
-            elif rsi_val > 70: reqs.append(color_cell_req(gsw.id, rn, 15, "fde9d9", "c62828"))
+            rsi_val = float(str(row[14]).replace("%", ""))
+            if   rsi_val < 35: reqs.append(color_cell_req(gsw.id, rn, 14, "d9ead3", "0b8043"))
+            elif rsi_val > 70: reqs.append(color_cell_req(gsw.id, rn, 14, "fde9d9", "c62828"))
         except: pass
 
         try:
-            tot = float(str(row[11]))
-            if   tot >= 65: reqs.append(color_cell_req(gsw.id, rn, 11, "00c853", "ffffff"))
-            elif tot >= 50: reqs.append(color_cell_req(gsw.id, rn, 11, "d9ead3", "0b8043"))
-            elif tot >= 35: reqs.append(color_cell_req(gsw.id, rn, 11, "fff2cc", "7f4f00"))
-            else:           reqs.append(color_cell_req(gsw.id, rn, 11, "fde9d9", "c62828"))
+            tot = float(str(row[10]))
+            if   tot >= 65: reqs.append(color_cell_req(gsw.id, rn, 10, "00c853", "ffffff"))
+            elif tot >= 50: reqs.append(color_cell_req(gsw.id, rn, 10, "d9ead3", "0b8043"))
+            elif tot >= 35: reqs.append(color_cell_req(gsw.id, rn, 10, "fff2cc", "7f4f00"))
+            else:           reqs.append(color_cell_req(gsw.id, rn, 10, "fde9d9", "c62828"))
         except: pass
 
-    for col_idx in [13, 14]:
+    for col_idx in [12, 13]:  # Strengths, Weaknesses
         reqs.append({"repeatCell": {
             "range": {"sheetId": gsw.id, "startRowIndex": 1, "endRowIndex": len(growth) + 1,
                       "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1},
@@ -170,4 +170,3 @@ def write_growth_screener(sh, all_out):
     batch_update_safe(sh, reqs)
     log.info(f"Growth Screener: {len(growth)} stocks")
     return growth
-
