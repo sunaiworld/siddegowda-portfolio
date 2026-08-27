@@ -189,7 +189,7 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
     This matches write_github_data exactly and guarantees colours appear.
     """
     import gspread.exceptions as _gse
-    from sheet_writer import batch_update_safe
+    from sheet_writer import batch_update_safe, clear_sheet_safe, update_sheet_safe
     from sheet_formatter import (
         get_structural_format_reqs,
         get_currency_format_reqs,
@@ -241,8 +241,12 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
     # ── 1. Structural format ─────────────────────────────────────────────────
     # Same call as write_github_data: header dark bg, white bold fs8, WRAP,
     # freeze row1+col1, header height 50px, alternating f8f9fa/ffffff rows.
+    # num_rows here is DATA rows only (sum_rows minus its header row) — the
+    # alternating-row loop inside get_structural_format_reqs starts right
+    # after the header, so passing the full sum_rows length would tint one
+    # extra blank row past the real data.
     reqs = get_structural_format_reqs(
-        ws_id, len(sum_rows), num_cols, widths, freeze_rows=1, freeze_cols=1
+        ws_id, len(sum_rows) - 1, num_cols, widths, freeze_rows=1, freeze_cols=1
     )
 
     # ── 2. Number formats ────────────────────────────────────────────────────
