@@ -425,7 +425,7 @@ def compute_portfolio_health(results, holdings, fund_map, dash):
     }
 
 
-def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
+def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None, drawdown_metrics=None):
     """
     Redesigned Dashboard: KPI band -> Health Score -> Top-5 Allocation
     -> Sector Allocation (+ bar chart) -> Top Gainers/Losers -> Signals
@@ -572,6 +572,43 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
                 pos_neg_cells.append((r_idx, 5, s_ret))
         add_row([])
 
+    # ── 3.75 Portfolio Risk & Drawdown Monitor ──────
+    if drawdown_metrics and drawdown_metrics.get("has_history"):
+        add_row(["Portfolio Risk & Drawdown Monitor"], is_header=True)
+        add_row(["Risk Metric", "Value", "Context / Target"], is_subheader=True)
+
+        ath_val = drawdown_metrics.get("ath_value")
+        ath_dt = drawdown_metrics.get("ath_date")
+        if ath_val is not None:
+            r_idx = add_row(["All-Time High (ATH)", ath_val, f"Peak reached on {ath_dt}"])
+            currency_cells.append((r_idx, 1))
+
+        curr_dd = drawdown_metrics.get("current_drawdown_pct")
+        if curr_dd is not None:
+            r_idx = add_row(["Current Drawdown from ATH", curr_dd, "Healthy: > -10% | Watch: < -15%"])
+            pct_cells.append((r_idx, 1))
+            pos_neg_cells.append((r_idx, 1, curr_dd))
+
+        mdd = drawdown_metrics.get("max_drawdown_pct")
+        if mdd is not None:
+            r_idx = add_row(["Max Historical Drawdown (MDD)", mdd, "Peak-to-trough worst decline"])
+            pct_cells.append((r_idx, 1))
+            pos_neg_cells.append((r_idx, 1, mdd))
+
+        ret_30 = drawdown_metrics.get("return_30d_pct")
+        if ret_30 is not None:
+            r_idx = add_row(["30-Day Rolling Return", ret_30, "Trailing ~1 Month"])
+            pct_cells.append((r_idx, 1))
+            pos_neg_cells.append((r_idx, 1, ret_30))
+
+        ret_90 = drawdown_metrics.get("return_90d_pct")
+        if ret_90 is not None:
+            r_idx = add_row(["90-Day Rolling Return", ret_90, "Trailing ~3 Months"])
+            pct_cells.append((r_idx, 1))
+            pos_neg_cells.append((r_idx, 1, ret_90))
+
+        add_row([])
+
     # ── 4. Portfolio allocation: Top 5 holdings + Others ──
     if dash.get("positions"):
         add_row(["Top Holdings"], is_header=True)
@@ -653,7 +690,7 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
     # ── 6. Top Gainers / Top Losers ───────────
     if has_kpis:
         add_row(["Top Gainers", "P&L", "Return %"], is_subheader=True)
-        if dash["top_gainers"]:
+        if dash.get("top_gainers"):
             for r in dash["top_gainers"]:
                 r_idx = add_row([r["symbol"], r["pnl"], r["return_pct"]])
                 currency_cells.append((r_idx, 1))
@@ -665,7 +702,7 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         add_row([])
 
         add_row(["Top Losers", "P&L", "Return %"], is_subheader=True)
-        if dash["top_losers"]:
+        if dash.get("top_losers"):
             for r in dash["top_losers"]:
                 r_idx = add_row([r["symbol"], r["pnl"], r["return_pct"]])
                 currency_cells.append((r_idx, 1))
@@ -709,7 +746,7 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
 
         # ── 7. Portfolio Signals + Action Required ──
         add_row(["Portfolio Signals"], is_header=True)
-        sc = dash["signal_counts"]
+        sc = dash.get("signal_counts", {})
         signal_summary_row = [
             f"HOLD: {sc.get('HOLD', 0)}",
             f"BUY MORE@: {sc.get('BUY MORE', 0)}",
@@ -720,7 +757,7 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         add_row([])
 
         add_row(["Action Required", "Signal", "P&L", "Return %"], is_subheader=True)
-        if dash["action_required"]:
+        if dash.get("action_required"):
             for r in dash["action_required"]:
                 sym_lbl = r.get("symbol_display", r.get("symbol", ""))
                 r_idx = add_row([sym_lbl, r["signal"], r["pnl"], r["return_pct"]])
@@ -752,24 +789,24 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
             up_m, dn_m = dash["momentum_1m"]
             add_row(["1M Momentum (Holdings)", f"▲ {up_m} Up  /  ▼ {dn_m} Down"])
 
-        val = dash["portfolio_xirr"]
+        val = dash.get("portfolio_xirr")
         if val is not None:
             idx = add_row(["Portfolio XIRR", val])
             pct_cells.append((idx, 1))
             pos_neg_cells.append((idx, 1, val))
-        val = dash["portfolio_beta"]
+        val = dash.get("portfolio_beta")
         cov = dash.get("beta_covered_pct")
         cov_str = f", {cov}% coverage" if cov is not None else ""
         beta_label = f"{val} (vs NIFTY 50{cov_str})" if val is not None else "N/A"
         add_row(["Portfolio Beta", beta_label])
-        idx = add_row(["Expected Div Income (annual)", dash['div_income']])
+        idx = add_row(["Expected Div Income (annual)", dash.get('div_income', 0.0)])
         currency_cells.append((idx, 1))
         add_row([])
     else:
         # combined_rows wasn't supplied — fall back to the beta/XIRR/div-only
         # KPI set rather than fabricating P&L/Return%/gainers/losers.
         add_row(["Portfolio KPIs"], is_header=True)
-        val = dash["portfolio_xirr"]
+        val = dash.get("portfolio_xirr")
         if val is not None:
             idx = add_row(["Portfolio XIRR", val])
             pct_cells.append((idx, 1))

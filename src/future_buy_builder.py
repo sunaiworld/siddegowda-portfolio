@@ -37,7 +37,7 @@ from data_fetcher import fetch_prices_batch, fetch_technicals, fetch_rev_growth
 # DATA are independent here and never touch holdings
 # or portfolio-value calculations.
 # ══════════════════════════════════════════════
-def process_watchlist_tab(sh, tab_name, symbols, nc_cache=None, shared_prices=None, shared_fund=None, shared_tech=None, shared_rev=None):
+def process_watchlist_tab(sh, tab_name, symbols, nc_cache=None, shared_prices=None, shared_fund=None, shared_tech=None, shared_rev=None, sector_weights=None, portfolio_value=None):
     if not symbols:
         log.warning(f"{tab_name}: no symbols configured, skipping")
         return []
@@ -135,14 +135,14 @@ def process_watchlist_tab(sh, tab_name, symbols, nc_cache=None, shared_prices=No
 
     rows.sort(key=_watchlist_sort_key)
 
-    write_future_buy_tab(sh, rows, tab_name=tab_name)
+    write_future_buy_tab(sh, rows, tab_name=tab_name, sector_weights=sector_weights, portfolio_value=portfolio_value)
     return rows
 
 
-def write_future_buy_tab(sh, rows, tab_name="Future Buy"):
+def write_future_buy_tab(sh, rows, tab_name="Future Buy", sector_weights=None, portfolio_value=None):
     """
     Writes the Future Buy watchlist tab with:
-    1. A compact Top 10 Buy Opportunities callout block at the top.
+    1. A compact Top 10 Buy Opportunities callout block at the top with Portfolio Fit & Tranche Guidance.
     2. A blank separator row.
     3. The complete, intact watchlist (111 stocks) below, ordered opportunity-first
        with full GITHUB DATA styling and group headers.
@@ -158,13 +158,46 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy"):
 
     # 1. Top 10 Opportunities (selected from top of already-sorted opportunity-first rows)
     top10 = rows[:10]
-    top10_headers = ["Rank", "Symbol", "Buying Zone", "Total Score", "CMP", "Buy/Sell Price Range", "Action"]
+    top10_headers = [
+        "Rank", "Symbol", "Buying Zone", "Total Score", "CMP",
+        "Buy/Sell Price Range", "Portfolio Fit", "Tranche Guidance", "Action"
+    ]
 
     top10_title_row = ["TOP 10 BUY OPPORTUNITIES"] + [""] * (num_cols - 1)
     top10_hdr_row = top10_headers + [""] * (num_cols - len(top10_headers))
     top10_data_rows = []
+    top10_fit_styles = []
+
     for rank, r in enumerate(top10, 1):
         r_clean = clean_row(r)
+        sym = r_clean[C["symbol"]]
+        sector = r_clean[C["sector"]] if "sector" in C and len(r_clean) > C["sector"] else ""
+
+        # Portfolio Fit calculation
+        if sector_weights and isinstance(sector_weights, dict) and sector:
+            wt = float(sector_weights.get(sector, 0.0))
+            if wt > 20.0:
+                fit_text = f"⚠️ Overweight ({wt:.1f}%)"
+                fit_style = ("fde9d9", "c62828")
+            elif wt >= 15.0:
+                fit_text = f"⚖️ Balanced ({wt:.1f}%)"
+                fit_style = ("fff2cc", "7f4f00")
+            else:
+                fit_text = f"⭐ High Fit ({wt:.1f}%)" if wt > 0 else "⭐ High Fit (New)"
+                fit_style = ("d9ead3", "0b8043")
+        else:
+            fit_text = "⭐ High Fit (Diversified)"
+            fit_style = ("d9ead3", "0b8043")
+
+        top10_fit_styles.append(fit_style)
+
+        # Tranche sizing guidance (standard 2% tranche)
+        if portfolio_value and portfolio_value > 0:
+            tranche_val = round(portfolio_value * 0.02, -3)
+            tranche_text = f"₹{tranche_val:,.0f} (2.0%)"
+        else:
+            tranche_text = "2.0% Tranche"
+
         top10_data_rows.append([
             rank,
             r_clean[C["symbol"]],
@@ -172,6 +205,8 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy"):
             r_clean[C["total"]],
             r_clean[C["cmp"]],
             r_clean[C["price_range"]],
+            fit_text,
+            tranche_text,
             r_clean[C["action"]],
         ] + [""] * (num_cols - len(top10_headers)))
 
@@ -207,7 +242,7 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy"):
     reqs = []
     reqs.append({"clearBasicFilter": {"sheetId": ws.id}})
 
-    # Top 10 Title Banner: Merge A1:G1, deep navy
+    # Top 10 Title Banner: Merge A1:I1, deep navy
     reqs.append({
         "mergeCells": {
             "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": len(top10_headers)},
@@ -242,7 +277,7 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy"):
     # Top 10 Data Rows Formatting
     for idx, r in enumerate(top10):
         rn = idx + 2
-        # Rank
+        # Rank (Col 0)
         reqs.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn + 1, "startColumnIndex": 0, "endColumnIndex": 1},
@@ -250,14 +285,14 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy"):
                 "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment"
             }
         })
-        # Symbol
+        # Symbol (Col 1)
         reqs.append(color_cell_req(ws.id, rn, 1, "eaf4fb", "1565c0", bold=True))
-        # Buying Zone
+        # Buying Zone (Col 2)
         b_zone = str(r[C["buying_zone"]]).strip() if len(r) > C["buying_zone"] else ""
         if b_zone in GITHUB_DATA_BUYING_ZONE_COLORS:
             bg_b, fg_b = GITHUB_DATA_BUYING_ZONE_COLORS[b_zone]
             reqs.append(color_cell_req(ws.id, rn, 2, bg_b, fg_b))
-        # Total Score
+        # Total Score (Col 3)
         reqs.append({
             "repeatCell": {
                 "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn + 1, "startColumnIndex": 3, "endColumnIndex": 4},
@@ -265,18 +300,23 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy"):
                 "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment"
             }
         })
-        # CMP (Col index 4) - Currency
+        # CMP (Col 4) - Currency
         reqs.append(color_cell_req(ws.id, rn, 4, "f1f8e9", "33691e", bold=False))
         reqs += get_currency_format_reqs(ws.id, rn, rn + 1, 4, 5)
-        # Price Range (Col index 5)
+        # Price Range (Col 5)
         if b_zone in GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS:
             lbg, lfg = GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS[b_zone]
             reqs.append(color_cell_req(ws.id, rn, 5, lbg, lfg, bold=False))
-        # Action (Col index 6)
+        # Portfolio Fit (Col 6)
+        fit_bg, fit_fg = top10_fit_styles[idx]
+        reqs.append(color_cell_req(ws.id, rn, 6, fit_bg, fit_fg, bold=True))
+        # Tranche Guidance (Col 7)
+        reqs.append(color_cell_req(ws.id, rn, 7, "f8f9fa", "495057", bold=False))
+        # Action (Col 8)
         act = str(r[C["action"]]).strip() if len(r) > C["action"] else ""
         if act in GITHUB_DATA_ACTION_COLORS:
             bg_a, fg_a = GITHUB_DATA_ACTION_COLORS[act]
-            reqs.append(color_cell_req(ws.id, rn, 6, bg_a, fg_a))
+            reqs.append(color_cell_req(ws.id, rn, 8, bg_a, fg_a))
 
     # Main Watchlist Table Offset
     watchlist_start_idx = 2 + len(top10) + 1  # Group header banner row index
@@ -503,14 +543,15 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy"):
     return ws
 
 
-def process_all_watchlists(sh, nc_cache=None, shared_prices=None, shared_fund=None, shared_tech=None, shared_rev=None):
+def process_all_watchlists(sh, nc_cache=None, shared_prices=None, shared_fund=None, shared_tech=None, shared_rev=None, sector_weights=None, portfolio_value=None):
     all_rows = {}
     for tab_name, symbols in WATCHLISTS.items():
         try:
             rows = process_watchlist_tab(
                 sh, tab_name, symbols, nc_cache=nc_cache,
                 shared_prices=shared_prices, shared_fund=shared_fund,
-                shared_tech=shared_tech, shared_rev=shared_rev
+                shared_tech=shared_tech, shared_rev=shared_rev,
+                sector_weights=sector_weights, portfolio_value=portfolio_value
             )
             all_rows[tab_name] = rows
         except Exception as e:

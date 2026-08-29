@@ -374,6 +374,116 @@ def get_previous_health_score(sh):
     return prev_date, health
 
 
+def compute_portfolio_drawdown_metrics(sh, current_portfolio_value):
+    """
+    Reads Portfolio History and computes portfolio-level drawdown and rolling metrics:
+    - All-Time High (ATH) value and date reached
+    - Current Drawdown % from ATH: (current_val - ath_val) / ath_val * 100
+    - Maximum Historical Drawdown % (MDD): max peak-to-trough drop in history
+    - 30-Day Rolling Return %
+    - 90-Day Rolling Return %
+    """
+    default_res = {
+        "ath_value": current_portfolio_value,
+        "ath_date": datetime.now().strftime("%Y-%m-%d"),
+        "current_drawdown_pct": 0.0,
+        "max_drawdown_pct": 0.0,
+        "return_30d_pct": None,
+        "return_90d_pct": None,
+        "has_history": False,
+    }
+    if not current_portfolio_value or current_portfolio_value <= 0:
+        return default_res
+
+    try:
+        ws = sh.worksheet(PORTFOLIO_HISTORY_TAB)
+    except Exception:
+        return default_res
+
+    rows = ws.get_all_values()[1:]
+    if not rows:
+        return default_res
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # Parse daily series: {date_str: val}
+    series_map = {}
+    for r in rows:
+        if not r or len(r) < 2:
+            continue
+        d_str = str(r[0]).strip()
+        val = _to_float(r[1])
+        if d_str and val is not None and val > 0:
+            series_map[d_str] = val
+
+    # Include current live value
+    series_map[today_str] = float(current_portfolio_value)
+
+    if len(series_map) < 2:
+        return default_res
+
+    sorted_dates = sorted(series_map.keys())
+    running_max = 0.0
+    ath_val = 0.0
+    ath_date = sorted_dates[0]
+    drawdowns = []
+
+    for d_str in sorted_dates:
+        v = series_map[d_str]
+        if v > ath_val:
+            ath_val = v
+            ath_date = d_str
+        running_max = max(running_max, v)
+        dd = ((v - running_max) / running_max) * 100.0 if running_max > 0 else 0.0
+        drawdowns.append(dd)
+
+    current_dd = round(((current_portfolio_value - ath_val) / ath_val) * 100.0, 2) if ath_val > 0 else 0.0
+    mdd = round(min(drawdowns), 2) if drawdowns else 0.0
+
+    # Rolling 30-day and 90-day returns
+    try:
+        today_dt = datetime.strptime(today_str, "%Y-%m-%d")
+        val_30d = None
+        val_90d = None
+        best_30d_diff = 9999
+        best_90d_diff = 9999
+
+        for d_str in sorted_dates:
+            if d_str == today_str:
+                continue
+            try:
+                d_dt = datetime.strptime(d_str, "%Y-%m-%d")
+                days_ago = (today_dt - d_dt).days
+                if days_ago >= 20:
+                    diff_30 = abs(days_ago - 30)
+                    if diff_30 < best_30d_diff:
+                        best_30d_diff = diff_30
+                        val_30d = series_map[d_str]
+                if days_ago >= 60:
+                    diff_90 = abs(days_ago - 90)
+                    if diff_90 < best_90d_diff:
+                        best_90d_diff = diff_90
+                        val_90d = series_map[d_str]
+            except ValueError:
+                continue
+
+        ret_30d = round(((current_portfolio_value - val_30d) / val_30d) * 100.0, 2) if val_30d else None
+        ret_90d = round(((current_portfolio_value - val_90d) / val_90d) * 100.0, 2) if val_90d else None
+    except Exception:
+        ret_30d = None
+        ret_90d = None
+
+    return {
+        "ath_value": round(ath_val, 2),
+        "ath_date": ath_date,
+        "current_drawdown_pct": current_dd,
+        "max_drawdown_pct": mdd,
+        "return_30d_pct": ret_30d,
+        "return_90d_pct": ret_90d,
+        "has_history": True,
+    }
+
+
 def _dominant_component(dq, dv, dt):
     candidates = [c for c in [("Quality", dq), ("Valuation", dv), ("Timing", dt)] if c[1] is not None]
     if not candidates:

@@ -289,10 +289,26 @@ def run_portfolio_update(sh):
             is_etf = (archetype == "ETF" or f.get("sector") == "ETFs" or "BEES" in sym.upper() or sym.upper().endswith("ETF") or sym.upper() in ("ICICIB22", "CPSEETF", "SETFNIF50", "GOLDBEES", "NIFTYBEES"))
             if not is_etf:
                 sl_price, tgt_price = avg_buy * (1 - SL_PCT), avg_buy * (1 + TARGET_PCT)
+                inv_val = qty * avg_buy
+                cur_val = qty * cmp
+                pnl_val = cur_val - inv_val
+                ret_val = (pnl_val / inv_val) * 100 if inv_val > 0 else 0.0
+                is_sc = (source_map or {}).get(sym, "").upper() == "SMALLCASE"
+
                 if cmp <= sl_price:
-                    alerts["sl_breach"].append({"sym": sym, "cmp": cmp, "sl": round(sl_price, 2)})
+                    alerts["sl_breach"].append({
+                        "sym": sym, "cmp": round(cmp, 2), "sl": round(sl_price, 2),
+                        "invested": round(inv_val, 2), "shares": qty,
+                        "loss_amount": round(abs(pnl_val), 2),
+                        "return_pct": round(ret_val, 2), "is_smallcase": is_sc
+                    })
                 if cmp >= tgt_price:
-                    alerts["target_hit"].append({"sym": sym, "cmp": cmp, "tgt": round(tgt_price, 2)})
+                    alerts["target_hit"].append({
+                        "sym": sym, "cmp": round(cmp, 2), "tgt": round(tgt_price, 2),
+                        "invested": round(inv_val, 2), "shares": qty,
+                        "gain_amount": round(pnl_val, 2),
+                        "return_pct": round(ret_val, 2), "is_smallcase": is_sc
+                    })
 
         if final_action in ("STRONG BUY", "BUY"):
             alerts["strong_buy"].append({"sym": sym, "score": tot_sc, "action": final_action})
@@ -307,12 +323,6 @@ def run_portfolio_update(sh):
     profiler.stop_stage("[07] Portfolio calculations", category="Python processing")
 
     # flush removed
-# Belt-and-suspenders: the scoring loop above is sequential over
-    # `symbols`, so `results` is already in original order — but threading
-    # was introduced upstream (technicals/rev-growth/news fetch), so this
-    # guarantees row order in GITHUB DATA / Dashboard / History always
-    # matches the Portfolio tab's symbol order, regardless of future edits
-    # to how `results` gets assembled.
     _sym_index = {s: i for i, s in enumerate(symbols)}
     results.sort(key=lambda r: _sym_index.get(r[GITHUB_DATA_COLS["symbol"]], len(symbols)))
     write_github_data(sh, results, tab_name="GITHUB DATA")
@@ -327,21 +337,22 @@ def run_portfolio_update(sh):
         log.error(f"[CHECKPOINT] Portfolio build/write FAILED: {e}", exc_info=True)
         raise
 
-    # Pass nc_cache so watchlist symbols inherit the news signal that was
-    # already fetched/refreshed for portfolio symbols above. Zero new
-    # API calls for symbols that overlap; watchlist-only symbols get {}
-    # and their news columns stay blank until added to the portfolio.
+    dash = portfolio_analytics.compute_portfolio_dashboard(
+        holdings, fund_map, trades, portfolio_live_value,
+        combined_rows=portfolio_rows.get("combined", []),
+    )
+    sector_weights = {s["sector"]: s["weight_pct"] for s in dash.get("sector_detail", [])}
+
+    # Pass nc_cache and sector_weights so watchlist symbols inherit news and smart capital allocation
     with profiler.stage("[15] Watchlist processing", category="Python processing"):
         watchlist_results = process_all_watchlists(
             sh, nc_cache=nc_cache,
             shared_prices=prices, shared_fund=fund_map,
-            shared_tech=tech_map, shared_rev=rev_map
+            shared_tech=tech_map, shared_rev=rev_map,
+            sector_weights=sector_weights, portfolio_value=portfolio_live_value
         )
 
     # ── Watchlist Opportunity Digest ───────────────────────────────────────────────
-    # Identify watchlist stocks that have crossed into an attractive entry
-    # window (score >= 50) and are NOT already held in the portfolio.
-    # Uses data already computed above — no new API calls.
     portfolio_syms = set(holdings.keys())
     watchlist_opportunities = []
     C = GITHUB_DATA_COLS
@@ -364,9 +375,19 @@ def run_portfolio_update(sh):
             except (TypeError, ValueError):
                 continue
             if score_f >= 50:
+                sec = (fund_map.get(sym, {}) or {}).get("sector", "")
+                wt = float(sector_weights.get(sec, 0.0)) if sector_weights else 0.0
+                if wt > 20.0:
+                    fit = f"⚠️ Overweight ({sec}: {wt:.1f}%)"
+                elif wt >= 15.0:
+                    fit = f"⚖️ Balanced ({sec}: {wt:.1f}%)"
+                else:
+                    fit = f"⭐ High Fit ({sec}: {wt:.1f}%)" if wt > 0 else "⭐ High Fit (New)"
+
                 watchlist_opportunities.append({
                     "sym": sym, "score": int(score_f), "action": action,
                     "rsi": rsi, "trend": trend, "setup": setup, "news": news_s,
+                    "fit": fit, "sector": sec,
                 })
     watchlist_opportunities.sort(key=lambda x: x["score"], reverse=True)
 
@@ -383,14 +404,16 @@ def run_portfolio_update(sh):
             log.warning(f"Could not compute today's changes: {e}")
             changes = None
 
-        dash = portfolio_analytics.compute_portfolio_dashboard(
-            holdings, fund_map, trades, portfolio_live_value,
-            combined_rows=portfolio_rows.get("combined", []),
-        )
+        try:
+            drawdown_metrics = history_tracker.compute_portfolio_drawdown_metrics(sh, portfolio_live_value)
+        except Exception as e:
+            log.warning(f"Could not compute drawdown metrics: {e}")
+            drawdown_metrics = None
+
         health = portfolio_analytics.compute_portfolio_health(results, holdings, fund_map, dash)
         health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
 
-        portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
+        portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend, drawdown_metrics)
 
         try:
             log.info("Recording daily history snapshot...")
@@ -421,6 +444,9 @@ def run_portfolio_update(sh):
         "top_picks": top_picks, "failed": failed,
         "changes": changes,
         "watchlist_opportunities": watchlist_opportunities,
+        "health": health,
+        "health_trend": health_trend,
+        "drawdown_metrics": drawdown_metrics,
     }
 
 def main():
@@ -444,8 +470,12 @@ def main():
         send_telegram("❌ Portfolio update FAILED — no symbols found in Portfolio tab Symbol column")
         sys.exit(1)
 
-    msg = build_alert_message(out["alerts"], out["portfolio_live_value"], out["top_picks"],
-                               watchlist_opps=out.get("watchlist_opportunities"))
+    msg = build_alert_message(
+        out["alerts"], out["portfolio_live_value"], out["top_picks"],
+        watchlist_opps=out.get("watchlist_opportunities"),
+        health_score=out.get("health", {}).get("overall"),
+        health_trend=out.get("health_trend")
+    )
     digest = history_tracker.format_telegram_digest(out.get("changes"))
     if digest:
         msg = msg + "\n\n" + digest
