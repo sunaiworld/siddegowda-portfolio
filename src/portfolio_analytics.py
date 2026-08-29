@@ -114,7 +114,7 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
     #    Score's diversification calc, kept exactly as before) ──────
     sector_value = {}
     for sym, (qty, cmp, avg_buy) in holdings.items():
-        sector = fund_map.get(sym, {}).get("sector") or "ETFs"
+        sector = fund_map.get(sym, {}).get("sector") or "Unknown"
         sector_value[sector] = sector_value.get(sector, 0) + qty * cmp
 
     sector_alloc = []
@@ -241,7 +241,17 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
             # Portfolio Impact %
             r["portfolio_impact"] = round((wt * ret) / 100, 2)
 
-            sector = fund_map.get(sym, {}).get("sector") or "ETFs"
+            # Sector label: ETFs are identified by investment_source (the most
+            # reliable signal — derived from source_map / broker trade data /
+            # yfinance sector=="ETFs" in portfolio_builder). A stock with a
+            # missing yfinance sector falls to "Unknown" — NOT "ETFs". This
+            # separates genuine ETFs from stocks that happen to lack sector data.
+            inv_src = r.get("investment_source", "").upper()
+            yf_sector = fund_map.get(sym, {}).get("sector", "") or ""
+            if inv_src == "ETF" or yf_sector == "ETFs":
+                sector = "ETFs"
+            else:
+                sector = yf_sector or "Unknown"
             agg = sector_agg.setdefault(sector, {"count": 0, "invested": 0.0, "value": 0.0, "beta_sum": 0.0, "beta_weight": 0.0})
             agg["count"] += 1
             agg["invested"] += inv
@@ -414,21 +424,22 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
     import sheet_writer
     try:
         ws = sh.worksheet(DASHBOARD_TAB)
-        ws.clear()
-        rules = sh.fetch_sheet_metadata({"includeGridData": False})
-        sheet_meta = next((s for s in rules.get('sheets', []) if s.get('properties', {}).get('sheetId') == ws.id), None)
-        if sheet_meta:
-            cond_formats = sheet_meta.get("conditionalFormats", [])
-            if cond_formats:
-                clear_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws.id, "index": 0}} for _ in cond_formats]
-                sheet_writer.batch_update_safe(sh, clear_reqs)
-            existing_charts = sheet_meta.get("charts", [])
-            if existing_charts:
-                sheet_writer.batch_update_safe(sh, [
-                    {"deleteEmbeddedObject": {"objectId": c["chartId"]}} for c in existing_charts
-                ])
     except Exception:
         ws = sh.add_worksheet(DASHBOARD_TAB, rows=400, cols=8)
+
+    sheet_writer.clear_sheet_safe(ws)
+    rules = sh.fetch_sheet_metadata({"includeGridData": False})
+    sheet_meta = next((s for s in rules.get('sheets', []) if s.get('properties', {}).get('sheetId') == ws.id), None)
+    if sheet_meta:
+        cond_formats = sheet_meta.get("conditionalFormats", [])
+        if cond_formats:
+            clear_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws.id, "index": 0}} for _ in cond_formats]
+            sheet_writer.batch_update_safe(sh, clear_reqs)
+        existing_charts = sheet_meta.get("charts", [])
+        if existing_charts:
+            sheet_writer.batch_update_safe(sh, [
+                {"deleteEmbeddedObject": {"objectId": c["chartId"]}} for c in existing_charts
+            ])
 
     nc = 9  # widened from 4 to fit the Sector Allocation table's 8 columns (incl. concentration flag); other sections just leave the extra columns blank
     rows = []
@@ -508,7 +519,12 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         add_row(["ETF Holdings", ss.get("ETF", {}).get("count", 0)])
         add_row(["Other / Legacy", ss.get("LEGACY", {}).get("count", 0) + ss.get("UNKNOWN", {}).get("count", 0)])
         val = dash.get("portfolio_beta")
-        add_row(["Portfolio Beta", val if val is not None else "N/A"])
+        # yfinance beta for Indian NSE securities is benchmarked against an
+        # unspecified global index (empirically near-zero for large-cap stocks
+        # like RELIANCE=0.16, HDFCBANK=0.41) — NOT Nifty 50. Label accordingly
+        # so the number is not misread as a Nifty-50-relative risk metric.
+        beta_label = f"{val} (yfinance — benchmark unspecified)" if val is not None else "N/A"
+        add_row(["Portfolio Beta", beta_label])
         val = dash.get("portfolio_xirr")
         idx = add_row(["Portfolio XIRR", val if val is not None else "N/A"])
         if val is not None:
@@ -713,7 +729,8 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
             pct_cells.append((idx, 1))
             pos_neg_cells.append((idx, 1, val))
         val = dash["portfolio_beta"]
-        add_row(["Portfolio Beta", val if val is not None else "N/A"])
+        beta_label = f"{val} (yfinance — benchmark unspecified)" if val is not None else "N/A"
+        add_row(["Portfolio Beta", beta_label])
         idx = add_row(["Expected Div Income (annual)", dash['div_income']])
         currency_cells.append((idx, 1))
         add_row([])
@@ -729,7 +746,8 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         else:
             add_row(["Portfolio XIRR%", "N/A"])
         val = dash["portfolio_beta"]
-        add_row(["Portfolio Beta", val if val is not None else "N/A"])
+        beta_label = f"{val} (yfinance — benchmark unspecified)" if val is not None else "N/A"
+        add_row(["Portfolio Beta", beta_label])
         idx = add_row(["Expected Div Income (annual)", dash['div_income']])
         currency_cells.append((idx, 1))
         add_row([])

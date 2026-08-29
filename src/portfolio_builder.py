@@ -543,9 +543,9 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     if "Return %" in headers: subtotal_row[headers.index("Return %")] = tot_ret
     all_data.append(subtotal_row)
 
-    ws.clear()
-    
-    ws.update("A1", all_data, value_input_option="RAW")
+    sheet_writer.clear_sheet_safe(ws)
+
+    sheet_writer.update_sheet_safe(ws, "A1", all_data, value_input_option="RAW")
     log.info(f"write_portfolio: wrote {len(all_data)} rows to '{tab_name}'")
     profiler.increment("Rows written", len(all_data))
 

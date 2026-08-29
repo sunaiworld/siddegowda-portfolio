@@ -22,6 +22,8 @@ from news_engine import classifier
 log = logging.getLogger("portfolio")
 
 from config import *
+import sheet_formatter
+import sheet_writer
 from sheet_formatter import *
 from sheet_writer import *
 from github_data_builder import *
@@ -95,9 +97,10 @@ def write_growth_screener(sh, all_out):
 
     try:
         gsw = sh.worksheet("Growth Screener")
-        gsw.clear()
-    except:
+    except Exception:
         gsw = sh.add_worksheet("Growth Screener", rows=200, cols=NUM_COLS)
+
+    sheet_writer.clear_sheet_safe(gsw)
 
     gsw.append_row([
         "Symbol",
