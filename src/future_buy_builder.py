@@ -135,8 +135,372 @@ def process_watchlist_tab(sh, tab_name, symbols, nc_cache=None, shared_prices=No
 
     rows.sort(key=_watchlist_sort_key)
 
-    write_github_data(sh, rows, tab_name=tab_name)
+    write_future_buy_tab(sh, rows, tab_name=tab_name)
     return rows
+
+
+def write_future_buy_tab(sh, rows, tab_name="Future Buy"):
+    """
+    Writes the Future Buy watchlist tab with:
+    1. A compact Top 10 Buy Opportunities callout block at the top.
+    2. A blank separator row.
+    3. The complete, intact watchlist (111 stocks) below, ordered opportunity-first
+       with full GITHUB DATA styling and group headers.
+    """
+    from github_data_builder import (
+        GITHUB_DATA_COLS, GITHUB_DATA_HEADER_NAMES, GITHUB_DATA_COL_WIDTHS,
+        GROUP_DEFS, clean_row
+    )
+    from sheet_writer import clear_sheet_safe, update_sheet_safe, batch_update_safe
+
+    C = GITHUB_DATA_COLS
+    num_cols = len(C)
+
+    # 1. Top 10 Opportunities (selected from top of already-sorted opportunity-first rows)
+    top10 = rows[:10]
+    top10_headers = ["Rank", "Symbol", "Buying Zone", "Total Score", "CMP", "Buy/Sell Price Range", "Action"]
+
+    top10_title_row = ["TOP 10 BUY OPPORTUNITIES"] + [""] * (num_cols - 1)
+    top10_hdr_row = top10_headers + [""] * (num_cols - len(top10_headers))
+    top10_data_rows = []
+    for rank, r in enumerate(top10, 1):
+        r_clean = clean_row(r)
+        top10_data_rows.append([
+            rank,
+            r_clean[C["symbol"]],
+            r_clean[C["buying_zone"]],
+            r_clean[C["total"]],
+            r_clean[C["cmp"]],
+            r_clean[C["price_range"]],
+            r_clean[C["action"]],
+        ] + [""] * (num_cols - len(top10_headers)))
+
+    blank_sep = [""] * num_cols
+
+    # 2. Main Watchlist Table (full 41-column GITHUB DATA layout)
+    headers = [""] * num_cols
+    widths  = [70] * num_cols
+    for key, idx in C.items():
+        headers[idx] = GITHUB_DATA_HEADER_NAMES.get(key, key)
+        widths[idx]  = GITHUB_DATA_COL_WIDTHS.get(key, 70)
+
+    FROZEN_COLS = 1
+    group_ranges = [(C[sk], C[ek], label) for sk, ek, label in GROUP_DEFS]
+    group_row = [""] * num_cols
+    for start_col, end_col, label in group_ranges:
+        label_col = FROZEN_COLS if (start_col < FROZEN_COLS <= end_col) else start_col
+        group_row[label_col] = label
+
+    watchlist_rows = [clean_row(r) for r in rows]
+
+    all_data = [top10_title_row, top10_hdr_row] + top10_data_rows + [blank_sep, group_row, headers] + watchlist_rows
+
+    try:
+        ws = sh.worksheet(tab_name)
+    except Exception:
+        ws = sh.add_worksheet(tab_name, rows=len(all_data) + 20, cols=num_cols)
+
+    clear_sheet_safe(ws)
+    batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
+    update_sheet_safe(ws, "A1", all_data, value_input_option="USER_ENTERED")
+
+    reqs = []
+    reqs.append({"clearBasicFilter": {"sheetId": ws.id}})
+
+    # Top 10 Title Banner: Merge A1:G1, deep navy
+    reqs.append({
+        "mergeCells": {
+            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": len(top10_headers)},
+            "mergeType": "MERGE_ALL"
+        }
+    })
+    reqs.append({
+        "repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": len(top10_headers)},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": hex_rgb("1a237e"),
+                "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 11},
+                "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+            }},
+            "fields": "userEnteredFormat"
+        }
+    })
+
+    # Top 10 Header Row (Row 2)
+    reqs.append({
+        "repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": 2, "startColumnIndex": 0, "endColumnIndex": len(top10_headers)},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": hex_rgb("37474f"),
+                "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 10},
+                "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+            }},
+            "fields": "userEnteredFormat"
+        }
+    })
+
+    # Top 10 Data Rows Formatting
+    for idx, r in enumerate(top10):
+        rn = idx + 2
+        # Rank
+        reqs.append({
+            "repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn + 1, "startColumnIndex": 0, "endColumnIndex": 1},
+                "cell": {"userEnteredFormat": {"textFormat": {"bold": True}, "horizontalAlignment": "CENTER"}},
+                "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment"
+            }
+        })
+        # Symbol
+        reqs.append(color_cell_req(ws.id, rn, 1, "eaf4fb", "1565c0", bold=True))
+        # Buying Zone
+        b_zone = str(r[C["buying_zone"]]).strip() if len(r) > C["buying_zone"] else ""
+        if b_zone in GITHUB_DATA_BUYING_ZONE_COLORS:
+            bg_b, fg_b = GITHUB_DATA_BUYING_ZONE_COLORS[b_zone]
+            reqs.append(color_cell_req(ws.id, rn, 2, bg_b, fg_b))
+        # Total Score
+        reqs.append({
+            "repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": rn, "endRowIndex": rn + 1, "startColumnIndex": 3, "endColumnIndex": 4},
+                "cell": {"userEnteredFormat": {"textFormat": {"bold": True}, "horizontalAlignment": "CENTER"}},
+                "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.horizontalAlignment"
+            }
+        })
+        # CMP (Col index 4) - Currency
+        reqs.append(color_cell_req(ws.id, rn, 4, "f1f8e9", "33691e", bold=False))
+        reqs += get_currency_format_reqs(ws.id, rn, rn + 1, 4, 5)
+        # Price Range (Col index 5)
+        if b_zone in GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS:
+            lbg, lfg = GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS[b_zone]
+            reqs.append(color_cell_req(ws.id, rn, 5, lbg, lfg, bold=False))
+        # Action (Col index 6)
+        act = str(r[C["action"]]).strip() if len(r) > C["action"] else ""
+        if act in GITHUB_DATA_ACTION_COLORS:
+            bg_a, fg_a = GITHUB_DATA_ACTION_COLORS[act]
+            reqs.append(color_cell_req(ws.id, rn, 6, bg_a, fg_a))
+
+    # Main Watchlist Table Offset
+    watchlist_start_idx = 2 + len(top10) + 1  # Group header banner row index
+    col_hdr_idx = watchlist_start_idx + 1      # Column header row index
+    data_start_idx = col_hdr_idx + 1          # First watchlist data row index
+
+    # Group headers merge and colors
+    for start_col, end_col, label in group_ranges:
+        eff_start = FROZEN_COLS if (start_col < FROZEN_COLS <= end_col) else start_col
+        if eff_start < end_col:
+            reqs.append({
+                "mergeCells": {
+                    "range": {"sheetId": ws.id, "startRowIndex": watchlist_start_idx, "endRowIndex": watchlist_start_idx + 1,
+                              "startColumnIndex": eff_start, "endColumnIndex": end_col + 1},
+                    "mergeType": "MERGE_ALL"
+                }
+            })
+
+    reqs += get_group_header_color_reqs(ws.id, group_ranges, frozen_cols=FROZEN_COLS, row_idx=watchlist_start_idx)
+
+    # Column headers styling
+    reqs.append({
+        "repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": col_hdr_idx, "endRowIndex": col_hdr_idx + 1,
+                      "startColumnIndex": 0, "endColumnIndex": num_cols},
+            "cell": {"userEnteredFormat": {
+                "backgroundColor": hex_rgb("37474f"),
+                "textFormat": {"foregroundColor": hex_rgb("ffffff"), "bold": True, "fontSize": 9},
+                "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+            }},
+            "fields": "userEnteredFormat"
+        }
+    })
+
+    # Structural widths and freeze pane
+    reqs += get_structural_format_reqs(ws.id, len(rows), num_cols, widths, freeze_rows=2, freeze_cols=1, header_row_idx=col_hdr_idx)
+
+    # Number formats for percentage and currency columns
+    pct_cols = [C["day_chg_pct"], C["return_1w"], C["return_1m"], C["div"], C["roe"], C["roa"], C["rev_growth"]]
+    for col_idx in pct_cols:
+        reqs += get_percentage_format_reqs(ws.id, data_start_idx, data_start_idx + len(rows), col_idx, col_idx + 1)
+
+    curr_cols = [C["low52"], C["cmp"], C["high52"], C["eps"], C["bv"]]
+    for col_idx in curr_cols:
+        reqs += get_currency_format_reqs(ws.id, data_start_idx, data_start_idx + len(rows), col_idx, col_idx + 1)
+
+    def sf(row, key):
+        idx = C[key]
+        try:
+            v = str(row[idx]).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip()
+            return float(v) if len(row) > idx and v else None
+        except:
+            return None
+
+    # Row level colorings for full watchlist
+    for i, row in enumerate(rows):
+        rn = data_start_idx + i
+
+        action    = str(row[C["action"]]).strip() if len(row) > C["action"] else ""
+        b_zone    = str(row[C["buying_zone"]]).strip() if len(row) > C["buying_zone"] else ""
+        tech_set  = str(row[C["technical_setup"]]).strip() if len(row) > C["technical_setup"] else ""
+        trend_val = str(row[C["trend"]]).strip() if len(row) > C["trend"] else ""
+        risk_val  = str(row[C["econ_sens"]]).strip() if len(row) > C["econ_sens"] else ""
+
+        rsi_v    = sf(row, "rsi")
+        pe_v     = sf(row, "pe")
+        eps_v    = sf(row, "eps")
+        pb_v     = sf(row, "pb")
+        div_v    = sf(row, "div")
+        roe_v    = sf(row, "roe")
+        roa_v    = sf(row, "roa")
+        debt_v   = sf(row, "debt_eq")
+        growth_v = sf(row, "rev_growth")
+        beta_v   = sf(row, "beta")
+        vol_v    = sf(row, "vol_spike")
+        q_sc     = sf(row, "quality")
+        v_sc     = sf(row, "valuation")
+        t_sc     = sf(row, "timing")
+        tot_sc   = sf(row, "total")
+
+        mcap_tier_v = sf(row, "mcap")
+        if mcap_tier_v is not None:
+            if mcap_tier_v >= 25000:     cb, cf = "d9ead3", "0b8043"
+            elif mcap_tier_v >= 5000:    cb, cf = "d9eaf7", "1565c0"
+            else:                        cb, cf = "fde9d9", "c62828"
+            for key in ("symbol", "mcap"):
+                reqs.append(color_cell_req(ws.id, rn, C[key], cb, cf))
+
+        reqs.append(color_cell_req(ws.id, rn, C["high52"], "eaf4fb", "1565c0", bold=False))
+        reqs.append(color_cell_req(ws.id, rn, C["low52"], "fdf2f2", "c62828", bold=False))
+
+        day_chg_v = sf(row, "day_chg_pct")
+        if day_chg_v is not None:
+            if day_chg_v > 0:   reqs.append(color_cell_req(ws.id, rn, C["day_chg_pct"], "d9ead3", "0b8043"))
+            elif day_chg_v < 0: reqs.append(color_cell_req(ws.id, rn, C["day_chg_pct"], "fde9d9", "c62828"))
+            else:               reqs.append(color_cell_req(ws.id, rn, C["day_chg_pct"], "f1f1f1", "666666"))
+
+        ret1w_v = sf(row, "return_1w")
+        if ret1w_v is not None:
+            if ret1w_v > 0:   reqs.append(color_cell_req(ws.id, rn, C["return_1w"], "d9ead3", "0b8043"))
+            elif ret1w_v < 0: reqs.append(color_cell_req(ws.id, rn, C["return_1w"], "fde9d9", "c62828"))
+            else:             reqs.append(color_cell_req(ws.id, rn, C["return_1w"], "f1f1f1", "666666"))
+
+        ret1m_v = sf(row, "return_1m")
+        if ret1m_v is not None:
+            if ret1m_v > 0:   reqs.append(color_cell_req(ws.id, rn, C["return_1m"], "d9ead3", "0b8043"))
+            elif ret1m_v < 0: reqs.append(color_cell_req(ws.id, rn, C["return_1m"], "fde9d9", "c62828"))
+            else:             reqs.append(color_cell_req(ws.id, rn, C["return_1m"], "f1f1f1", "666666"))
+
+        pct_high_v = sf(row, "pct_high")
+        if pct_high_v is not None:
+            if pct_high_v >= -20: reqs.append(color_cell_req(ws.id, rn, C["pct_high"], "d9ead3", "0b8043"))
+            else:                 reqs.append(color_cell_req(ws.id, rn, C["pct_high"], "fde9d9", "c62828"))
+
+        if pe_v is not None:
+            if 0 < pe_v <= 25: reqs.append(color_cell_req(ws.id, rn, C["pe"], "d9ead3", "0b8043"))
+            elif pe_v <= 40:   reqs.append(color_cell_req(ws.id, rn, C["pe"], "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, C["pe"], "fde9d9", "c62828"))
+
+        if eps_v is not None:
+            reqs.append(color_cell_req(ws.id, rn, C["eps"], "d9ead3", "0b8043") if eps_v > 0
+                        else color_cell_req(ws.id, rn, C["eps"], "fde9d9", "c62828"))
+
+        if pb_v is not None:
+            if pb_v <= 3:      reqs.append(color_cell_req(ws.id, rn, C["pb"], "d9ead3", "0b8043"))
+            elif pb_v <= 5:    reqs.append(color_cell_req(ws.id, rn, C["pb"], "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, C["pb"], "fde9d9", "c62828"))
+
+        if div_v is not None:
+            if div_v >= 2:     reqs.append(color_cell_req(ws.id, rn, C["div"], "d9ead3", "0b8043"))
+            elif div_v >= 1:   reqs.append(color_cell_req(ws.id, rn, C["div"], "fff2cc", "7f4f00"))
+
+        if rsi_v is not None:
+            if rsi_v < 35:     reqs.append(color_cell_req(ws.id, rn, C["rsi"], "d9ead3", "0b8043"))
+            elif rsi_v > 70:   reqs.append(color_cell_req(ws.id, rn, C["rsi"], "fde9d9", "c62828"))
+            elif rsi_v > 60:   reqs.append(color_cell_req(ws.id, rn, C["rsi"], "fff2cc", "7f4f00"))
+
+        if roe_v is not None:
+            if roe_v >= 15:    reqs.append(color_cell_req(ws.id, rn, C["roe"], "d9ead3", "0b8043"))
+            elif roe_v >= 8:   reqs.append(color_cell_req(ws.id, rn, C["roe"], "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, C["roe"], "fde9d9", "c62828"))
+
+        if roa_v is not None:
+            if roa_v >= 2:     reqs.append(color_cell_req(ws.id, rn, C["roa"], "d9ead3", "0b8043"))
+            elif roa_v >= 1:   reqs.append(color_cell_req(ws.id, rn, C["roa"], "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, C["roa"], "fde9d9", "c62828"))
+
+        if debt_v is not None:
+            if debt_v <= 0.5:  reqs.append(color_cell_req(ws.id, rn, C["debt_eq"], "d9ead3", "0b8043"))
+            elif debt_v <= 1:  reqs.append(color_cell_req(ws.id, rn, C["debt_eq"], "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, C["debt_eq"], "fde9d9", "c62828"))
+
+        if growth_v is not None:
+            if growth_v >= 10: reqs.append(color_cell_req(ws.id, rn, C["rev_growth"], "d9ead3", "0b8043"))
+            elif growth_v >= 0: reqs.append(color_cell_req(ws.id, rn, C["rev_growth"], "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, C["rev_growth"], "fde9d9", "c62828"))
+
+        if beta_v is not None:
+            if beta_v <= 1:    reqs.append(color_cell_req(ws.id, rn, C["beta"], "d9ead3", "0b8043"))
+            elif beta_v <= 1.5: reqs.append(color_cell_req(ws.id, rn, C["beta"], "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, C["beta"], "fde9d9", "c62828"))
+
+        reqs.append(color_cell_req(ws.id, rn, C["strengths"], "f1f9f1", "0b8043", bold=False))
+        reqs.append(color_cell_req(ws.id, rn, C["weaknesses"], "fdf2f2", "c62828", bold=False))
+
+        if tech_set in TECHNICAL_SETUP_COLORS:
+            bg, fg = TECHNICAL_SETUP_COLORS[tech_set]
+            reqs.append(color_cell_req(ws.id, rn, C["technical_setup"], bg, fg))
+        reqs.append(color_cell_req(ws.id, rn, C["cmp"], "f1f8e9", "33691e", bold=False))
+        reqs.append(color_cell_req(ws.id, rn, C["fair_val"], "e8f5e9", "1b5e20", bold=False))
+        if action in GITHUB_DATA_ACTION_COLORS:
+            bg_a, fg_a = GITHUB_DATA_ACTION_COLORS[action]
+            reqs.append(color_cell_req(ws.id, rn, C["action"], bg_a, fg_a))
+        if b_zone in GITHUB_DATA_BUYING_ZONE_COLORS:
+            bg_b, fg_b = GITHUB_DATA_BUYING_ZONE_COLORS[b_zone]
+            reqs.append(color_cell_req(ws.id, rn, C["buying_zone"], bg_b, fg_b))
+            if b_zone in GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS:
+                lbg, lfg = GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS[b_zone]
+                reqs.append(color_cell_req(ws.id, rn, C["price_range"], lbg, lfg, bold=False))
+
+        if risk_val:
+            if risk_val == "Very High": reqs.append(color_cell_req(ws.id, rn, C["econ_sens"], "fde9d9", "c62828"))
+            elif risk_val in ("Medium-High", "High"): reqs.append(color_cell_req(ws.id, rn, C["econ_sens"], "ffe599", "7f4f00"))
+            elif risk_val == "Medium": reqs.append(color_cell_req(ws.id, rn, C["econ_sens"], "fff2cc", "7f4f00"))
+            elif risk_val in ("Low", "Low-Medium"): reqs.append(color_cell_req(ws.id, rn, C["econ_sens"], "d9ead3", "0b8043"))
+
+        if q_sc is not None:
+            if q_sc >= 30:   reqs.append(color_cell_req(ws.id, rn, C["quality"], "d9ead3", "0b8043"))
+            elif q_sc <= 15: reqs.append(color_cell_req(ws.id, rn, C["quality"], "fde9d9", "c62828"))
+        if v_sc is not None:
+            if v_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, C["valuation"], "d9ead3", "0b8043"))
+            elif v_sc <= 10: reqs.append(color_cell_req(ws.id, rn, C["valuation"], "fde9d9", "c62828"))
+        if t_sc is not None:
+            if t_sc >= 22:   reqs.append(color_cell_req(ws.id, rn, C["timing"], "d9ead3", "0b8043"))
+            elif t_sc <= 10: reqs.append(color_cell_req(ws.id, rn, C["timing"], "fde9d9", "c62828"))
+        if tot_sc is not None:
+            if   tot_sc >= 65: reqs.append(color_cell_req(ws.id, rn, C["total"], "00c853", "ffffff"))
+            elif tot_sc >= 50: reqs.append(color_cell_req(ws.id, rn, C["total"], "d9ead3", "0b8043"))
+            elif tot_sc >= 35: reqs.append(color_cell_req(ws.id, rn, C["total"], "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, C["total"], "fde9d9", "c62828"))
+
+        if vol_v is not None:
+            if vol_v >= 2:     reqs.append(color_cell_req(ws.id, rn, C["vol_spike"], "fde9d9", "c62828"))
+            elif vol_v >= 1.5: reqs.append(color_cell_req(ws.id, rn, C["vol_spike"], "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws.id, rn, C["vol_spike"], "d9ead3", "0b8043"))
+
+        if trend_val in TREND_COLORS:
+            bg, fg = TREND_COLORS[trend_val]
+            reqs.append(color_cell_req(ws.id, rn, C["trend"], bg, fg))
+
+        news_sent = str(row[C["news_sentiment"]]).strip() if len(row) > C["news_sentiment"] else ""
+        if "Bullish" in news_sent:
+            reqs.append(color_cell_req(ws.id, rn, C["news_sentiment"], "d9ead3", "0b8043"))
+        elif "Bearish" in news_sent:
+            reqs.append(color_cell_req(ws.id, rn, C["news_sentiment"], "fde9d9", "c62828"))
+        elif news_sent:
+            reqs.append(color_cell_req(ws.id, rn, C["news_sentiment"], "f1f1f1", "555555"))
+
+        reqs.append(color_cell_req(ws.id, rn, C["news_summary"], "e8f5f9", "01579b", bold=False))
+        reqs.append(color_cell_req(ws.id, rn, C["news_source"],  "f5f5f5", "757575", bold=False))
+
+    batch_update_safe(sh, reqs)
+    log.info(f"{tab_name} tab written and formatted with Top 10 Opportunity Callout ({len(rows)} rows)")
+    return ws
 
 
 def process_all_watchlists(sh, nc_cache=None, shared_prices=None, shared_fund=None, shared_tech=None, shared_rev=None):
@@ -150,11 +514,6 @@ def process_all_watchlists(sh, nc_cache=None, shared_prices=None, shared_fund=No
             )
             all_rows[tab_name] = rows
         except Exception as e:
-            # write_github_data() clears the worksheet before it re-applies
-            # formatting — if this exception fired after that clear (which
-            # write_github_data's own stage-tagged logging above will show),
-            # '{tab_name}' is left partially written/styled, not unaffected.
-            # Don't understate that here.
             log.error(
                 f"[process_all_watchlists] tab='{tab_name}' FAILED "
                 f"({type(e).__name__}): {e}. This tab may now be partially "

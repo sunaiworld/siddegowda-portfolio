@@ -1,4 +1,4 @@
-﻿"""
+"""
 mf_data_fetcher.py
 Fetches daily Mutual Fund NAVs and ISIN mappings from the official AMFI API.
 """

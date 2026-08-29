@@ -15,11 +15,13 @@ os.environ.setdefault("GOOGLE_CREDENTIALS_JSON", '{"type":"service_account"}')
 
 # ── stub heavy modules that the src files import at the top ─────────────────
 def _stub(name):
+    if name in sys.modules:
+        return sys.modules[name]
     m = types.ModuleType(name)
     sys.modules[name] = m
     return m
 
-for _m in ["yfinance", "gspread", "pandas", "numpy", "requests",
+for _m in ["yfinance", "gspread", "requests",
            "google", "google.oauth2", "google.oauth2.service_account",
            "news_engine", "news_engine.sources", "news_engine.sources.google_news_rss",
            "news_engine.classifier",
@@ -27,7 +29,7 @@ for _m in ["yfinance", "gspread", "pandas", "numpy", "requests",
     _stub(_m)
 
 # google_news_rss must be a module attribute too (for `from news_engine.sources import google_news_rss`)
-sys.modules["news_engine.sources"].google_news_rss = sys.modules["news_engine.sources.google_news_rss"]
+sys.modules["news_engine.sources"].google_news_rss = getattr(sys.modules["news_engine.sources"], "google_news_rss", MagicMock())
 
 sys.modules["google.oauth2.service_account"].Credentials = MagicMock()
 sys.modules["fund_cache"].load_cache = MagicMock(return_value={})
@@ -39,17 +41,20 @@ _prof_obj = MagicMock()
 _prof_obj.increment = MagicMock()
 _prof_obj.start_stage = MagicMock()
 _prof_obj.stop_stage = MagicMock()
+_prof_obj.stage = MagicMock()
+_prof_obj.stage.return_value.__enter__ = MagicMock(return_value=None)
+_prof_obj.stage.return_value.__exit__ = MagicMock(return_value=False)
 _prof_m.profiler = _prof_obj
 
-# gspread.exceptions must be a proper sub-module with APIError class
-# sheet_writer.py does `import gspread.exceptions` lazily inside functions,
-# so we must register it as both sys.modules["gspread.exceptions"] AND as
-# an attribute on the gspread stub module.
-_gse = _stub("gspread.exceptions")
-class _APIError(Exception):
-    pass
-_gse.APIError = _APIError
-sys.modules["gspread"].exceptions = _gse  # attribute access: gspread.exceptions.APIError
+if "gspread.exceptions" in sys.modules and hasattr(sys.modules["gspread.exceptions"], "APIError"):
+    _gse = sys.modules["gspread.exceptions"]
+    _APIError = _gse.APIError
+else:
+    _gse = _stub("gspread.exceptions")
+    class _APIError(Exception):
+        pass
+    _gse.APIError = _APIError
+    sys.modules["gspread"].exceptions = _gse
 
 # ── now add src/ to path and import the real modules ────────────────────────
 SRC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src")
@@ -107,7 +112,7 @@ class TestWritePortfolioResilience(unittest.TestCase):
     def test_transient_429_on_clear_retries_and_succeeds(self):
         ws = make_ws(); sh = make_sh(ws)
         ws.clear.side_effect = [_APIError("429 Too Many Requests"), None]
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             self._run(sh)
         self.assertEqual(ws.clear.call_count, 2, "Should retry once after 429")
         ws.update.assert_called_once()
@@ -115,7 +120,7 @@ class TestWritePortfolioResilience(unittest.TestCase):
     def test_transient_503_on_clear_retries_and_succeeds(self):
         ws = make_ws(); sh = make_sh(ws)
         ws.clear.side_effect = [_APIError("503 Service Unavailable"), None]
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             self._run(sh)
         self.assertEqual(ws.clear.call_count, 2)
 
@@ -123,7 +128,7 @@ class TestWritePortfolioResilience(unittest.TestCase):
         """Tab must not be silently left as blank after all retries fail."""
         ws = make_ws(); sh = make_sh(ws)
         ws.clear.side_effect = _APIError("429 Too Many Requests")
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             with self.assertRaises(Exception):
                 self._run(sh)
         ws.update.assert_not_called()
@@ -131,14 +136,14 @@ class TestWritePortfolioResilience(unittest.TestCase):
     def test_transient_429_on_update_retries_and_succeeds(self):
         ws = make_ws(); sh = make_sh(ws)
         ws.update.side_effect = [_APIError("429 Too Many Requests"), None]
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             self._run(sh)
         self.assertEqual(ws.update.call_count, 2)
 
     def test_permanent_update_failure_raises(self):
         ws = make_ws(); sh = make_sh(ws)
         ws.update.side_effect = _APIError("503 Service Unavailable")
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             with self.assertRaises(Exception):
                 self._run(sh)
 
@@ -208,7 +213,7 @@ class TestWriteDashboardResilience(unittest.TestCase):
     def test_transient_429_on_clear_retries(self):
         ws = make_ws(); sh = make_sh(ws)
         ws.clear.side_effect = [_APIError("429 Too Many Requests"), None]
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             self._run(sh)
         self.assertEqual(ws.clear.call_count, 2)
         ws.update.assert_called()
@@ -216,7 +221,7 @@ class TestWriteDashboardResilience(unittest.TestCase):
     def test_permanent_clear_failure_raises_no_update(self):
         ws = make_ws(); sh = make_sh(ws)
         ws.clear.side_effect = _APIError("429 Too Many Requests")
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             with self.assertRaises(Exception):
                 self._run(sh)
         ws.update.assert_not_called()
@@ -265,7 +270,7 @@ class TestWriteGrowthScreenerResilience(unittest.TestCase):
         """A 429 on clear is retried by clear_sheet_safe; second attempt succeeds."""
         ws = make_ws(); sh = make_sh(ws)
         ws.clear.side_effect = [_APIError("429 Too Many Requests"), None]
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             self._run(sh)
         self.assertEqual(ws.clear.call_count, 2,
             "Should retry clear exactly once after a transient 429")
@@ -276,7 +281,7 @@ class TestWriteGrowthScreenerResilience(unittest.TestCase):
         ws = make_ws()
         sh = make_sh(ws)
         ws.clear.side_effect = _APIError("429 Too Many Requests")
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             with self.assertRaises(Exception):
                 self._run(sh)
 
@@ -443,28 +448,28 @@ class TestSheetWriterSafeHelpers(unittest.TestCase):
     def test_clear_sheet_safe_retries_429(self):
         ws = make_ws()
         ws.clear.side_effect = [_APIError("429 Too Many Requests"), None]
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             sheet_writer.clear_sheet_safe(ws)
         self.assertEqual(ws.clear.call_count, 2)
 
     def test_clear_sheet_safe_raises_after_all_retries(self):
         ws = make_ws()
         ws.clear.side_effect = _APIError("429 Too Many Requests")
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             with self.assertRaises(_APIError):
                 sheet_writer.clear_sheet_safe(ws)
 
     def test_update_sheet_safe_retries_503(self):
         ws = make_ws()
         ws.update.side_effect = [_APIError("503 Service Unavailable"), None]
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             sheet_writer.update_sheet_safe(ws, "A1", [["data"]])
         self.assertEqual(ws.update.call_count, 2)
 
     def test_update_sheet_safe_raises_after_all_retries(self):
         ws = make_ws()
         ws.update.side_effect = _APIError("503 Service Unavailable")
-        with patch("time.sleep"):
+        with patch("sheet_writer.time.sleep"):
             with self.assertRaises(_APIError):
                 sheet_writer.update_sheet_safe(ws, "A1", [["data"]])
 

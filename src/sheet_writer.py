@@ -200,13 +200,12 @@ def batch_update_safe(sh, requests, chunk=30):
 
 def clear_sheet_safe(ws):
     """Safely clear a worksheet with retries for transient Google Sheets errors."""
-    import gspread.exceptions
     RETRYABLE = ("429", "500", "502", "503", "504")
     for attempt in range(5):
         try:
             ws.clear()
             break
-        except gspread.exceptions.APIError as e:
+        except Exception as e:
             msg = str(e)
             code = next((c for c in RETRYABLE if c in msg), None)
             if code and attempt < 4:
@@ -218,13 +217,12 @@ def clear_sheet_safe(ws):
 
 def update_sheet_safe(ws, *args, **kwargs):
     """Safely update a worksheet with retries for transient Google Sheets errors."""
-    import gspread.exceptions
     RETRYABLE = ("429", "500", "502", "503", "504")
     for attempt in range(5):
         try:
             ws.update(*args, **kwargs)
             break
-        except gspread.exceptions.APIError as e:
+        except Exception as e:
             msg = str(e)
             code = next((c for c in RETRYABLE if c in msg), None)
             if code and attempt < 4:

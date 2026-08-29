@@ -97,13 +97,15 @@ def _gradient_color(score, lo=0, hi=100):
 def _format_data_tab(sh, ws, headers, num_data_rows, total_score_col=None, action_col=None, new_rows_count=None):
     """
     Shared presentation-only formatter reused for both History and
-    Portfolio History. Reuses main.py's hex_rgb / color_cell_req /
-    batch_update_safe (already used by write_github_data /
-    write_growth_screener) instead of duplicating color-formatting
-    logic — lazy import, same pattern fund_cache.py and
-    portfolio_analytics.py already use to avoid circular imports.
+    Portfolio History. Reuses sheet_formatter and sheet_writer
+    instead of duplicating formatting logic.
     """
-    from main import hex_rgb, color_cell_req, batch_update_safe  # lazy import
+    import sheet_formatter
+    import sheet_writer
+
+    hex_rgb = sheet_formatter.hex_rgb
+    color_cell_req = sheet_formatter.color_cell_req
+    batch_update_safe = sheet_writer.batch_update_safe
 
     total_rows = num_data_rows + 1  # + header
     reqs = []
@@ -183,7 +185,9 @@ def _format_data_tab(sh, ws, headers, num_data_rows, total_score_col=None, actio
 
 
 def _format_history_tab(sh, ws, num_data_rows, new_rows_count=None):
-    from main import hex_rgb, batch_update_safe  # lazy import
+    import sheet_formatter
+    import sheet_writer
+    batch_update_safe = sheet_writer.batch_update_safe
 
     reqs = []
     if num_data_rows > 0:
@@ -211,7 +215,8 @@ def _format_history_tab(sh, ws, num_data_rows, new_rows_count=None):
 
 
 def _format_portfolio_history_tab(sh, ws, num_data_rows, new_rows_count=None):
-    from main import batch_update_safe  # lazy import
+    import sheet_writer
+    batch_update_safe = sheet_writer.batch_update_safe
 
     reqs = []
     if num_data_rows > 0:
@@ -236,16 +241,11 @@ def _format_portfolio_history_tab(sh, ws, num_data_rows, new_rows_count=None):
 
 def append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=None):
     """
-    results: the same row-lists build_result_row()/write_github_data()
-    already use, indexed via main.GITHUB_DATA_COLS so this stays
-    correct if the row layout shifts again. Call once per run, AFTER
-    compute_todays_changes() has already read History for comparison.
-    prices: {symbol: cmp} — CMP is no longer stored in GITHUB DATA rows
-    (removed for readability), but History still tracks price over
-    time, so it's read from the same `prices` dict run_portfolio_update()
-    already built — no new fetch.
+    Appends today's analytical snapshot to History and Portfolio History tabs.
+    Idempotent: updates today's snapshot in-place if called multiple times on the same date.
     """
-    from main import GITHUB_DATA_COLS  # lazy import — avoids circular import with main.py
+    from github_data_builder import GITHUB_DATA_COLS
+    import sheet_writer
 
     today = datetime.now().strftime("%Y-%m-%d")
     ws = _get_or_create(sh, HISTORY_TAB, HISTORY_HEADERS)
@@ -272,21 +272,39 @@ def append_history_snapshot(sh, results, portfolio_live_value, prices, health_sc
         cmp_ = clean_val(prices.get(sym, ""))
         snap_rows.append([today, sym, cmp_, pe, rsi, total, action, quality, valuation, timing])
 
-    if snap_rows:
-        ws.append_rows(snap_rows)
-    log.info(f"History: {len(snap_rows)} symbol snapshots appended for {today}")
+    if not snap_rows:
+        return
 
-    total_history_rows = len(ws.get_all_values()) - 1
+    # Check existing rows to prevent same-day duplicates
+    existing_history = ws.get_all_values()
+    if len(existing_history) > 1:
+        non_today_rows = [r for r in existing_history[1:] if r and len(r) > 0 and r[0] != today]
+        all_history_data = [HISTORY_HEADERS] + non_today_rows + snap_rows
+        sheet_writer.update_sheet_safe(ws, "A1", all_history_data, value_input_option="USER_ENTERED")
+        total_history_rows = len(all_history_data) - 1
+    else:
+        ws.append_rows(snap_rows)
+        total_history_rows = len(snap_rows)
+
+    log.info(f"History: {len(snap_rows)} symbol snapshots recorded for {today}")
     _format_history_tab(sh, ws, total_history_rows, len(snap_rows))
 
     ph_headers = PORTFOLIO_HISTORY_HEADERS
     pws = _get_or_create(sh, PORTFOLIO_HISTORY_TAB, ph_headers)
     _ensure_header_width(pws, ph_headers)
-    pws.append_row([today, round(portfolio_live_value, 2),
-                     health_score if health_score is not None else ""])
-    log.info(f"Portfolio History: value + health snapshot appended for {today}")
 
-    total_ph_rows = len(pws.get_all_values()) - 1
+    existing_ph = pws.get_all_values()
+    new_ph_entry = [today, round(portfolio_live_value, 2), health_score if health_score is not None else ""]
+    if len(existing_ph) > 1:
+        non_today_ph = [r for r in existing_ph[1:] if r and len(r) > 0 and r[0] != today]
+        all_ph_data = [ph_headers] + non_today_ph + [new_ph_entry]
+        sheet_writer.update_sheet_safe(pws, "A1", all_ph_data, value_input_option="USER_ENTERED")
+        total_ph_rows = len(all_ph_data) - 1
+    else:
+        pws.append_row(new_ph_entry)
+        total_ph_rows = 1
+
+    log.info(f"Portfolio History: value + health snapshot recorded for {today}")
     _format_portfolio_history_tab(sh, pws, total_ph_rows, 1)
 
 
@@ -424,7 +442,7 @@ def compute_todays_changes(sh, results):
     PRIOR TRADING DAY's History snapshot. Call BEFORE
     append_history_snapshot() in the same run.
     """
-    from main import GITHUB_DATA_COLS  # lazy import — avoids circular import with main.py
+    from github_data_builder import GITHUB_DATA_COLS
 
     prev_date, snapshot = _load_previous_trading_day_snapshot(sh)
     if prev_date is None:

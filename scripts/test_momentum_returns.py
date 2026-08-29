@@ -67,15 +67,15 @@ class TestMomentumReturns(unittest.TestCase):
         f = {"sector": "Technology", "industry": "Software", "high52": 120.0, "low52": 80.0, "mcap_cr": 50000}
         tech = {
             "rsi": 55.0, "sma200": 95.0, "vol_spike": 1.2, "trend": "Uptrend",
-            "cross": "", "day_chg_pct": 1.5, "return_1w": "+3.45%", "return_1m": "-2.10%"
+            "cross": "", "day_chg_pct": 1.5, "return_1w": 3.45, "return_1m": -2.10
         }
         rev_gr = 12.5
 
         row, archetype, tot_sc, action = build_result_row(sym, cmp, f, tech, rev_gr)
 
         self.assertEqual(len(row), len(GITHUB_DATA_COLS))
-        self.assertEqual(row[GITHUB_DATA_COLS["return_1w"]], "+3.45%")
-        self.assertEqual(row[GITHUB_DATA_COLS["return_1m"]], "-2.10%")
+        self.assertEqual(row[GITHUB_DATA_COLS["return_1w"]], 3.45)
+        self.assertEqual(row[GITHUB_DATA_COLS["return_1m"]], -2.10)
 
     def test_missing_insufficient_history(self):
         """Verify handling when tech has blank/missing returns."""

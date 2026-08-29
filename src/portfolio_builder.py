@@ -465,13 +465,9 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
         c["wt_pct"] = round((c["value"] / portfolio_live_value_c) * 100, 2) if portfolio_live_value_c else 0
         
         
-        c["sl_price"] = round(c["avg_buy"] * (1 - SL_PCT), 2)
-        c["target"] = round(c["avg_buy"] * (1 + TARGET_PCT), 2)
-        c["buy_more"] = round(c["avg_buy"] * 0.90, 2)
-        
         if sym in source_map and source_map[sym]:
             c["investment_source"] = source_map[sym].upper()
-        elif fund_map.get(sym, {}).get("sector") == "ETFs":
+        elif fund_map.get(sym, {}).get("sector") == "ETFs" or "BEES" in sym.upper() or sym.upper().endswith("ETF") or sym.upper() in ("ICICIB22", "CPSEETF", "SETFNIF50", "GOLDBEES", "NIFTYBEES"):
             c["investment_source"] = "ETF"
         elif sym in smallcase_syms:
             c["investment_source"] = "SMALLCASE"
@@ -480,16 +476,31 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
         else:
             c["investment_source"] = "UNKNOWN"
 
-        if len(c["isins"]) > 1:
-            c["signal"] = "REQUIRES REVIEW (Corp Action)"
-        elif c["cmp"] <= c["sl_price"]:
-            c["signal"] = "SELL - SL HIT"
-        elif c["cmp"] >= c["target"]:
-            c["signal"] = "TARGET HIT - TRIM"
-        elif c["cmp"] <= c["buy_more"]:
-            c["signal"] = "BUY MORE"
+        if c["investment_source"] == "ETF":
+            # ETFs represent broad basket/index allocation — exempt from generic -7% stock stop-loss
+            c["sl_price"] = ""
+            c["target"] = ""
+            c["buy_more"] = round(c["avg_buy"] * 0.90, 2)
+            if len(c["isins"]) > 1:
+                c["signal"] = "REQUIRES REVIEW (Corp Action)"
+            elif c["cmp"] <= c["buy_more"]:
+                c["signal"] = "BUY MORE"
+            else:
+                c["signal"] = "HOLD"
         else:
-            c["signal"] = "HOLD"
+            c["sl_price"] = round(c["avg_buy"] * (1 - SL_PCT), 2)
+            c["target"] = round(c["avg_buy"] * (1 + TARGET_PCT), 2)
+            c["buy_more"] = round(c["avg_buy"] * 0.90, 2)
+            if len(c["isins"]) > 1:
+                c["signal"] = "REQUIRES REVIEW (Corp Action)"
+            elif c["cmp"] <= c["sl_price"]:
+                c["signal"] = "SELL - SL HIT"
+            elif c["cmp"] >= c["target"]:
+                c["signal"] = "TARGET HIT - TRIM"
+            elif c["cmp"] <= c["buy_more"]:
+                c["signal"] = "BUY MORE"
+            else:
+                c["signal"] = "HOLD"
             
         combined_rows.append(c)
 

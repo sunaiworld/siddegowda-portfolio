@@ -46,13 +46,12 @@ GITHUB_DATA_COLS = {
     # Financial Health & Efficiency
     "rev_growth": 25, "roe": 26, "roa": 27, "debt_eq": 28,
     # Sentiment & Qualitative Data
-    "news_summary": 29, "news_reason": 30, "news_source": 31,
-    "news_sentiment": 32, "bullish_score": 33, "bearish_score": 34,
-    "strengths": 35, "weaknesses": 36,
+    "news_summary": 29, "news_sentiment": 30, "news_source": 31,
+    "strengths": 32, "weaknesses": 33,
     # Automated Scoring
-    "quality": 37, "valuation": 38, "timing": 39, "total": 40,
+    "quality": 34, "valuation": 35, "timing": 36, "total": 37,
     # Final Decision (MUST stay last)
-    "buying_zone": 41, "price_range": 42, "action": 43,
+    "buying_zone": 38, "price_range": 39, "action": 40,
 }
 
 # Header text per column key
@@ -72,11 +71,8 @@ GITHUB_DATA_HEADER_NAMES = {
     "strengths": "Strengths", "weaknesses": "Weaknesses",
     "quality": "Quality Score", "valuation": "Valuation Score", "timing": "Timing Score", "total": "Total Score",
     "vol_spike": "Vol Spike", "mcap": "Mkt Cap Cr",
-    "news_summary":   "News Summary",
-    "bullish_score":  "Bullish Score",
-    "bearish_score":  "Bearish Score",
-    "news_sentiment": "News Sentiment",
-    "news_reason":    "News Reason",
+    "news_summary":   "News Summary & Digest",
+    "news_sentiment": "Sentiment & Score",
     "news_source":    "News Source",
 }
 
@@ -97,11 +93,8 @@ GITHUB_DATA_COL_WIDTHS = {
     "strengths": 200, "weaknesses": 200,
     "quality": 55, "valuation": 60, "timing": 55, "total": 55,
     "vol_spike": 55, "mcap": 70,
-    "news_summary":   220,
-    "bullish_score":   55,
-    "bearish_score":   55,
-    "news_sentiment":  80,
-    "news_reason":    180,
+    "news_summary":   260,
+    "news_sentiment": 110,
     "news_source":     80,
 }
 
@@ -240,13 +233,29 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["vol_spike"]]      = vol_spike
     row[C["mcap"]]           = mcap_fmt
 
-    # ── News Engine fields (Phase A) ─────────────────────────────
+    # ── News Engine fields (Phase 3 Condensed: 3 columns) ─────────
     nd = news_data or {}
-    row[C["news_summary"]]   = nd.get("digest", "")
-    row[C["bullish_score"]]  = nd.get("bullish_score", "")
-    row[C["bearish_score"]]  = nd.get("bearish_score", "")
-    row[C["news_sentiment"]] = nd.get("sentiment", "")
-    row[C["news_reason"]]    = nd.get("reason", "")
+    digest = nd.get("digest", "") or ""
+    reason = nd.get("reason", "") or ""
+    if digest and reason and reason not in digest:
+        summary_full = f"{digest} ({reason})"
+    else:
+        summary_full = digest or reason or ""
+
+    sentiment = nd.get("sentiment", "") or ""
+    bull_sc = nd.get("bullish_score")
+    bear_sc = nd.get("bearish_score")
+    if sentiment == "Bullish" and bull_sc is not None:
+        sent_str = f"{sentiment} ({int(bull_sc)}/10)"
+    elif sentiment == "Bearish" and bear_sc is not None:
+        sent_str = f"{sentiment} ({int(bear_sc)}/10)"
+    elif sentiment:
+        sent_str = sentiment
+    else:
+        sent_str = ""
+
+    row[C["news_summary"]]   = summary_full
+    row[C["news_sentiment"]] = sent_str
     row[C["news_source"]]    = nd.get("source", "")
 
     return row, archetype, tot_sc, final_action
@@ -552,30 +561,16 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             reqs.append(color_cell_req(ws.id, rn, C["trend"], bg, fg))
 
         # ── AI News columns ────────────────────────────────────────────────
-        bull_v = sf(row, "bullish_score")
-        bear_v = sf(row, "bearish_score")
         news_sent = str(row[C["news_sentiment"]]).strip() if len(row) > C["news_sentiment"] else ""
-
-        if bull_v is not None:
-            if bull_v >= 6:   reqs.append(color_cell_req(ws.id, rn, C["bullish_score"], "d9ead3", "0b8043"))
-            elif bull_v >= 3: reqs.append(color_cell_req(ws.id, rn, C["bullish_score"], "fff2cc", "7f4f00"))
-            else:             reqs.append(color_cell_req(ws.id, rn, C["bullish_score"], "fde9d9", "c62828"))
-
-        if bear_v is not None:
-            if bear_v >= 6:   reqs.append(color_cell_req(ws.id, rn, C["bearish_score"], "fde9d9", "c62828"))
-            elif bear_v >= 3: reqs.append(color_cell_req(ws.id, rn, C["bearish_score"], "fff2cc", "7f4f00"))
-            else:             reqs.append(color_cell_req(ws.id, rn, C["bearish_score"], "d9ead3", "0b8043"))
-
-        if news_sent == "Bullish":
+        if "Bullish" in news_sent:
             reqs.append(color_cell_req(ws.id, rn, C["news_sentiment"], "d9ead3", "0b8043"))
-        elif news_sent == "Bearish":
+        elif "Bearish" in news_sent:
             reqs.append(color_cell_req(ws.id, rn, C["news_sentiment"], "fde9d9", "c62828"))
         elif news_sent:
             reqs.append(color_cell_req(ws.id, rn, C["news_sentiment"], "f1f1f1", "555555"))
 
         reqs.append(color_cell_req(ws.id, rn, C["news_summary"], "e8f5f9", "01579b", bold=False))
-        reqs.append(color_cell_req(ws.id, rn, C["news_reason"],  "e8f5f9", "01579b", bold=False))
-        reqs.append(color_cell_req(ws.id, rn, C["news_source"],    "f5f5f5", "757575", bold=False))
+        reqs.append(color_cell_req(ws.id, rn, C["news_source"],  "f5f5f5", "757575", bold=False))
 
     # ── Default filter — starts at the column-header row (sheet row 2,
     # index 1), since the merged group banner sits above it in row 1. ──

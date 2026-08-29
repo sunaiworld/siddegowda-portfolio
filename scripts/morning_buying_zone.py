@@ -286,7 +286,7 @@ def main():
             )
 
             # Preserve news fields if build_result_row left them blank but prev_raw had content
-            for news_col in ("news_summary", "bullish_score", "bearish_score", "news_sentiment", "news_reason", "news_source"):
+            for news_col in ("news_summary", "news_sentiment", "news_source"):
                 idx = C[news_col]
                 if idx < len(new_row) and not new_row[idx] and idx < len(prev_raw) and prev_raw[idx]:
                     new_row[idx] = prev_raw[idx]

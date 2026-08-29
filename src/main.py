@@ -12,6 +12,7 @@ from portfolio_builder import *
 import mutual_fund_builder
 import dividend_builder
 import growth_screener_builder
+import history_tracker
 from profiler import profiler
 
 #!/usr/bin/env python3
@@ -285,11 +286,13 @@ def run_portfolio_update(sh):
         log.info(f"[CHECKPOINT] Scoring {sym}")
 
         if avg_buy and qty > 0:
-            sl_price, tgt_price = avg_buy * (1 - SL_PCT), avg_buy * (1 + TARGET_PCT)
-            if cmp <= sl_price:
-                alerts["sl_breach"].append({"sym": sym, "cmp": cmp, "sl": round(sl_price, 2)})
-            if cmp >= tgt_price:
-                alerts["target_hit"].append({"sym": sym, "cmp": cmp, "tgt": round(tgt_price, 2)})
+            is_etf = (archetype == "ETF" or f.get("sector") == "ETFs" or "BEES" in sym.upper() or sym.upper().endswith("ETF") or sym.upper() in ("ICICIB22", "CPSEETF", "SETFNIF50", "GOLDBEES", "NIFTYBEES"))
+            if not is_etf:
+                sl_price, tgt_price = avg_buy * (1 - SL_PCT), avg_buy * (1 + TARGET_PCT)
+                if cmp <= sl_price:
+                    alerts["sl_breach"].append({"sym": sym, "cmp": cmp, "sl": round(sl_price, 2)})
+                if cmp >= tgt_price:
+                    alerts["target_hit"].append({"sym": sym, "cmp": cmp, "tgt": round(tgt_price, 2)})
 
         if final_action in ("STRONG BUY", "BUY"):
             alerts["strong_buy"].append({"sym": sym, "score": tot_sc, "action": final_action})
@@ -368,8 +371,17 @@ def run_portfolio_update(sh):
     watchlist_opportunities.sort(key=lambda x: x["score"], reverse=True)
 
     with profiler.stage("[16] Analytics write", category="Google Sheets"):
-        changes = None
-        prev_health_date, prev_health_score = None, None
+        try:
+            prev_health_date, prev_health_score = history_tracker.get_previous_health_score(sh)
+        except Exception as e:
+            log.warning(f"Could not load previous health score: {e}")
+            prev_health_date, prev_health_score = None, None
+
+        try:
+            changes = history_tracker.compute_todays_changes(sh, results)
+        except Exception as e:
+            log.warning(f"Could not compute today's changes: {e}")
+            changes = None
 
         dash = portfolio_analytics.compute_portfolio_dashboard(
             holdings, fund_map, trades, portfolio_live_value,
@@ -379,6 +391,12 @@ def run_portfolio_update(sh):
         health_trend = portfolio_analytics.compute_health_trend(health["overall"], prev_health_score)
 
         portfolio_analytics.write_dashboard_tab(sh, dash, changes, health, health_trend)
+
+        try:
+            log.info("Recording daily history snapshot...")
+            history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
+        except Exception as e:
+            log.error(f"Failed to record history snapshot: {e}", exc_info=True)
 
     try:
         log.info("Building Dividends tab...")
@@ -428,7 +446,7 @@ def main():
 
     msg = build_alert_message(out["alerts"], out["portfolio_live_value"], out["top_picks"],
                                watchlist_opps=out.get("watchlist_opportunities"))
-    digest = None
+    digest = history_tracker.format_telegram_digest(out.get("changes"))
     if digest:
         msg = msg + "\n\n" + digest
     if len(msg) > 4000:

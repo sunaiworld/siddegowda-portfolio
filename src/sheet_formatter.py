@@ -164,9 +164,9 @@ def clear_all_formatting_reqs(ws_id):
         }
     }]
 
-def get_group_header_merge_reqs(ws_id, group_ranges, frozen_cols=0):
+def get_group_header_merge_reqs(ws_id, group_ranges, frozen_cols=0, row_idx=0):
     """group_ranges: list of (start_col_idx, end_col_idx_inclusive, label).
-    Merges each group's columns in row 0 and styles that row as a
+    Merges each group's columns in row_idx and styles that row as a
     dark-blue banner sitting above the normal column-name header row.
     frozen_cols: number of frozen columns (matches freeze_cols passed to
     get_structural_format_reqs for the same sheet). The Sheets API refuses
@@ -182,7 +182,7 @@ def get_group_header_merge_reqs(ws_id, group_ranges, frozen_cols=0):
                 "mergeCells": {
                     "range": {
                         "sheetId": ws_id,
-                        "startRowIndex": 0, "endRowIndex": 1,
+                        "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
                         "startColumnIndex": merge_start, "endColumnIndex": end_col + 1
                     },
                     "mergeType": "MERGE_ALL"
@@ -191,7 +191,7 @@ def get_group_header_merge_reqs(ws_id, group_ranges, frozen_cols=0):
     last_col = group_ranges[-1][1] + 1
     reqs.append({
         "repeatCell": {
-            "range": {"sheetId": ws_id, "startRowIndex": 0, "endRowIndex": 1,
+            "range": {"sheetId": ws_id, "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
                       "startColumnIndex": 0, "endColumnIndex": last_col},
             "cell": {"userEnteredFormat": {
                 "backgroundColor": hex_rgb("1f4e78"),
@@ -204,15 +204,15 @@ def get_group_header_merge_reqs(ws_id, group_ranges, frozen_cols=0):
     })
     reqs.append({
         "updateDimensionProperties": {
-            "range": {"sheetId": ws_id, "dimension": "ROWS", "startIndex": 0, "endIndex": 1},
+            "range": {"sheetId": ws_id, "dimension": "ROWS", "startIndex": row_idx, "endIndex": row_idx + 1},
             "properties": {"pixelSize": 30}, "fields": "pixelSize"
         }
     })
     return reqs
 
-def get_group_header_color_reqs(ws_id, group_ranges, frozen_cols=0):
+def get_group_header_color_reqs(ws_id, group_ranges, frozen_cols=0, row_idx=0):
     """
-    Apply differentiated colors to each group header in row 0.
+    Apply differentiated colors to each group header in row_idx.
     Subtle pastel palette to visually distinguish group boundaries.
     group_ranges: list of (start_col_idx, end_col_idx_inclusive, label)
     """
@@ -245,7 +245,7 @@ def get_group_header_color_reqs(ws_id, group_ranges, frozen_cols=0):
             "repeatCell": {
                 "range": {
                     "sheetId": ws_id,
-                    "startRowIndex": 0, "endRowIndex": 1,
+                    "startRowIndex": row_idx, "endRowIndex": row_idx + 1,
                     "startColumnIndex": start_col, "endColumnIndex": end_col + 1
                 },
                 "cell": {"userEnteredFormat": {
