@@ -180,6 +180,8 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
     portfolio_xirr = None
     if len(cashflows) >= 2:
         paired = sorted(zip(dates, cashflows))
+        dates_sorted = [d for d, _ in paired]
+        cash_sorted = [c for _, c in paired]
         r = compute_xirr(cash_sorted, dates_sorted)
         portfolio_xirr = round(r * 100, 2) if r else None
 

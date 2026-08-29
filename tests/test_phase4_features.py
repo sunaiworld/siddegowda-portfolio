@@ -148,6 +148,22 @@ class TestPhase4Features(unittest.TestCase):
         self.assertIn("Current Drawdown from ATH", content_str)
         self.assertIn("Max Historical Drawdown (MDD)", content_str)
 
+    def test_compute_portfolio_dashboard_xirr(self):
+        holdings = {"RELIANCE": (10, 2500.0, 2000.0)}
+        fund_map = {"RELIANCE": {"sector": "Energy", "beta": 1.1, "div": 1.5, "cmp": 2500.0}}
+        trades = [
+            ["RELIANCE", "01-01-2024", "BUY", "10", "2000"],
+            ["RELIANCE", "01-01-2025", "SELL", "5", "2400"],
+        ]
+        combined_rows = [{"symbol": "RELIANCE", "invested": 10000, "pnl": 2500, "return_pct": 25.0, "wt_pct": 100.0, "signal": "HOLD"}]
+
+        dash = portfolio_analytics.compute_portfolio_dashboard(
+            holdings, fund_map, trades, portfolio_live_value=12500.0,
+            combined_rows=combined_rows
+        )
+        self.assertIsNotNone(dash["portfolio_xirr"])
+        self.assertEqual(dash["portfolio_value"], 12500.0)
+
     # --------------------------------------------------------------------------
     # P1-2: Smart Capital Allocation & Sizing Guide
     # --------------------------------------------------------------------------
