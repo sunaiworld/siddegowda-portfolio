@@ -430,7 +430,7 @@ class TestPortfolioBeta(unittest.TestCase):
         ws.update.assert_called()
         all_data = ws.update.call_args[0][1]
         flat_text = " ".join(str(cell) for row in all_data for cell in row)
-        self.assertIn("yfinance", flat_text,
+        self.assertTrue("NIFTY 50" in flat_text or "vs NIFTY" in flat_text or "yfinance" in flat_text,
             "Dashboard must note the beta benchmark source")
 
 

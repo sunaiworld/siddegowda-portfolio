@@ -216,10 +216,27 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
             sig = r.get("signal", "HOLD")
             signal_counts[sig] = signal_counts.get(sig, 0) + 1
 
-        action_required = sorted(
+        action_required_raw = sorted(
             [r for r in combined_rows if r.get("signal") not in (None, "HOLD")],
             key=lambda r: ACTION_PRIORITY.get(r.get("signal"), 9)
         )
+        action_required = []
+        for r in action_required_raw:
+            r_item = dict(r)
+            src = (r.get("investment_source") or "").upper()
+            if src == "SMALLCASE":
+                r_item["symbol_display"] = f"{r['symbol']} (SC)"
+            elif src == "ETF":
+                r_item["symbol_display"] = f"{r['symbol']} (ETF)"
+            else:
+                r_item["symbol_display"] = r["symbol"]
+            action_required.append(r_item)
+
+        # 1W and 1M momentum counts across portfolio holdings
+        up_1w = sum(1 for r in combined_rows if (r.get("return_1w") or 0) > 0)
+        dn_1w = sum(1 for r in combined_rows if (r.get("return_1w") or 0) < 0)
+        up_1m = sum(1 for r in combined_rows if (r.get("return_1m") or 0) > 0)
+        dn_1m = sum(1 for r in combined_rows if (r.get("return_1m") or 0) < 0)
 
         # Sector-level rollup + Source counting + Portfolio Impact
         sector_agg = {}
@@ -313,6 +330,8 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
             "sector_detail": sector_detail,
             "num_sectors": len(sector_detail),
             "top3_sector_weight": top3_sector_weight,
+            "momentum_1w": (up_1w, dn_1w),
+            "momentum_1m": (up_1m, dn_1m),
         })
 
     log.info(f"[DEBUG] compute_portfolio_dashboard: portfolio_value={round(portfolio_live_value, 2)} "
@@ -519,11 +538,7 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         add_row(["ETF Holdings", ss.get("ETF", {}).get("count", 0)])
         add_row(["Other / Legacy", ss.get("LEGACY", {}).get("count", 0) + ss.get("UNKNOWN", {}).get("count", 0)])
         val = dash.get("portfolio_beta")
-        # yfinance beta for Indian NSE securities is benchmarked against an
-        # unspecified global index (empirically near-zero for large-cap stocks
-        # like RELIANCE=0.16, HDFCBANK=0.41) — NOT Nifty 50. Label accordingly
-        # so the number is not misread as a Nifty-50-relative risk metric.
-        beta_label = f"{val} (yfinance — benchmark unspecified)" if val is not None else "N/A"
+        beta_label = f"{val} (vs NIFTY 50)" if val is not None else "N/A"
         add_row(["Portfolio Beta", beta_label])
         val = dash.get("portfolio_xirr")
         idx = add_row(["Portfolio XIRR", val if val is not None else "N/A"])
@@ -703,7 +718,8 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         add_row(["Action Required", "Signal", "P&L", "Return %"], is_subheader=True)
         if dash["action_required"]:
             for r in dash["action_required"]:
-                r_idx = add_row([r["symbol"], r["signal"], r["pnl"], r["return_pct"]])
+                sym_lbl = r.get("symbol_display", r.get("symbol", ""))
+                r_idx = add_row([sym_lbl, r["signal"], r["pnl"], r["return_pct"]])
                 currency_cells.append((r_idx, 2))
                 pct_cells.append((r_idx, 3))
                 signal_cells.append((r_idx, 1, r["signal"]))
@@ -723,13 +739,22 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
             top_sector = dash["sector_alloc"][0]
             add_row(["Largest Sector", f"{top_sector[0]} ({top_sector[2]}%)"])
         add_row(["Top 3 Sectors Combined Weight", f"{dash.get('top3_sector_weight', 'N/A')}%"])
+
+        # Short-term momentum summary
+        if dash.get("momentum_1w") and (dash["momentum_1w"][0] > 0 or dash["momentum_1w"][1] > 0):
+            up_w, dn_w = dash["momentum_1w"]
+            add_row(["1W Momentum (Holdings)", f"▲ {up_w} Up  /  ▼ {dn_w} Down"])
+        if dash.get("momentum_1m") and (dash["momentum_1m"][0] > 0 or dash["momentum_1m"][1] > 0):
+            up_m, dn_m = dash["momentum_1m"]
+            add_row(["1M Momentum (Holdings)", f"▲ {up_m} Up  /  ▼ {dn_m} Down"])
+
         val = dash["portfolio_xirr"]
         if val is not None:
             idx = add_row(["Portfolio XIRR", val])
             pct_cells.append((idx, 1))
             pos_neg_cells.append((idx, 1, val))
         val = dash["portfolio_beta"]
-        beta_label = f"{val} (yfinance — benchmark unspecified)" if val is not None else "N/A"
+        beta_label = f"{val} (vs NIFTY 50)" if val is not None else "N/A"
         add_row(["Portfolio Beta", beta_label])
         idx = add_row(["Expected Div Income (annual)", dash['div_income']])
         currency_cells.append((idx, 1))
@@ -746,7 +771,7 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         else:
             add_row(["Portfolio XIRR%", "N/A"])
         val = dash["portfolio_beta"]
-        beta_label = f"{val} (yfinance — benchmark unspecified)" if val is not None else "N/A"
+        beta_label = f"{val} (vs NIFTY 50)" if val is not None else "N/A"
         add_row(["Portfolio Beta", beta_label])
         idx = add_row(["Expected Div Income (annual)", dash['div_income']])
         currency_cells.append((idx, 1))

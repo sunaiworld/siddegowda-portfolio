@@ -11,6 +11,7 @@ from telegram_alerts import *
 from portfolio_builder import *
 import mutual_fund_builder
 import dividend_builder
+import growth_screener_builder
 from profiler import profiler
 
 #!/usr/bin/env python3
@@ -387,6 +388,13 @@ def run_portfolio_update(sh):
                 dividend_builder.write_dividends_tab(sh, div_rows, fund_map)
     except Exception as e:
         log.error(f"Dividend tab build/write FAILED: {e}", exc_info=True)
+
+    try:
+        log.info("Building Growth Screener tab...")
+        with profiler.stage("[17] Growth Screener write", category="Google Sheets"):
+            growth_screener_builder.write_growth_screener(sh, results)
+    except Exception as e:
+        log.error(f"Growth Screener tab build/write FAILED: {e}", exc_info=True)
 
     return {
         "results": results, "alerts": alerts,

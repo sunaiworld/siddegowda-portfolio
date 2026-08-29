@@ -27,6 +27,49 @@ from profiler import profiler
 
 
 # ══════════════════════════════════════════════
+# ══════════════════════════════════════════════
+# NIFTY 50 BENCHMARK CACHE & BETA CALCULATION
+# ══════════════════════════════════════════════
+_NIFTY_HISTORY = None
+
+def get_nifty_history():
+    """Fetch and cache 1Y daily close history for NIFTY 50 (^NSEI)."""
+    global _NIFTY_HISTORY
+    if _NIFTY_HISTORY is not None and len(_NIFTY_HISTORY) >= 50:
+        return _NIFTY_HISTORY
+    try:
+        profiler.increment("Yahoo requests")
+        df = yf.download("^NSEI", period="1y", interval="1d", progress=False, threads=False)
+        if df is not None and not df.empty and "Close" in df:
+            _NIFTY_HISTORY = df["Close"].squeeze()
+    except Exception as e:
+        log.warning(f"Failed to fetch NIFTY 50 index data for beta calculation: {e}")
+    return _NIFTY_HISTORY
+
+def compute_nifty_beta(stock_closes, nifty_closes):
+    """
+    Computes domestic Beta against NIFTY 50 using daily returns:
+    Beta = Cov(R_stock, R_nifty) / Var(R_nifty)
+    """
+    try:
+        if stock_closes is None or nifty_closes is None:
+            return None
+        s_ret = stock_closes.pct_change().dropna()
+        n_ret = nifty_closes.pct_change().dropna()
+        common = s_ret.index.intersection(n_ret.index)
+        if len(common) < 30:
+            return None
+        s = s_ret.loc[common]
+        n = n_ret.loc[common]
+        cov = np.cov(s, n)[0][1]
+        var_n = np.var(n, ddof=1)
+        if var_n > 0:
+            return round(float(cov / var_n), 2)
+    except Exception as e:
+        log.debug(f"compute_nifty_beta failed: {e}")
+    return None
+
+# ══════════════════════════════════════════════
 # TECHNICAL INDICATORS
 # ══════════════════════════════════════════════
 def fetch_technicals(sym):
@@ -77,25 +120,27 @@ def fetch_technicals(sym):
             elif sma50 < sma200 and prev_sma50 >= prev_sma200:
                 cross = "Death Cross"
 
-        # Day change %
+        # Day change % (numeric float)
         prev_close = round(float(close.iloc[-2]), 2) if len(close) >= 2 else None
         day_chg_pct = round((cmp - prev_close) / prev_close * 100, 2) if prev_close else ""
 
-        # 1W Return % (approx 5 trading sessions ago)
+        # 1W Return % (numeric float, approx 5 trading sessions ago)
         return_1w = ""
         if len(close) >= 6:
             p5 = float(close.iloc[-6])
             if p5 > 0:
-                ret_1w_val = round((cmp / p5 - 1) * 100, 2)
-                return_1w = f"{ret_1w_val:+.2f}%" if ret_1w_val != 0 else "0.00%"
+                return_1w = round((cmp / p5 - 1) * 100, 2)
 
-        # 1M Return % (approx 21 trading sessions ago)
+        # 1M Return % (numeric float, approx 21 trading sessions ago)
         return_1m = ""
         if len(close) >= 22:
             p21 = float(close.iloc[-22])
             if p21 > 0:
-                ret_1m_val = round((cmp / p21 - 1) * 100, 2)
-                return_1m = f"{ret_1m_val:+.2f}%" if ret_1m_val != 0 else "0.00%"
+                return_1m = round((cmp / p21 - 1) * 100, 2)
+
+        # Domestic Beta vs NIFTY 50
+        nifty_history = get_nifty_history()
+        beta_nifty = compute_nifty_beta(close, nifty_history) if nifty_history is not None else None
 
         return {
             "rsi": rsi, "sma50": sma50,
@@ -105,6 +150,7 @@ def fetch_technicals(sym):
             "day_chg_pct": day_chg_pct,
             "return_1w": return_1w,
             "return_1m": return_1m,
+            "beta_nifty": beta_nifty,
         }
     except Exception as e:
         log.warning(f"  technicals failed {sym}: {e}")
@@ -190,8 +236,8 @@ def fetch_rev_growth(sym):
             rv = fin.loc["Total Revenue"].dropna()
             if len(rv) >= 2:
                 return round((rv.iloc[0] - rv.iloc[1]) / abs(rv.iloc[1]) * 100, 2)
-    except:
-        pass
+    except Exception as e:
+        log.debug(f"fetch_rev_growth failed for {sym}: {e}")
     return None
 
 

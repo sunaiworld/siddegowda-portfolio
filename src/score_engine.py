@@ -139,6 +139,7 @@ ARCHETYPE_RISK_MAP = {
     "FINANCIAL_CAPITAL_MARKETS": ("High", "Market-sensitive"),
     "FINANCIAL_INSURANCE": ("Low-Medium", "Defensive"),
     "QUALITY_GROWTH": ("Medium", "Long-term Growth"),
+    "ETF": ("Low-Medium", "Index / Allocation"),
 }
 
 # Symbol-level overrides for stocks that yfinance misclassifies
@@ -371,6 +372,11 @@ SECTOR_RULES = {
             "div": [(2.0, 5), (1.0, 3), (None, 0)],
         },
     },
+    "ETF": {
+        "ignore": ["pe", "pb", "roe", "roce", "debt_eq", "rev_growth", "roa", "eps", "bv"],
+        "quality": {},
+        "valuation": {},
+    },
 }
 
 
@@ -378,9 +384,15 @@ SECTOR_RULES = {
 # ARCHETYPE DETECTION
 # ══════════════════════════════════════════════
 def get_archetype(sym, sector, industry):
-    if sym.upper() in SYMBOL_ARCHETYPE_OVERRIDE:
-        return SYMBOL_ARCHETYPE_OVERRIDE[sym.upper()]
-    for key in [industry.lower(), sector.lower()]:
+    sym_u = sym.upper()
+    if sym_u in SYMBOL_ARCHETYPE_OVERRIDE:
+        return SYMBOL_ARCHETYPE_OVERRIDE[sym_u]
+    # ETF identification
+    sec_l = sector.lower()
+    ind_l = industry.lower()
+    if sec_l in ("etf", "etfs") or ind_l in ("etf", "etfs") or "BEES" in sym_u or sym_u.endswith("ETF") or sym_u in ("ICICIB22", "CPSEETF", "SETFNIF50", "GOLDBEES", "NIFTYBEES"):
+        return "ETF"
+    for key in [ind_l, sec_l]:
         if key in SECTOR_ARCHETYPE_MAP:
             return SECTOR_ARCHETYPE_MAP[key]
     return "DEFAULT"
@@ -560,15 +572,27 @@ def compute_unified_score(sym, archetype, metrics):
 
     timing_score = min(max(timing_score, 0), 30)
 
-    total_score = quality_score + valuation_score + timing_score
-
-    if   total_score >= 80: final_action = "STRONG BUY"
-    elif total_score >= 65: final_action = "BUY"
-    elif total_score >= 50: final_action = "ACCUMULATE"
-    elif total_score >= 35: final_action = "HOLD"
-    elif total_score >= 20: final_action = "WATCH"
-    elif total_score >= 10: final_action = "AVOID"
-    else:                   final_action = "SELL"
+    if archetype == "ETF":
+        # ETFs represent broad market/asset basket allocation.
+        quality_score = 30
+        valuation_score = 20
+        strengths.append("✓ Broad index / asset allocation")
+        total_score = quality_score + valuation_score + timing_score
+        if total_score >= 70:
+            final_action = "BUY"
+        elif total_score >= 55:
+            final_action = "ACCUMULATE"
+        else:
+            final_action = "HOLD"
+    else:
+        total_score = quality_score + valuation_score + timing_score
+        if   total_score >= 80: final_action = "STRONG BUY"
+        elif total_score >= 65: final_action = "BUY"
+        elif total_score >= 50: final_action = "ACCUMULATE"
+        elif total_score >= 35: final_action = "HOLD"
+        elif total_score >= 20: final_action = "WATCH"
+        elif total_score >= 10: final_action = "AVOID"
+        else:                   final_action = "SELL"
 
     return (
         quality_score,

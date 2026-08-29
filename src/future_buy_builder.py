@@ -111,6 +111,29 @@ def process_watchlist_tab(sh, tab_name, symbols, nc_cache=None, shared_prices=No
         news_tag = f" | News:{nd.get('sentiment','')}" if nd.get('sentiment') else ""
         log.info(f"  {sym:12} | {archetype:25} | Total:{tot_sc:3} | {final_action}{news_tag}")
 
+    # Opportunity-first ordering: sort by Buying Zone priority, then Total Score descending
+    ZONE_RANK = {
+        "🟢🟢 ADD AGGRESSIVELY": 1,
+        "🟢 ACCUMULATE": 2,
+        "🟡 SMALL BUY": 3,
+        "❌ WAIT": 4,
+        "🔎 INVESTIGATE": 5,
+    }
+    from github_data_builder import GITHUB_DATA_COLS
+    C_MAP = GITHUB_DATA_COLS
+    def _watchlist_sort_key(r):
+        zone_str = str(r[C_MAP["buying_zone"]]).strip() if len(r) > C_MAP["buying_zone"] else ""
+        z_rank = ZONE_RANK.get(zone_str, 9)
+        tot_val = 0.0
+        if len(r) > C_MAP["total"] and r[C_MAP["total"]] != "":
+            try:
+                tot_val = float(r[C_MAP["total"]])
+            except:
+                pass
+        return (z_rank, -tot_val)
+
+    rows.sort(key=_watchlist_sort_key)
+
     write_github_data(sh, rows, tab_name=tab_name)
     return rows
 

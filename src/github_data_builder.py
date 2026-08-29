@@ -230,7 +230,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["roa"]]            = f.get("roa") or ""
     row[C["debt_eq"]]        = f.get("debt_eq") or ""
     row[C["rev_growth"]]     = rev_gr or ""
-    row[C["beta"]]           = f.get("beta") or ""
+    row[C["beta"]]           = tech.get("beta_nifty") if tech.get("beta_nifty") is not None else (f.get("beta") or "")
     row[C["strengths"]]      = strengths_str
     row[C["weaknesses"]]     = weaknesses_str
     row[C["quality"]]        = q_sc
@@ -258,19 +258,19 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     C = GITHUB_DATA_COLS
     num_cols = len(C)
 
-    import gspread.exceptions as _gse
+    all_data = [GROUP_HEADER_NAMES, GITHUB_DATA_HEADER_NAMES] + [clean_row(r) for r in rows]
 
     try:
         ws = sh.worksheet(tab_name)
-    except _gse.WorksheetNotFound:
-        ws = sh.add_worksheet(tab_name, rows=300, cols=num_cols)
+    except Exception:
+        ws = sh.add_worksheet(tab_name, rows=len(all_data) + 20, cols=num_cols)
 
     try:
         for _attempt in range(5):
             try:
                 ws.clear()
                 break
-            except _gse.APIError as _e:
+            except Exception as _e:
                 if any(code in str(_e) for code in ("429", "500", "502", "503", "504")) and _attempt < 4:
                     _wait = 15 * (2 ** _attempt)
                     log.warning(f"[write_github_data] {_e} on ws.clear, waiting {_wait}s (attempt {_attempt+1}/5)")
@@ -316,7 +316,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             try:
                 ws.update(data)
                 break
-            except _gse.APIError as _e:
+            except Exception as _e:
                 if any(code in str(_e) for code in ("429", "500", "502", "503", "504")):
                     _wait = 15 * (2 ** _attempt)
                     log.warning(f"[write_github_data] {_e} on ws.update, waiting {_wait}s (attempt {_attempt+1}/5)")
@@ -334,9 +334,20 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     group_header_reqs = get_group_header_merge_reqs(ws.id, group_ranges, frozen_cols=FROZEN_COLS)
     group_color_reqs = get_group_header_color_reqs(ws.id, group_ranges, frozen_cols=FROZEN_COLS)
 
+    # Number formats for percentage and currency columns
+    pct_cols = [C["day_chg_pct"], C["return_1w"], C["return_1m"], C["div"], C["roe"], C["roa"], C["rev_growth"]]
+    pct_reqs = []
+    for col_idx in pct_cols:
+        pct_reqs += get_percentage_format_reqs(ws.id, 2, len(rows) + 2, col_idx, col_idx + 1)
+
+    curr_cols = [C["low52"], C["cmp"], C["high52"], C["eps"], C["bv"]]
+    curr_reqs = []
+    for col_idx in curr_cols:
+        curr_reqs += get_currency_format_reqs(ws.id, 2, len(rows) + 2, col_idx, col_idx + 1)
+
     # Clear any existing AutoFilter before attempting merges (merge crosses filter borders → API error)
     clear_filter_req = {"clearBasicFilter": {"sheetId": ws.id}}
-    reqs = [clear_filter_req] + struct_reqs + group_header_reqs + group_color_reqs
+    reqs = [clear_filter_req] + struct_reqs + group_header_reqs + group_color_reqs + pct_reqs + curr_reqs
 
     # Single source of truth for these three palettes now lives in
     # sheet_formatter.py (GITHUB_DATA_ACTION_COLORS / _BUYING_ZONE_COLORS /
