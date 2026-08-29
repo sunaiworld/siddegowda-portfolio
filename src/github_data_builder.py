@@ -267,35 +267,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     C = GITHUB_DATA_COLS
     num_cols = len(C)
 
-    all_data = [GROUP_HEADER_NAMES, GITHUB_DATA_HEADER_NAMES] + [clean_row(r) for r in rows]
-
-    try:
-        ws = sh.worksheet(tab_name)
-    except Exception:
-        ws = sh.add_worksheet(tab_name, rows=len(all_data) + 20, cols=num_cols)
-
-    try:
-        for _attempt in range(5):
-            try:
-                ws.clear()
-                break
-            except Exception as _e:
-                if any(code in str(_e) for code in ("429", "500", "502", "503", "504")) and _attempt < 4:
-                    _wait = 15 * (2 ** _attempt)
-                    log.warning(f"[write_github_data] {_e} on ws.clear, waiting {_wait}s (attempt {_attempt+1}/5)")
-                    time.sleep(_wait)
-                else:
-                    raise
-    except Exception as e:
-        log.error(f"[write_github_data:{tab_name}] stage='clear worksheet' failed ({type(e).__name__}): {e}")
-        raise
-
-    try:
-        batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
-    except Exception as e:
-        log.error(f"[write_github_data:{tab_name}] stage='clear existing formatting' failed ({type(e).__name__}): {e}")
-        raise
-
     headers = [""] * num_cols
     widths  = [70] * num_cols
     for key, idx in C.items():
@@ -316,26 +287,18 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         label_col = FROZEN_COLS if (start_col < FROZEN_COLS <= end_col) else start_col
         group_row[label_col] = label
 
-    data = [group_row, headers]
+    all_data = [group_row, headers]
     if rows:
-        data.extend([clean_row(r) for r in rows])
+        all_data.extend([clean_row(r) for r in rows])
 
     try:
-        for _attempt in range(5):
-            try:
-                ws.update(data)
-                break
-            except Exception as _e:
-                if any(code in str(_e) for code in ("429", "500", "502", "503", "504")):
-                    _wait = 15 * (2 ** _attempt)
-                    log.warning(f"[write_github_data] {_e} on ws.update, waiting {_wait}s (attempt {_attempt+1}/5)")
-                    time.sleep(_wait)
-                else:
-                    raise
-    except Exception as e:
-        log.error(f"[write_github_data:{tab_name}] stage='write row data + headers' failed ({type(e).__name__}): {e}. "
-                   f"Worksheet was already cleared — '{tab_name}' has no data/formatting until the next successful run.")
-        raise
+        ws = sh.worksheet(tab_name)
+    except Exception:
+        ws = sh.add_worksheet(tab_name, rows=len(all_data) + 20, cols=num_cols)
+
+    clear_sheet_safe(ws)
+    batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
+    update_sheet_safe(ws, "A1", all_data, value_input_option="USER_ENTERED")
 
     # Column-name header now sits at row index 1 (sheet row 2) since the
     # merged group-header banner occupies row index 0 above it.
