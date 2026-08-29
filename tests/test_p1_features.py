@@ -270,5 +270,40 @@ class TestDashboardMomentumCounts(unittest.TestCase):
         self.assertEqual(dash.get("momentum_1m"), (1, 2))  # 1 Up, 2 Down
 
 
+# ============================================================================
+# P1-7: Google Sheets Formatting & Beta Coverage Verification
+# ============================================================================
+class TestSheetsFormattingAndBetaCoverage(unittest.TestCase):
+
+    def test_sheets_percentage_format_pattern(self):
+        """Verify Sheets percentage formatting request format and pattern."""
+        import sheet_formatter
+        reqs = sheet_formatter.get_percentage_format_reqs(0, 2, 10, 5, 6)
+        self.assertEqual(len(reqs), 1)
+        nf = reqs[0]["repeatCell"]["cell"]["userEnteredFormat"]["numberFormat"]
+        self.assertEqual(nf["type"], "NUMBER")
+        self.assertEqual(nf["pattern"], '0.00"%"')
+
+    def test_portfolio_beta_coverage_excludes_missing_beta(self):
+        """Holdings with beta=None (ETFs) must be excluded from beta weighting and reflected in coverage %."""
+        holdings = {
+            "STOCK_A": (10, 100.0, 90.0),   # Value = 1000, Beta = 1.2
+            "STOCK_B": (10, 100.0, 90.0),   # Value = 1000, Beta = 0.8
+            "ETF_GOLD": (20, 100.0, 90.0),  # Value = 2000, Beta = None (ETF)
+        }
+        fund_map = {
+            "STOCK_A": {"beta": 1.2, "sector": "Tech"},
+            "STOCK_B": {"beta": 0.8, "sector": "Finance"},
+            "ETF_GOLD": {"beta": None, "sector": "ETFs"},
+        }
+        dash = portfolio_analytics.compute_portfolio_dashboard(
+            holdings, fund_map, [], 4000.0
+        )
+        # Value-weighted beta of covered stocks = (1000*1.2 + 1000*0.8) / 2000 = 1.00
+        self.assertEqual(dash["portfolio_beta"], 1.00)
+        self.assertEqual(dash["beta_covered_value"], 2000.0)
+        self.assertEqual(dash["beta_covered_pct"], 50.0)  # 2000 / 4000 = 50.0%
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

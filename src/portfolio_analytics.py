@@ -180,15 +180,17 @@ def compute_portfolio_dashboard(holdings, fund_map, trades, portfolio_live_value
     portfolio_xirr = None
     if len(cashflows) >= 2:
         paired = sorted(zip(dates, cashflows))
-        dates_sorted = [d for d, c in paired]
-        cash_sorted = [c for d, c in paired]
         r = compute_xirr(cash_sorted, dates_sorted)
         portfolio_xirr = round(r * 100, 2) if r else None
+
+    beta_covered_pct = round((beta_weight / portfolio_live_value * 100), 1) if portfolio_live_value > 0 else 0
 
     dash = {
         "sector_alloc": sector_alloc,
         "positions": positions,
         "portfolio_beta": portfolio_beta,
+        "beta_covered_pct": beta_covered_pct,
+        "beta_covered_value": round(beta_weight, 2),
         "div_income": div_income,
         "portfolio_xirr": portfolio_xirr,
         "portfolio_value": round(portfolio_live_value, 2),
@@ -538,7 +540,9 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         add_row(["ETF Holdings", ss.get("ETF", {}).get("count", 0)])
         add_row(["Other / Legacy", ss.get("LEGACY", {}).get("count", 0) + ss.get("UNKNOWN", {}).get("count", 0)])
         val = dash.get("portfolio_beta")
-        beta_label = f"{val} (vs NIFTY 50)" if val is not None else "N/A"
+        cov = dash.get("beta_covered_pct")
+        cov_str = f", {cov}% coverage" if cov is not None else ""
+        beta_label = f"{val} (vs NIFTY 50{cov_str})" if val is not None else "N/A"
         add_row(["Portfolio Beta", beta_label])
         val = dash.get("portfolio_xirr")
         idx = add_row(["Portfolio XIRR", val if val is not None else "N/A"])
@@ -754,7 +758,9 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
             pct_cells.append((idx, 1))
             pos_neg_cells.append((idx, 1, val))
         val = dash["portfolio_beta"]
-        beta_label = f"{val} (vs NIFTY 50)" if val is not None else "N/A"
+        cov = dash.get("beta_covered_pct")
+        cov_str = f", {cov}% coverage" if cov is not None else ""
+        beta_label = f"{val} (vs NIFTY 50{cov_str})" if val is not None else "N/A"
         add_row(["Portfolio Beta", beta_label])
         idx = add_row(["Expected Div Income (annual)", dash['div_income']])
         currency_cells.append((idx, 1))
@@ -771,7 +777,9 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None):
         else:
             add_row(["Portfolio XIRR%", "N/A"])
         val = dash["portfolio_beta"]
-        beta_label = f"{val} (vs NIFTY 50)" if val is not None else "N/A"
+        cov = dash.get("beta_covered_pct")
+        cov_str = f", {cov}% coverage" if cov is not None else ""
+        beta_label = f"{val} (vs NIFTY 50{cov_str})" if val is not None else "N/A"
         add_row(["Portfolio Beta", beta_label])
         idx = add_row(["Expected Div Income (annual)", dash['div_income']])
         currency_cells.append((idx, 1))

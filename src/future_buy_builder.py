@@ -84,9 +84,10 @@ def process_watchlist_tab(sh, tab_name, symbols, nc_cache=None, shared_prices=No
             for fut in as_completed(futures):
                 sym = futures[fut]
                 try:
-                    _, tech, rev = fut.result()
                     tech_map[sym] = tech
                     rev_map[sym] = rev
+                    if tech.get("beta_nifty") is not None:
+                        fund_map.setdefault(sym, {})["beta"] = tech["beta_nifty"]
                 except Exception as e:
                     tech_map[sym] = {}
                     rev_map[sym] = None

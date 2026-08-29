@@ -162,9 +162,10 @@ def run_portfolio_update(sh):
                     _, tech, rev_gr = fut.result()
                 except Exception as e:
                     log.warning(f"  tech/growth failed {sym}: {e}")
-                    tech, rev_gr = {}, None
                 tech_map[sym] = tech
                 rev_map[sym]  = rev_gr
+                if tech.get("beta_nifty") is not None:
+                    fund_map.setdefault(sym, {})["beta"] = tech["beta_nifty"]
                 log.info(f"  Technicals: {sym}")
 
     # News Engine cache removed
