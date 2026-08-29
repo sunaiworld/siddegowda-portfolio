@@ -57,6 +57,49 @@ TREND_COLORS = {
 
 
 # ══════════════════════════════════════════════
+# GITHUB DATA ROW-LEVEL PALETTES
+# Single source of truth for write_github_data()'s Final Action /
+# Buying Zone / Buy-Sell Price Range cell colours — used by GITHUB DATA
+# and (via the same write_github_data() call) Future Buy. Moved here
+# from github_data_builder.py so they're inspectable/reusable instead
+# of living inline inside one function.
+#
+# NOTE: these are deliberately namespaced GITHUB_DATA_* and are separate
+# from color_action_signal()'s own ACTION_COLORS below (Portfolio Signal
+# palette) and from growth_screener_builder.py / history_tracker.py's
+# local ACTION_COLORS — those use different colour/threshold choices for
+# their own tabs and are intentionally left as-is.
+# ══════════════════════════════════════════════
+GITHUB_DATA_ACTION_COLORS = {
+    "STRONG BUY":  ("c6efce", "276221"),  # strong green — light
+    "BUY":         ("d9ead3", "0b8043"),  # light green
+    "ACCUMULATE":  ("ebf3e8", "0b8043"),  # very light green
+    "HOLD":        ("fff2cc", "7f4f00"),
+    "WATCH":       ("fce8b2", "7f4f00"),
+    "AVOID":       ("fde9d9", "c62828"),
+    "SELL":        ("fce5cd", "b45309"),  # light orange — not dark red+white
+}
+
+GITHUB_DATA_BUYING_ZONE_COLORS = {
+    "🟢🟢 ADD AGGRESSIVELY": ("c6efce", "276221"),  # strong light green
+    "🟢 ACCUMULATE":         ("d9ead3", "0b8043"),  # light green
+    "🟡 SMALL BUY":          ("fef3c7", "92400e"),  # light amber
+    "🔎 INVESTIGATE WHY":    ("fce5cd", "b45309"),  # light orange — not dark red/saturated
+    "❌ WAIT":               ("fde9d9", "c62828"),  # light red/pink
+}
+
+# Light-tint colour map for Buy/Sell Price Range — keyed by buying zone,
+# defined once, reused per row.
+GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS = {
+    "🟢🟢 ADD AGGRESSIVELY": ("c8f5dc", "0b5e2a"),
+    "🔎 INVESTIGATE WHY":    ("fde3cc", "b84000"),
+    "🟢 ACCUMULATE":         ("eaf5e8", "0b5e2a"),
+    "🟡 SMALL BUY":          ("fdf9e3", "7f4f00"),
+    "❌ WAIT":               ("fef2f0", "c62828"),
+}
+
+
+# ══════════════════════════════════════════════
 # FORMAT HELPERS
 # ══════════════════════════════════════════════
 def indian_cr(value):

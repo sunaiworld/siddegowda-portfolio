@@ -126,7 +126,18 @@ def process_all_watchlists(sh, nc_cache=None, shared_prices=None, shared_fund=No
             )
             all_rows[tab_name] = rows
         except Exception as e:
-            log.error(f"Watchlist '{tab_name}' failed (existing tabs unaffected): {e}")
+            # write_github_data() clears the worksheet before it re-applies
+            # formatting — if this exception fired after that clear (which
+            # write_github_data's own stage-tagged logging above will show),
+            # '{tab_name}' is left partially written/styled, not unaffected.
+            # Don't understate that here.
+            log.error(
+                f"[process_all_watchlists] tab='{tab_name}' FAILED "
+                f"({type(e).__name__}): {e}. This tab may now be partially "
+                f"written or partially formatted — it will be rewritten "
+                f"fully on the next successful run.",
+                exc_info=True,
+            )
             all_rows[tab_name] = []
     return all_rows
 

@@ -265,19 +265,27 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     except _gse.WorksheetNotFound:
         ws = sh.add_worksheet(tab_name, rows=300, cols=num_cols)
 
-    for _attempt in range(5):
-        try:
-            ws.clear()
-            break
-        except _gse.APIError as _e:
-            if any(code in str(_e) for code in ("429", "500", "502", "503", "504")) and _attempt < 4:
-                _wait = 15 * (2 ** _attempt)
-                log.warning(f"[write_github_data] {_e} on ws.clear, waiting {_wait}s (attempt {_attempt+1}/5)")
-                time.sleep(_wait)
-            else:
-                raise
+    try:
+        for _attempt in range(5):
+            try:
+                ws.clear()
+                break
+            except _gse.APIError as _e:
+                if any(code in str(_e) for code in ("429", "500", "502", "503", "504")) and _attempt < 4:
+                    _wait = 15 * (2 ** _attempt)
+                    log.warning(f"[write_github_data] {_e} on ws.clear, waiting {_wait}s (attempt {_attempt+1}/5)")
+                    time.sleep(_wait)
+                else:
+                    raise
+    except Exception as e:
+        log.error(f"[write_github_data:{tab_name}] stage='clear worksheet' failed ({type(e).__name__}): {e}")
+        raise
 
-    batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
+    try:
+        batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
+    except Exception as e:
+        log.error(f"[write_github_data:{tab_name}] stage='clear existing formatting' failed ({type(e).__name__}): {e}")
+        raise
 
     headers = [""] * num_cols
     widths  = [70] * num_cols
@@ -303,17 +311,22 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     if rows:
         data.extend([clean_row(r) for r in rows])
 
-    for _attempt in range(5):
-        try:
-            ws.update(data)
-            break
-        except _gse.APIError as _e:
-            if any(code in str(_e) for code in ("429", "500", "502", "503", "504")):
-                _wait = 15 * (2 ** _attempt)
-                log.warning(f"[write_github_data] {_e} on ws.update, waiting {_wait}s (attempt {_attempt+1}/5)")
-                time.sleep(_wait)
-            else:
-                raise
+    try:
+        for _attempt in range(5):
+            try:
+                ws.update(data)
+                break
+            except _gse.APIError as _e:
+                if any(code in str(_e) for code in ("429", "500", "502", "503", "504")):
+                    _wait = 15 * (2 ** _attempt)
+                    log.warning(f"[write_github_data] {_e} on ws.update, waiting {_wait}s (attempt {_attempt+1}/5)")
+                    time.sleep(_wait)
+                else:
+                    raise
+    except Exception as e:
+        log.error(f"[write_github_data:{tab_name}] stage='write row data + headers' failed ({type(e).__name__}): {e}. "
+                   f"Worksheet was already cleared — '{tab_name}' has no data/formatting until the next successful run.")
+        raise
 
     # Column-name header now sits at row index 1 (sheet row 2) since the
     # merged group-header banner occupies row index 0 above it.
@@ -325,23 +338,13 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     clear_filter_req = {"clearBasicFilter": {"sheetId": ws.id}}
     reqs = [clear_filter_req] + struct_reqs + group_header_reqs + group_color_reqs
 
-    ACTION_COLORS = {
-        "STRONG BUY":  ("c6efce", "276221"),  # strong green — light
-        "BUY":         ("d9ead3", "0b8043"),  # light green
-        "ACCUMULATE":  ("ebf3e8", "0b8043"),  # very light green
-        "HOLD":        ("fff2cc", "7f4f00"),
-        "WATCH":       ("fce8b2", "7f4f00"),
-        "AVOID":       ("fde9d9", "c62828"),
-        "SELL":        ("fce5cd", "b45309"),  # light orange — not dark red+white
-    }
-
-    BUYING_ZONE_COLORS = {
-        "🟢🟢 ADD AGGRESSIVELY": ("c6efce", "276221"),  # strong light green
-        "🟢 ACCUMULATE":         ("d9ead3", "0b8043"),  # light green
-        "🟡 SMALL BUY":          ("fef3c7", "92400e"),  # light amber
-        "🔎 INVESTIGATE WHY":    ("fce5cd", "b45309"),  # light orange — not dark red/saturated
-        "❌ WAIT":               ("fde9d9", "c62828"),  # light red/pink
-    }
+    # Single source of truth for these three palettes now lives in
+    # sheet_formatter.py (GITHUB_DATA_ACTION_COLORS / _BUYING_ZONE_COLORS /
+    # _PRICE_RANGE_LIGHT_COLORS) — aliased here under the original local
+    # names so nothing below this line has to change. Values/thresholds
+    # are unchanged; only the definition location moved.
+    ACTION_COLORS = GITHUB_DATA_ACTION_COLORS
+    BUYING_ZONE_COLORS = GITHUB_DATA_BUYING_ZONE_COLORS
 
     def sf(row, key):
         idx = C[key]
@@ -351,14 +354,7 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         except:
             return None
 
-    # Light-tint colour map for Buy/Sell Price Range — defined once, reused per row
-    PRICE_RANGE_LIGHT_COLORS = {
-        "🟢🟢 ADD AGGRESSIVELY": ("c8f5dc", "0b5e2a"),
-        "🔎 INVESTIGATE WHY":    ("fde3cc", "b84000"),
-        "🟢 ACCUMULATE":         ("eaf5e8", "0b5e2a"),
-        "🟡 SMALL BUY":          ("fdf9e3", "7f4f00"),
-        "❌ WAIT":               ("fef2f0", "c62828"),
-    }
+    PRICE_RANGE_LIGHT_COLORS = GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS
 
     for i, row in enumerate(rows):
         rn  = i + 2
@@ -586,6 +582,13 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         }
     })
 
-    batch_update_safe(sh, reqs)
+    try:
+        batch_update_safe(sh, reqs)
+    except Exception as e:
+        log.error(f"[write_github_data:{tab_name}] stage='apply formatting (structural/group/row-level)' "
+                   f"failed ({type(e).__name__}): {e}. Row data was written but '{tab_name}' may be "
+                   f"partially/un-styled until the next successful run.")
+        raise
+
     log.info(f"{tab_name} tab written and formatted ({len(rows)} rows)")
     return ws

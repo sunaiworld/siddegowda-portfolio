@@ -125,29 +125,78 @@ def preprocess_merge_requests(sh, requests):
         log.warning(f"Failed to preprocess merges: {e}")
         return requests
 
-def batch_update_safe(sh, requests, chunk=30):
-    requests = preprocess_merge_requests(sh, requests)
-    """Send batchUpdate requests in small chunks with retry on 429 quota
-    errors and transient 500/502/503/504 Google-side outages."""
+class FormattingWriteError(Exception):
+    """Raised by batch_update_safe when a batchUpdate slice still fails
+    after both the normal retry loop AND chunk-size reduction have been
+    exhausted. Callers should treat this as actionable — it means some
+    formatting requests could not be applied and the target sheet may be
+    left in a partially-formatted state — never catch-and-ignore it."""
+    pass
+
+
+def _send_slice_with_retry(sh, slice_, min_chunk=1):
+    """Send one slice of batchUpdate requests with 429/5xx retry
+    (existing behaviour). If the slice still fails after retries and it
+    has more than `min_chunk` requests, split it in half (preserving
+    original request order) and retry each half independently — this
+    narrows down a transient failure instead of losing the whole chunk,
+    and gives the requests that *do* succeed a chance to actually apply.
+    If a single-request slice still cannot be applied, raises
+    FormattingWriteError with full context instead of letting a bare/
+    ambiguous exception propagate."""
     import gspread.exceptions
     RETRYABLE = ("429", "500", "502", "503", "504")
+    last_err = None
+    for attempt in range(5):  # up to 5 retries, same backoff as before
+        try:
+            profiler.increment("Sheets requests")
+            sh.batch_update({"requests": slice_})
+            time.sleep(1.5)   # 1.5 s between every chunk to stay under quota
+            return
+        except gspread.exceptions.APIError as e:
+            last_err = e
+            msg = str(e)
+            code = next((c for c in RETRYABLE if c in msg), None)
+            if code and attempt < 4:
+                wait = 15 * (2 ** attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
+                print(f"[retry] {code} hit on batch of {len(slice_)} requests, waiting {wait}s before retry {attempt+1}/5.")
+                time.sleep(wait)
+            else:
+                break  # non-retryable error, or retries exhausted at this chunk size
+        except Exception as e:
+            last_err = e
+            break  # unexpected error type — don't retry blindly, fall through to chunk-split/raise
+
+    # Retries exhausted at this chunk size. If it can still be split,
+    # halve it and retry each half in order — this is the "reduce
+    # chunk size on retry" step, and it's what keeps a single bad/
+    # oversized/rate-limited request from discarding an entire batch
+    # of otherwise-valid formatting requests.
+    if len(slice_) > min_chunk:
+        mid = len(slice_) // 2
+        _send_slice_with_retry(sh, slice_[:mid], min_chunk=min_chunk)
+        _send_slice_with_retry(sh, slice_[mid:], min_chunk=min_chunk)
+        return
+
+    raise FormattingWriteError(
+        f"batchUpdate request could not be applied after retries and "
+        f"chunk-size reduction (down to {len(slice_)} request(s)): "
+        f"{type(last_err).__name__}: {last_err}"
+    ) from last_err
+
+
+def batch_update_safe(sh, requests, chunk=30):
+    """Send batchUpdate requests in chunks with retry on 429 quota errors
+    and transient 500/502/503/504 Google-side outages. A chunk that still
+    fails after retries is progressively split into smaller chunks (down
+    to single requests) and retried before finally raising
+    FormattingWriteError — this prevents a transient/partial Sheets API
+    failure from silently discarding an entire batch of formatting
+    (e.g. leaving a tab cleared but only partially re-styled)."""
+    requests = preprocess_merge_requests(sh, requests)
     for i in range(0, len(requests), chunk):
         slice_ = requests[i:i + chunk]
-        for attempt in range(5):  # up to 5 retries
-            try:
-                profiler.increment("Sheets requests")
-                sh.batch_update({"requests": slice_})
-                time.sleep(1.5)   # 1.5 s between every chunk to stay under quota
-                break
-            except gspread.exceptions.APIError as e:
-                msg = str(e)
-                code = next((c for c in RETRYABLE if c in msg), None)
-                if code and attempt < 4:
-                    wait = 15 * (2 ** attempt)   # 15 s, 30 s, 60 s, 120 s, 240 s
-                    print(f"[retry] {code} hit, waiting {wait}s before retry {attempt+1}/5.")
-                    time.sleep(wait)
-                else:
-                    raise
+        _send_slice_with_retry(sh, slice_)
 
 def clear_sheet_safe(ws):
     """Safely clear a worksheet with retries for transient Google Sheets errors."""
