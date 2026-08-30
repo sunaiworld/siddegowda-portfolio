@@ -171,6 +171,40 @@ class TestResilienceAndErrors(unittest.TestCase):
                     f"Format difference at row {row_idx}, column {col_key}: GH={gh_cells[col_key]} vs FB={fb_cells[col_key]}"
                 )
 
+    def test_no_merge_crosses_frozen_columns(self):
+        C = github_data_builder.GITHUB_DATA_COLS
+        sample_rows = [[""] * len(C) for _ in range(15)]
+        for i, r in enumerate(sample_rows):
+            r[C["symbol"]] = f"SYM{i}"
+
+        for builder_fn, tab_name in [
+            (github_data_builder.write_github_data, "GITHUB DATA"),
+            (future_buy_builder.write_future_buy_tab, "Future Buy")
+        ]:
+            captured = []
+            with patch("sheet_writer.clear_sheet_safe"), \
+                 patch("sheet_writer.update_sheet_safe"), \
+                 patch("sheet_writer.batch_update_safe", side_effect=lambda sh, r: captured.extend(r)):
+                builder_fn(self.mock_sh, sample_rows, tab_name=tab_name)
+
+            # Find frozen columns
+            frozen_cols = 0
+            for req in captured:
+                if "updateSheetProperties" in req:
+                    gp = req["updateSheetProperties"].get("properties", {}).get("gridProperties", {})
+                    frozen_cols = gp.get("frozenColumnCount", 0)
+
+            # Assert no merge spans startColumnIndex < frozen_cols < endColumnIndex
+            for req in captured:
+                if "mergeCells" in req:
+                    rng = req["mergeCells"]["range"]
+                    c_start = rng.get("startColumnIndex", 0)
+                    c_end = rng.get("endColumnIndex", 0)
+                    self.assertFalse(
+                        c_start < frozen_cols < c_end,
+                        f"In tab '{tab_name}', mergeCells range {rng} spans across frozenColumnCount={frozen_cols}!"
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()

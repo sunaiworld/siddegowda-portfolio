@@ -163,6 +163,7 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy", sector_weights=None, p
         "Buy/Sell Price Range", "Portfolio Fit", "Tranche Guidance", "Action"
     ]
 
+    FROZEN_COLS = 1
     top10_title_row = ["TOP 10 BUY OPPORTUNITIES"] + [""] * (num_cols - 1)
     top10_hdr_row = top10_headers + [""] * (num_cols - len(top10_headers))
     top10_data_rows = []
@@ -219,7 +220,6 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy", sector_weights=None, p
         headers[idx] = GITHUB_DATA_HEADER_NAMES.get(key, key)
         widths[idx]  = GITHUB_DATA_COL_WIDTHS.get(key, 70)
 
-    FROZEN_COLS = 1
     group_ranges = [(C[sk], C[ek], label) for sk, ek, label in GROUP_DEFS]
     group_row = [""] * num_cols
     for start_col, end_col, label in group_ranges:
@@ -259,13 +259,15 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy", sector_weights=None, p
     reqs = []
     reqs.append({"clearBasicFilter": {"sheetId": ws.id}})
 
-    # Top 10 Title Banner: Merge A1:I1, deep navy
-    reqs.append({
-        "mergeCells": {
-            "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": len(top10_headers)},
-            "mergeType": "MERGE_ALL"
-        }
-    })
+    # Top 10 Title Banner: Merge B1:I1 (leaving frozen col A unmerged to respect freeze boundary), deep navy
+    eff_title_merge_start = FROZEN_COLS if len(top10_headers) > FROZEN_COLS else 0
+    if len(top10_headers) > eff_title_merge_start:
+        reqs.append({
+            "mergeCells": {
+                "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": eff_title_merge_start, "endColumnIndex": len(top10_headers)},
+                "mergeType": "MERGE_ALL"
+            }
+        })
     reqs.append({
         "repeatCell": {
             "range": {"sheetId": ws.id, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": len(top10_headers)},
