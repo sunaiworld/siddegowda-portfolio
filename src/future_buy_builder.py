@@ -235,9 +235,26 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy", sector_weights=None, p
     except Exception:
         ws = sh.add_worksheet(tab_name, rows=len(all_data) + 20, cols=num_cols)
 
-    clear_sheet_safe(ws)
-    batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
-    update_sheet_safe(ws, "A1", all_data, value_input_option="USER_ENTERED")
+    import sheet_writer
+
+    try:
+        sheet_writer.clear_sheet_safe(ws)
+    except Exception as e:
+        log.error(f"[write_future_buy_tab] watchlist='{tab_name}' tab='{tab_name}' stage='clear worksheet' failed ({type(e).__name__}): {e}")
+        raise
+
+    try:
+        sheet_writer.batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
+    except Exception as e:
+        log.error(f"[write_future_buy_tab] watchlist='{tab_name}' tab='{tab_name}' stage='clear formatting' failed ({type(e).__name__}): {e}")
+        raise
+
+    try:
+        sheet_writer.update_sheet_safe(ws, "A1", all_data, value_input_option="USER_ENTERED")
+    except Exception as e:
+        log.error(f"[write_future_buy_tab] watchlist='{tab_name}' tab='{tab_name}' stage='write row data + headers' failed ({type(e).__name__}): {e}. "
+                  f"Worksheet was already cleared — '{tab_name}' has no data/formatting until the next successful run.")
+        raise
 
     reqs = []
     reqs.append({"clearBasicFilter": {"sheetId": ws.id}})
@@ -538,7 +555,14 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy", sector_weights=None, p
         reqs.append(color_cell_req(ws.id, rn, C["news_summary"], "e8f5f9", "01579b", bold=False))
         reqs.append(color_cell_req(ws.id, rn, C["news_source"],  "f5f5f5", "757575", bold=False))
 
-    batch_update_safe(sh, reqs)
+    try:
+        sheet_writer.batch_update_safe(sh, reqs)
+    except Exception as e:
+        log.error(f"[write_future_buy_tab] watchlist='{tab_name}' tab='{tab_name}' stage='apply formatting' "
+                  f"failed ({type(e).__name__}): {e}. Row data was written but '{tab_name}' may be "
+                  f"partially/un-styled until the next successful run.")
+        raise
+
     log.info(f"{tab_name} tab written and formatted with Top 10 Opportunity Callout ({len(rows)} rows)")
     return ws
 
@@ -556,12 +580,10 @@ def process_all_watchlists(sh, nc_cache=None, shared_prices=None, shared_fund=No
             all_rows[tab_name] = rows
         except Exception as e:
             log.error(
-                f"[process_all_watchlists] tab='{tab_name}' FAILED "
-                f"({type(e).__name__}): {e}. This tab may now be partially "
-                f"written or partially formatted — it will be rewritten "
-                f"fully on the next successful run.",
+                f"[process_all_watchlists] watchlist='{tab_name}' tab='{tab_name}' FAILED "
+                f"({type(e).__name__}): {e}. Worksheet was modified or cleared — '{tab_name}' may be in a partial/failed state.",
                 exc_info=True,
             )
-            all_rows[tab_name] = []
+            raise
     return all_rows
 

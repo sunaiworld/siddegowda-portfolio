@@ -25,6 +25,7 @@ from config import *
 from score_engine import *
 from sheet_formatter import *
 from sheet_writer import *
+import sheet_writer
 
 
 # ══════════════════════════════════════════════
@@ -260,8 +261,10 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
 
     return row, archetype, tot_sc, final_action
 
+
 def clean_row(row):
     return [("" if isinstance(v, float) and (math.isnan(v) or math.isinf(v)) else v) for v in row]
+
 
 def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     C = GITHUB_DATA_COLS
@@ -296,9 +299,24 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     except Exception:
         ws = sh.add_worksheet(tab_name, rows=len(all_data) + 20, cols=num_cols)
 
-    clear_sheet_safe(ws)
-    batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
-    update_sheet_safe(ws, "A1", all_data, value_input_option="USER_ENTERED")
+    try:
+        sheet_writer.clear_sheet_safe(ws)
+    except Exception as e:
+        log.error(f"[write_github_data] watchlist='{tab_name}' tab='{tab_name}' stage='clear worksheet' failed ({type(e).__name__}): {e}")
+        raise
+
+    try:
+        sheet_writer.batch_update_safe(sh, clear_all_formatting_reqs(ws.id))
+    except Exception as e:
+        log.error(f"[write_github_data] watchlist='{tab_name}' tab='{tab_name}' stage='clear formatting' failed ({type(e).__name__}): {e}")
+        raise
+
+    try:
+        sheet_writer.update_sheet_safe(ws, "A1", all_data, value_input_option="USER_ENTERED")
+    except Exception as e:
+        log.error(f"[write_github_data] watchlist='{tab_name}' tab='{tab_name}' stage='write row data + headers' failed ({type(e).__name__}): {e}. "
+                  f"Worksheet was already cleared — '{tab_name}' has no data/formatting until the next successful run.")
+        raise
 
     # Column-name header now sits at row index 1 (sheet row 2) since the
     # merged group-header banner occupies row index 0 above it.
@@ -321,14 +339,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     clear_filter_req = {"clearBasicFilter": {"sheetId": ws.id}}
     reqs = [clear_filter_req] + struct_reqs + group_header_reqs + group_color_reqs + pct_reqs + curr_reqs
 
-    # Single source of truth for these three palettes now lives in
-    # sheet_formatter.py (GITHUB_DATA_ACTION_COLORS / _BUYING_ZONE_COLORS /
-    # _PRICE_RANGE_LIGHT_COLORS) — aliased here under the original local
-    # names so nothing below this line has to change. Values/thresholds
-    # are unchanged; only the definition location moved.
-    ACTION_COLORS = GITHUB_DATA_ACTION_COLORS
-    BUYING_ZONE_COLORS = GITHUB_DATA_BUYING_ZONE_COLORS
-
     def sf(row, key):
         idx = C[key]
         try:
@@ -336,8 +346,6 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
             return float(v) if len(row) > idx and v else None
         except:
             return None
-
-    PRICE_RANGE_LIGHT_COLORS = GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS
 
     for i, row in enumerate(rows):
         rn  = i + 2
@@ -482,14 +490,14 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
         reqs.append(color_cell_req(ws.id, rn, C["cmp"], "f1f8e9", "33691e", bold=False))
         # Fair Val: light green reference colour
         reqs.append(color_cell_req(ws.id, rn, C["fair_val"], "e8f5e9", "1b5e20", bold=False))
-        if action in ACTION_COLORS:
-            bg_a, fg_a = ACTION_COLORS[action]
+        if action in GITHUB_DATA_ACTION_COLORS:
+            bg_a, fg_a = GITHUB_DATA_ACTION_COLORS[action]
             reqs.append(color_cell_req(ws.id, rn, C["action"], bg_a, fg_a))
-        if b_zone in BUYING_ZONE_COLORS:
-            bg_b, fg_b = BUYING_ZONE_COLORS[b_zone]
+        if b_zone in GITHUB_DATA_BUYING_ZONE_COLORS:
+            bg_b, fg_b = GITHUB_DATA_BUYING_ZONE_COLORS[b_zone]
             reqs.append(color_cell_req(ws.id, rn, C["buying_zone"], bg_b, fg_b))
-            if b_zone in PRICE_RANGE_LIGHT_COLORS:
-                lbg, lfg = PRICE_RANGE_LIGHT_COLORS[b_zone]
+            if b_zone in GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS:
+                lbg, lfg = GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS[b_zone]
                 reqs.append(color_cell_req(ws.id, rn, C["price_range"], lbg, lfg, bold=False))
 
         if risk_val:
@@ -552,11 +560,11 @@ def write_github_data(sh, rows, tab_name="GITHUB DATA"):
     })
 
     try:
-        batch_update_safe(sh, reqs)
+        sheet_writer.batch_update_safe(sh, reqs)
     except Exception as e:
-        log.error(f"[write_github_data:{tab_name}] stage='apply formatting (structural/group/row-level)' "
-                   f"failed ({type(e).__name__}): {e}. Row data was written but '{tab_name}' may be "
-                   f"partially/un-styled until the next successful run.")
+        log.error(f"[write_github_data] watchlist='{tab_name}' tab='{tab_name}' stage='apply formatting' "
+                  f"failed ({type(e).__name__}): {e}. Row data was written but '{tab_name}' may be "
+                  f"partially/un-styled until the next successful run.")
         raise
 
     log.info(f"{tab_name} tab written and formatted ({len(rows)} rows)")
