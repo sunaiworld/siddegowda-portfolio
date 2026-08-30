@@ -406,3 +406,267 @@ def get_weight_gradient_rule(ws_id, start_row, end_row, col_idx):
             "index": 0
         }
     }
+
+
+def build_github_data_format_requests(ws_id, rows, start_row=0, freeze_rows=2, freeze_cols=1):
+    """
+    CANONICAL FORMATTING ENGINE FOR 41-COLUMN GITHUB-DATA-STYLE TABLES.
+    Used identically by GITHUB DATA, Future Buy, and any watchlist tab.
+
+    start_row: Row index where the table starts.
+               - If 0 (direct table): group header is at row 0, column headers at row 1, data starts at row 2.
+               - If >0 (e.g. 13 below a Top 10 block): group header is at row start_row, column headers at start_row + 1, data starts at start_row + 2.
+    """
+    from github_data_builder import (
+        GITHUB_DATA_COLS, GITHUB_DATA_HEADER_NAMES, GITHUB_DATA_COL_WIDTHS,
+        GROUP_DEFS
+    )
+    C = GITHUB_DATA_COLS
+    num_cols = len(C)
+    widths = [GITHUB_DATA_COL_WIDTHS.get(key, 70) for key in C]
+
+    FROZEN_COLS = freeze_cols
+    group_ranges = [(C[sk], C[ek], label) for sk, ek, label in GROUP_DEFS]
+
+    group_hdr_idx = start_row
+    col_hdr_idx = start_row + 1
+    data_start_idx = start_row + 2
+    num_rows = len(rows)
+
+    reqs = []
+
+    # 1. Structural formatting & Column widths & Alternating row backgrounds
+    reqs += get_structural_format_reqs(
+        ws_id, num_rows, num_cols, widths,
+        freeze_rows=freeze_rows, freeze_cols=FROZEN_COLS,
+        header_row_idx=col_hdr_idx
+    )
+
+    # 2. Group header merges, pastel background colors, and height 30px
+    reqs += get_group_header_merge_reqs(ws_id, group_ranges, frozen_cols=FROZEN_COLS, row_idx=group_hdr_idx)
+    reqs += get_group_header_color_reqs(ws_id, group_ranges, frozen_cols=FROZEN_COLS, row_idx=group_hdr_idx)
+
+    # 3. Number formats for percentage and currency columns
+    pct_cols = [C["day_chg_pct"], C["return_1w"], C["return_1m"], C["div"], C["roe"], C["roa"], C["rev_growth"]]
+    for col_idx in pct_cols:
+        reqs += get_percentage_format_reqs(ws_id, data_start_idx, data_start_idx + num_rows, col_idx, col_idx + 1)
+
+    curr_cols = [C["low52"], C["cmp"], C["high52"], C["eps"], C["bv"]]
+    for col_idx in curr_cols:
+        reqs += get_currency_format_reqs(ws_id, data_start_idx, data_start_idx + num_rows, col_idx, col_idx + 1)
+
+    # Helper to parse float values safely
+    def sf(row, key):
+        idx = C[key]
+        try:
+            v = str(row[idx]).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip()
+            return float(v) if len(row) > idx and v else None
+        except Exception:
+            return None
+
+    # 4. Cell-level colorings for every row
+    for i, row in enumerate(rows):
+        rn = data_start_idx + i
+
+        action    = str(row[C["action"]]).strip() if len(row) > C["action"] else ""
+        b_zone    = str(row[C["buying_zone"]]).strip() if len(row) > C["buying_zone"] else ""
+        tech_set  = str(row[C["technical_setup"]]).strip() if len(row) > C["technical_setup"] else ""
+        trend_val = str(row[C["trend"]]).strip() if len(row) > C["trend"] else ""
+        risk_val  = str(row[C["econ_sens"]]).strip() if len(row) > C["econ_sens"] else ""
+
+        rsi_v    = sf(row, "rsi")
+        pe_v     = sf(row, "pe")
+        eps_v    = sf(row, "eps")
+        pb_v     = sf(row, "pb")
+        div_v    = sf(row, "div")
+        roe_v    = sf(row, "roe")
+        roa_v    = sf(row, "roa")
+        debt_v   = sf(row, "debt_eq")
+        growth_v = sf(row, "rev_growth")
+        beta_v   = sf(row, "beta")
+        vol_v    = sf(row, "vol_spike")
+        q_sc     = sf(row, "quality")
+        v_sc     = sf(row, "valuation")
+        t_sc     = sf(row, "timing")
+        tot_sc   = sf(row, "total")
+
+        # Market-cap tier family: Symbol, Mkt Cap Cr
+        mcap_tier_v = sf(row, "mcap")
+        if mcap_tier_v is not None:
+            if mcap_tier_v >= 25000:     cb, cf = "d9ead3", "0b8043"   # Large Cap
+            elif mcap_tier_v >= 5000:    cb, cf = "d9eaf7", "1565c0"   # Mid Cap
+            else:                        cb, cf = "fde9d9", "c62828"  # Small Cap
+            for key in ("symbol", "mcap"):
+                reqs.append(color_cell_req(ws_id, rn, C[key], cb, cf))
+
+        # 52W High / Low
+        reqs.append(color_cell_req(ws_id, rn, C["high52"], "eaf4fb", "1565c0", bold=False))
+        reqs.append(color_cell_req(ws_id, rn, C["low52"], "fdf2f2", "c62828", bold=False))
+
+        # Day Chg%
+        day_chg_v = sf(row, "day_chg_pct")
+        if day_chg_v is not None:
+            if day_chg_v > 0:
+                reqs.append(color_cell_req(ws_id, rn, C["day_chg_pct"], "d9ead3", "0b8043"))
+            elif day_chg_v < 0:
+                reqs.append(color_cell_req(ws_id, rn, C["day_chg_pct"], "fde9d9", "c62828"))
+            else:
+                reqs.append(color_cell_req(ws_id, rn, C["day_chg_pct"], "f1f1f1", "666666"))
+
+        # 1W Return %
+        ret1w_v = sf(row, "return_1w")
+        if ret1w_v is not None:
+            if ret1w_v > 0:
+                reqs.append(color_cell_req(ws_id, rn, C["return_1w"], "d9ead3", "0b8043"))
+            elif ret1w_v < 0:
+                reqs.append(color_cell_req(ws_id, rn, C["return_1w"], "fde9d9", "c62828"))
+            else:
+                reqs.append(color_cell_req(ws_id, rn, C["return_1w"], "f1f1f1", "666666"))
+
+        # 1M Return %
+        ret1m_v = sf(row, "return_1m")
+        if ret1m_v is not None:
+            if ret1m_v > 0:
+                reqs.append(color_cell_req(ws_id, rn, C["return_1m"], "d9ead3", "0b8043"))
+            elif ret1m_v < 0:
+                reqs.append(color_cell_req(ws_id, rn, C["return_1m"], "fde9d9", "c62828"))
+            else:
+                reqs.append(color_cell_req(ws_id, rn, C["return_1m"], "f1f1f1", "666666"))
+
+        # Buy 20% Less (% from 52W high)
+        pct_high_v = sf(row, "pct_high")
+        if pct_high_v is not None:
+            if pct_high_v >= -20:
+                reqs.append(color_cell_req(ws_id, rn, C["pct_high"], "d9ead3", "0b8043"))
+            else:
+                reqs.append(color_cell_req(ws_id, rn, C["pct_high"], "fde9d9", "c62828"))
+
+        # PE
+        if pe_v is not None:
+            if 0 < pe_v <= 25:   reqs.append(color_cell_req(ws_id, rn, C["pe"], "d9ead3", "0b8043"))
+            elif pe_v <= 40:     reqs.append(color_cell_req(ws_id, rn, C["pe"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws_id, rn, C["pe"], "fde9d9", "c62828"))
+
+        # EPS
+        if eps_v is not None:
+            reqs.append(color_cell_req(ws_id, rn, C["eps"], "d9ead3", "0b8043") if eps_v > 0
+                        else color_cell_req(ws_id, rn, C["eps"], "fde9d9", "c62828"))
+
+        # P/B
+        if pb_v is not None:
+            if pb_v <= 3:        reqs.append(color_cell_req(ws_id, rn, C["pb"], "d9ead3", "0b8043"))
+            elif pb_v <= 5:      reqs.append(color_cell_req(ws_id, rn, C["pb"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws_id, rn, C["pb"], "fde9d9", "c62828"))
+
+        # Div Yield%
+        if div_v is not None:
+            if div_v >= 2:       reqs.append(color_cell_req(ws_id, rn, C["div"], "d9ead3", "0b8043"))
+            elif div_v >= 1:     reqs.append(color_cell_req(ws_id, rn, C["div"], "fff2cc", "7f4f00"))
+
+        # RSI
+        if rsi_v is not None:
+            if   rsi_v < 35:  reqs.append(color_cell_req(ws_id, rn, C["rsi"], "d9ead3", "0b8043"))
+            elif rsi_v > 70:  reqs.append(color_cell_req(ws_id, rn, C["rsi"], "fde9d9", "c62828"))
+            elif rsi_v > 60:  reqs.append(color_cell_req(ws_id, rn, C["rsi"], "fff2cc", "7f4f00"))
+
+        # ROE% / ROA% / Debt-Equity / Rev Growth% / Beta
+        if roe_v is not None:
+            if roe_v >= 15:      reqs.append(color_cell_req(ws_id, rn, C["roe"], "d9ead3", "0b8043"))
+            elif roe_v >= 8:     reqs.append(color_cell_req(ws_id, rn, C["roe"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws_id, rn, C["roe"], "fde9d9", "c62828"))
+        if roa_v is not None:
+            if roa_v >= 2:       reqs.append(color_cell_req(ws_id, rn, C["roa"], "d9ead3", "0b8043"))
+            elif roa_v >= 1:     reqs.append(color_cell_req(ws_id, rn, C["roa"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws_id, rn, C["roa"], "fde9d9", "c62828"))
+        if debt_v is not None:
+            if debt_v <= 0.5:    reqs.append(color_cell_req(ws_id, rn, C["debt_eq"], "d9ead3", "0b8043"))
+            elif debt_v <= 1:    reqs.append(color_cell_req(ws_id, rn, C["debt_eq"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws_id, rn, C["debt_eq"], "fde9d9", "c62828"))
+        if growth_v is not None:
+            if growth_v >= 10:   reqs.append(color_cell_req(ws_id, rn, C["rev_growth"], "d9ead3", "0b8043"))
+            elif growth_v >= 0:  reqs.append(color_cell_req(ws_id, rn, C["rev_growth"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws_id, rn, C["rev_growth"], "fde9d9", "c62828"))
+        if beta_v is not None:
+            if beta_v <= 1:      reqs.append(color_cell_req(ws_id, rn, C["beta"], "d9ead3", "0b8043"))
+            elif beta_v <= 1.5:  reqs.append(color_cell_req(ws_id, rn, C["beta"], "fff2cc", "7f4f00"))
+            else:                reqs.append(color_cell_req(ws_id, rn, C["beta"], "fde9d9", "c62828"))
+
+        # Strengths / Weaknesses
+        reqs.append(color_cell_req(ws_id, rn, C["strengths"], "f1f9f1", "0b8043", bold=False))
+        reqs.append(color_cell_req(ws_id, rn, C["weaknesses"], "fdf2f2", "c62828", bold=False))
+
+        # Technical Setup / CMP / Fair Val / Final Action / Risk Level
+        if tech_set in TECHNICAL_SETUP_COLORS:
+            bg, fg = TECHNICAL_SETUP_COLORS[tech_set]
+            reqs.append(color_cell_req(ws_id, rn, C["technical_setup"], bg, fg))
+        reqs.append(color_cell_req(ws_id, rn, C["cmp"], "f1f8e9", "33691e", bold=False))
+        reqs.append(color_cell_req(ws_id, rn, C["fair_val"], "e8f5e9", "1b5e20", bold=False))
+        if action in GITHUB_DATA_ACTION_COLORS:
+            bg_a, fg_a = GITHUB_DATA_ACTION_COLORS[action]
+            reqs.append(color_cell_req(ws_id, rn, C["action"], bg_a, fg_a))
+        if b_zone in GITHUB_DATA_BUYING_ZONE_COLORS:
+            bg_b, fg_b = GITHUB_DATA_BUYING_ZONE_COLORS[b_zone]
+            reqs.append(color_cell_req(ws_id, rn, C["buying_zone"], bg_b, fg_b))
+            if b_zone in GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS:
+                lbg, lfg = GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS[b_zone]
+                reqs.append(color_cell_req(ws_id, rn, C["price_range"], lbg, lfg, bold=False))
+
+        if risk_val:
+            if risk_val == "Very High": reqs.append(color_cell_req(ws_id, rn, C["econ_sens"], "fde9d9", "c62828"))
+            elif risk_val in ("Medium-High", "High"): reqs.append(color_cell_req(ws_id, rn, C["econ_sens"], "ffe599", "7f4f00"))
+            elif risk_val == "Medium": reqs.append(color_cell_req(ws_id, rn, C["econ_sens"], "fff2cc", "7f4f00"))
+            elif risk_val in ("Low", "Low-Medium"): reqs.append(color_cell_req(ws_id, rn, C["econ_sens"], "d9ead3", "0b8043"))
+
+        # Quality / Valuation / Timing / Total
+        if q_sc is not None:
+            if q_sc >= 30:   reqs.append(color_cell_req(ws_id, rn, C["quality"], "d9ead3", "0b8043"))
+            elif q_sc <= 15: reqs.append(color_cell_req(ws_id, rn, C["quality"], "fde9d9", "c62828"))
+        if v_sc is not None:
+            if v_sc >= 22:   reqs.append(color_cell_req(ws_id, rn, C["valuation"], "d9ead3", "0b8043"))
+            elif v_sc <= 10: reqs.append(color_cell_req(ws_id, rn, C["valuation"], "fde9d9", "c62828"))
+        if t_sc is not None:
+            if t_sc >= 22:   reqs.append(color_cell_req(ws_id, rn, C["timing"], "d9ead3", "0b8043"))
+            elif t_sc <= 10: reqs.append(color_cell_req(ws_id, rn, C["timing"], "fde9d9", "c62828"))
+        if tot_sc is not None:
+            if   tot_sc >= 65: reqs.append(color_cell_req(ws_id, rn, C["total"], "00c853", "ffffff"))
+            elif tot_sc >= 50: reqs.append(color_cell_req(ws_id, rn, C["total"], "d9ead3", "0b8043"))
+            elif tot_sc >= 35: reqs.append(color_cell_req(ws_id, rn, C["total"], "fff2cc", "7f4f00"))
+            else:              reqs.append(color_cell_req(ws_id, rn, C["total"], "fde9d9", "c62828"))
+
+        # Vol Spike / Trend
+        if vol_v is not None:
+            if vol_v >= 2:      reqs.append(color_cell_req(ws_id, rn, C["vol_spike"], "fde9d9", "c62828"))
+            elif vol_v >= 1.5:  reqs.append(color_cell_req(ws_id, rn, C["vol_spike"], "fff2cc", "7f4f00"))
+            else:               reqs.append(color_cell_req(ws_id, rn, C["vol_spike"], "d9ead3", "0b8043"))
+        if trend_val in TREND_COLORS:
+            bg, fg = TREND_COLORS[trend_val]
+            reqs.append(color_cell_req(ws_id, rn, C["trend"], bg, fg))
+
+        # AI News columns
+        news_sent = str(row[C["news_sentiment"]]).strip() if len(row) > C["news_sentiment"] else ""
+        if "Bullish" in news_sent:
+            reqs.append(color_cell_req(ws_id, rn, C["news_sentiment"], "d9ead3", "0b8043"))
+        elif "Bearish" in news_sent:
+            reqs.append(color_cell_req(ws_id, rn, C["news_sentiment"], "fde9d9", "c62828"))
+        elif news_sent:
+            reqs.append(color_cell_req(ws_id, rn, C["news_sentiment"], "f1f1f1", "555555"))
+
+        reqs.append(color_cell_req(ws_id, rn, C["news_summary"], "e8f5f9", "01579b", bold=False))
+        reqs.append(color_cell_req(ws_id, rn, C["news_source"],  "f5f5f5", "757575", bold=False))
+
+    # 5. Default filter
+    reqs.append({
+        "setBasicFilter": {
+            "filter": {
+                "range": {
+                    "sheetId": ws_id,
+                    "startRowIndex": col_hdr_idx,
+                    "endRowIndex": data_start_idx + num_rows,
+                    "startColumnIndex": 0,
+                    "endColumnIndex": num_cols,
+                }
+            }
+        }
+    })
+
+    return reqs

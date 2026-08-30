@@ -114,5 +114,63 @@ class TestResilienceAndErrors(unittest.TestCase):
         self.assertEqual(sheet_formatter.GITHUB_DATA_PRICE_RANGE_LIGHT_COLORS["🟢🟢 ADD AGGRESSIVELY"], ("c8f5dc", "0b5e2a"))
 
 
+    def test_identical_cell_formatting_between_github_data_and_future_buy(self):
+        C = github_data_builder.GITHUB_DATA_COLS
+        sample_rows = []
+        for i in range(5):
+            r = [""] * len(C)
+            r[C["symbol"]] = f"SYM{i}"
+            r[C["mcap"]] = "₹50,000 Cr"
+            r[C["day_chg_pct"]] = 2.5
+            r[C["return_1w"]] = -1.2
+            r[C["return_1m"]] = 5.0
+            r[C["trend"]] = "Uptrend"
+            r[C["technical_setup"]] = "🟢 Tight Base"
+            r[C["rsi"]] = 45
+            r[C["pe"]] = 22.5
+            r[C["eps"]] = 100.0
+            r[C["roe"]] = 18.0
+            r[C["action"]] = "BUY"
+            r[C["buying_zone"]] = "🟢 ACCUMULATE"
+            sample_rows.append(r)
+
+        gh_reqs = []
+        fb_reqs = []
+
+        with patch("sheet_writer.clear_sheet_safe"), \
+             patch("sheet_writer.update_sheet_safe"), \
+             patch("sheet_writer.batch_update_safe", side_effect=lambda sh, r: gh_reqs.extend(r)):
+            github_data_builder.write_github_data(self.mock_sh, sample_rows, tab_name="GITHUB DATA")
+
+        with patch("sheet_writer.clear_sheet_safe"), \
+             patch("sheet_writer.update_sheet_safe"), \
+             patch("sheet_writer.batch_update_safe", side_effect=lambda sh, r: fb_reqs.extend(r)):
+            future_buy_builder.write_future_buy_tab(self.mock_sh, sample_rows, tab_name="Future Buy")
+
+        # In GITHUB DATA: row i is at row_index 2 + i (sheet row 3 + i)
+        # In Future Buy: 5 rows means top10 has 5 items (indices 2..6), blank sep is index 7,
+        # group header is index 8, col header is index 9, data starts at index 10 (sheet row 11)
+        fb_data_start = 2 + len(sample_rows) + 1 + 2  # 10
+        for row_idx in range(len(sample_rows)):
+            gh_r = 2 + row_idx
+            fb_r = fb_data_start + row_idx
+
+            gh_cells = {
+                (r["repeatCell"]["range"].get("startColumnIndex"), r["repeatCell"]["range"].get("endColumnIndex")): r["repeatCell"]["cell"]
+                for r in gh_reqs if "repeatCell" in r and r["repeatCell"]["range"].get("startRowIndex") == gh_r and r["repeatCell"]["range"].get("endRowIndex") == gh_r + 1
+            }
+            fb_cells = {
+                (r["repeatCell"]["range"].get("startColumnIndex"), r["repeatCell"]["range"].get("endColumnIndex")): r["repeatCell"]["cell"]
+                for r in fb_reqs if "repeatCell" in r and r["repeatCell"]["range"].get("startRowIndex") == fb_r and r["repeatCell"]["range"].get("endRowIndex") == fb_r + 1
+            }
+
+            self.assertEqual(gh_cells.keys(), fb_cells.keys(), f"Mismatch in formatted column ranges on row {row_idx}")
+            for col_key in gh_cells:
+                self.assertEqual(
+                    gh_cells[col_key], fb_cells[col_key],
+                    f"Format difference at row {row_idx}, column {col_key}: GH={gh_cells[col_key]} vs FB={fb_cells[col_key]}"
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
