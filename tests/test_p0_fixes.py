@@ -46,9 +46,23 @@ _prof_obj.stage.return_value.__enter__ = MagicMock(return_value=None)
 _prof_obj.stage.return_value.__exit__ = MagicMock(return_value=False)
 _prof_m.profiler = _prof_obj
 
+class _DummyResponse:
+    def __init__(self, text):
+        self.text = text
+        self.status_code = 429 if "429" in text else (503 if "503" in text else 400)
+    def json(self):
+        return {"error": {"message": self.text, "code": self.status_code}}
+
 if "gspread.exceptions" in sys.modules and hasattr(sys.modules["gspread.exceptions"], "APIError"):
     _gse = sys.modules["gspread.exceptions"]
-    _APIError = _gse.APIError
+    _RealAPIError = _gse.APIError
+    class _APIError(_RealAPIError):
+        def __init__(self, resp_or_msg):
+            if isinstance(resp_or_msg, str):
+                super().__init__(_DummyResponse(resp_or_msg))
+            else:
+                super().__init__(resp_or_msg)
+    _gse.APIError = _APIError
 else:
     _gse = _stub("gspread.exceptions")
     class _APIError(Exception):

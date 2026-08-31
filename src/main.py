@@ -13,6 +13,7 @@ import mutual_fund_builder
 import dividend_builder
 import growth_screener_builder
 import history_tracker
+import monthly_snapshot
 from profiler import profiler
 
 #!/usr/bin/env python3
@@ -420,6 +421,19 @@ def run_portfolio_update(sh):
             history_tracker.append_history_snapshot(sh, results, portfolio_live_value, prices, health_score=health["overall"])
         except Exception as e:
             log.error(f"Failed to record history snapshot: {e}", exc_info=True)
+
+        try:
+            log.info("Checking and recording monthly historical snapshots...")
+            future_buy_rows = watchlist_results.get("Future Buy", [])
+            monthly_snapshot.check_and_record_monthly_snapshots(
+                sh,
+                github_results=results,
+                future_buy_rows=future_buy_rows,
+                sector_weights=sector_weights,
+                portfolio_value=portfolio_live_value
+            )
+        except Exception as e:
+            log.error(f"Failed to record monthly historical snapshot: {e}", exc_info=True)
 
     try:
         log.info("Building Dividends tab...")
