@@ -225,5 +225,61 @@ class TestMonthlySnapshot(unittest.TestCase):
         self.assertEqual(res["status"], "success")
 
 
+    @patch("sheet_writer.batch_update_safe")
+    def test_sync_missing_local_snapshots_from_sheet(self, mock_batch_update):
+        sh = MockSpreadsheet()
+        gh_ws = sh.add_worksheet(monthly_snapshot.GITHUB_DATA_HISTORY_TAB)
+        fb_ws = sh.add_worksheet(monthly_snapshot.FUTURE_BUY_HISTORY_TAB)
+
+        gh_ws.append_row(monthly_snapshot.GITHUB_DATA_HISTORY_HEADERS)
+        fb_ws.append_row(monthly_snapshot.FUTURE_BUY_HISTORY_HEADERS)
+
+        # Append existing August 2026 rows
+        gh_ws.append_row(["2026-08-31", "2026-08", "INFY", "IT"] + [""] * 39)
+        fb_ws.append_row(["2026-08-31", "2026-08", 1, "High Fit", "2.0% Tranche", "ZYDUSLIFE"] + [""] * 40)
+
+        # Before sync: local snapshot dir is empty
+        month_dir = os.path.join(self.test_dir, "2026-08")
+        self.assertFalse(os.path.exists(month_dir))
+
+        # Run sync
+        synced = monthly_snapshot.sync_missing_local_snapshots_from_sheet(sh)
+        self.assertEqual(synced, ["2026-08"])
+
+        # After sync: local CSV files and manifest exist with correct content
+        self.assertTrue(os.path.exists(os.path.join(month_dir, "github_data_snapshot.csv")))
+        self.assertTrue(os.path.exists(os.path.join(month_dir, "future_buy_snapshot.csv")))
+        self.assertTrue(os.path.exists(monthly_snapshot.MANIFEST_FILE))
+
+        with open(monthly_snapshot.MANIFEST_FILE, "r", encoding="utf-8") as f:
+            manifest = json.load(f)
+        self.assertIn("2026-08", manifest)
+        self.assertEqual(manifest["2026-08"]["github_data_rows"], 1)
+        self.assertEqual(manifest["2026-08"]["future_buy_rows"], 1)
+
+    @patch("sheet_writer.batch_update_safe")
+    def test_sync_missing_local_snapshots_skips_when_files_exist(self, mock_batch_update):
+        sh = MockSpreadsheet()
+        gh_ws = sh.add_worksheet(monthly_snapshot.GITHUB_DATA_HISTORY_TAB)
+        fb_ws = sh.add_worksheet(monthly_snapshot.FUTURE_BUY_HISTORY_TAB)
+
+        gh_ws.append_row(monthly_snapshot.GITHUB_DATA_HISTORY_HEADERS)
+        fb_ws.append_row(monthly_snapshot.FUTURE_BUY_HISTORY_HEADERS)
+
+        gh_ws.append_row(["2026-08-31", "2026-08", "INFY", "IT"] + [""] * 39)
+        fb_ws.append_row(["2026-08-31", "2026-08", 1, "High Fit", "2.0% Tranche", "ZYDUSLIFE"] + [""] * 40)
+
+        # Pre-create files
+        month_dir = os.path.join(self.test_dir, "2026-08")
+        os.makedirs(month_dir, exist_ok=True)
+        with open(os.path.join(month_dir, "github_data_snapshot.csv"), "w") as f:
+            f.write("test")
+        with open(os.path.join(month_dir, "future_buy_snapshot.csv"), "w") as f:
+            f.write("test")
+
+        synced = monthly_snapshot.sync_missing_local_snapshots_from_sheet(sh)
+        self.assertEqual(synced, [])
+
+
 if __name__ == "__main__":
     unittest.main()

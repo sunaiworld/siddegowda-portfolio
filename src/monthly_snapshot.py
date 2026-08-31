@@ -344,6 +344,65 @@ def save_local_snapshots(
     return gh_csv_path, fb_csv_path
 
 
+def sync_missing_local_snapshots_from_sheet(sh) -> List[str]:
+    """
+    Checks if there are historical months already captured in Google Sheets
+    (e.g., '2026-08') that do not yet have corresponding local CSV snapshot files.
+    If any are missing, extracts their exact rows directly from the sheet tabs
+    and writes the local CSV files and manifest entries.
+    Returns list of synced months.
+    """
+    synced_months = []
+    try:
+        try:
+            gh_ws = sh.worksheet(GITHUB_DATA_HISTORY_TAB)
+            gh_values = gh_ws.get_all_values()
+        except Exception:
+            gh_values = []
+
+        try:
+            fb_ws = sh.worksheet(FUTURE_BUY_HISTORY_TAB)
+            fb_values = fb_ws.get_all_values()
+        except Exception:
+            fb_values = []
+
+        if len(gh_values) <= 1 and len(fb_values) <= 1:
+            return []
+
+        # Find all distinct snapshot months present in sheet (Col 1 is Snapshot Month)
+        sheet_months = set()
+        for r in gh_values[1:]:
+            if len(r) > 1 and r[1].strip():
+                sheet_months.add(r[1].strip())
+        for r in fb_values[1:]:
+            if len(r) > 1 and r[1].strip():
+                sheet_months.add(r[1].strip())
+
+        for m in sorted(sheet_months):
+            gh_csv = os.path.join(LOCAL_SNAPSHOT_DIR, m, "github_data_snapshot.csv")
+            fb_csv = os.path.join(LOCAL_SNAPSHOT_DIR, m, "future_buy_snapshot.csv")
+
+            if not (os.path.exists(gh_csv) and os.path.exists(fb_csv)):
+                # Extract rows for this month
+                gh_rows_for_m = [r for r in gh_values[1:] if len(r) > 1 and r[1].strip() == m]
+                fb_rows_for_m = [r for r in fb_values[1:] if len(r) > 1 and r[1].strip() == m]
+
+                # Find the snapshot date for this month
+                snap_date = m + "-01"
+                if gh_rows_for_m and len(gh_rows_for_m[0]) > 0:
+                    snap_date = gh_rows_for_m[0][0]
+                elif fb_rows_for_m and len(fb_rows_for_m[0]) > 0:
+                    snap_date = fb_rows_for_m[0][0]
+
+                save_local_snapshots(snap_date, m, gh_rows_for_m, fb_rows_for_m)
+                log.info(f"Monthly Snapshot: Backfilled local CSV files for {m} from Google Sheet history ({len(gh_rows_for_m)} GITHUB DATA, {len(fb_rows_for_m)} Future Buy)")
+                synced_months.append(m)
+    except Exception as e:
+        log.warning(f"Failed to sync missing local snapshots from sheet: {e}")
+
+    return synced_months
+
+
 def check_and_record_monthly_snapshots(
     sh,
     github_results: List[List[Any]],
@@ -358,6 +417,9 @@ def check_and_record_monthly_snapshots(
     Evaluates whether a snapshot should be taken, verifies duplicate protection,
     and writes to both Google Sheets and local storage.
     """
+    # 1. First sync any historical months from Google Sheets missing locally on disk
+    synced_backfills = sync_missing_local_snapshots_from_sheet(sh)
+
     if run_date is None:
         today_date = date.today()
     elif isinstance(run_date, datetime):
@@ -383,6 +445,7 @@ def check_and_record_monthly_snapshots(
             "date": snapshot_date_str,
             "month": snapshot_month_str,
             "recorded": False,
+            "synced_backfills": synced_backfills,
         }
 
     log.info(f"Monthly Snapshot: Evaluating snapshot recording for {snapshot_month_str} (Date: {snapshot_date_str}, Force: {force})...")
@@ -402,6 +465,7 @@ def check_and_record_monthly_snapshots(
             "date": snapshot_date_str,
             "month": snapshot_month_str,
             "recorded": False,
+            "synced_backfills": synced_backfills,
         }
 
     # Build snapshot rows
@@ -412,7 +476,7 @@ def check_and_record_monthly_snapshots(
 
     if not gh_snap_rows and not fb_snap_rows:
         log.warning("Monthly Snapshot: No GITHUB DATA or Future Buy rows provided. Skipping.")
-        return {"status": "skipped_empty_data", "recorded": False}
+        return {"status": "skipped_empty_data", "recorded": False, "synced_backfills": synced_backfills}
 
     # Write to Google Sheets
     if gh_snap_rows:
@@ -453,4 +517,5 @@ def check_and_record_monthly_snapshots(
         "recorded": True,
         "local_github_csv": gh_csv,
         "local_future_buy_csv": fb_csv,
+        "synced_backfills": synced_backfills,
     }
