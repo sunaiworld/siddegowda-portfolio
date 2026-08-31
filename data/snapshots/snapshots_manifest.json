@@ -1,0 +1,10 @@
+{
+  "2026-08": {
+    "snapshot_date": "2026-08-31",
+    "recorded_at": "2026-08-31T19:26:33.495873",
+    "github_data_rows": 180,
+    "future_buy_rows": 111,
+    "github_data_csv": "snapshots/2026-08/github_data_snapshot.csv",
+    "future_buy_csv": "snapshots/2026-08/future_buy_snapshot.csv"
+  }
+}
