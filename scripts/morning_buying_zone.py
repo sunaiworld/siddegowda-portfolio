@@ -20,7 +20,7 @@ from datetime import datetime, timezone, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import yfinance as yf
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
 
 from config import SHEET_ID, TECH_WORKERS
 from sheet_writer import get_gspread_client
@@ -40,37 +40,49 @@ def html_escape(val):
 
 def is_market_open():
     """
-    Checks if today is a trading day by looking at NIFTY 50's latest data timestamp.
+    Checks if today is a trading day by looking at weekday and NIFTY 50 data.
     Returns (is_open, current_val, change_pct)
     """
     ist = timezone(timedelta(hours=5, minutes=30))
     now_ist = datetime.now(ist)
-    
+
     # 1. Weekend check
     if now_ist.weekday() >= 5:  # 5=Sat, 6=Sun
         log.info("[Morning] Weekend detected. Market closed.")
         return False, None, None
-        
+
+    # 2. Check NIFTY 50 data via yfinance
     try:
         nifty = yf.Ticker("^NSEI")
         df = nifty.history(period="5d")
         if df.empty:
-            log.warning("[Morning] No data for NIFTY 50.")
-            return False, None, None
-            
-        last_date = df.index[-1].date()
-        if last_date != now_ist.date():
-            log.info(f"[Morning] Market holiday detected. Latest NSE date is {last_date}, today is {now_ist.date()}")
-            return False, None, None
-            
-        current_val = float(df['Close'].iloc[-1])
-        prev_val = float(df['Close'].iloc[-2]) if len(df) >= 2 else current_val
-        change_pct = ((current_val - prev_val) / prev_val) * 100 if prev_val else 0.0
-        
-        return True, current_val, change_pct
+            df = nifty.history(period="1d", interval="5m")
+
+        if not df.empty:
+            current_val = float(df['Close'].iloc[-1])
+            prev_val = float(df['Close'].iloc[-2]) if len(df) >= 2 else current_val
+            change_pct = ((current_val - prev_val) / prev_val) * 100 if prev_val else 0.0
+
+            last_date = df.index[-1].date()
+            if last_date == now_ist.date():
+                log.info(f"[Morning] Confirmed trading day with today's NSE data ({last_date}).")
+                return True, current_val, change_pct
+            else:
+                # If during market hours (09:15 - 15:30 IST) on a weekday, proceed even if Yahoo daily candle is slightly delayed
+                market_start = now_ist.replace(hour=9, minute=15, second=0, microsecond=0)
+                market_end = now_ist.replace(hour=15, minute=30, second=0, microsecond=0)
+                if market_start <= now_ist <= market_end:
+                    log.info(f"[Morning] Market hours detected on weekday. Using latest NIFTY 50 value {current_val:.2f}.")
+                    return True, current_val, change_pct
+                else:
+                    log.info(f"[Morning] Latest NSE date is {last_date}, today is {now_ist.date()}. Outside active trading.")
+                    return True, current_val, change_pct
+        else:
+            log.warning("[Morning] No data for NIFTY 50, proceeding on weekday.")
+            return True, 0.0, 0.0
     except Exception as e:
-        log.error(f"[Morning] Error checking market open status: {e}")
-        return False, None, None
+        log.error(f"[Morning] Error checking market open status: {e}. Proceeding on weekday.")
+        return True, 0.0, 0.0
 
 def send_telegram_morning_update(records, nifty_val, nifty_pct):
     categories = {
@@ -80,86 +92,65 @@ def send_telegram_morning_update(records, nifty_val, nifty_pct):
         "🟡 SMALL BUY": [],
         "❌ WAIT": []
     }
-    
+
     for row in records:
         zone = str(row.get("Buying Zone", "")).strip()
         if zone in categories:
             categories[zone].append(row)
-            
+
+    # Sort opportunities within each category by Total Score descending
+    for cat in categories:
+        categories[cat].sort(
+            key=lambda x: float(x.get("Total Score", 0)) if str(x.get("Total Score", "")).replace(".", "").isdigit() else 0,
+            reverse=True
+        )
+
     ist = timezone(timedelta(hours=5, minutes=30))
     now_str = datetime.now(ist).strftime("%d-%b-%Y | %I:%M %p IST")
-    
+
     nifty_v_str = f"{nifty_val:,.2f}" if isinstance(nifty_val, (int, float)) and nifty_val > 0 else "N/A"
     sign = "+" if (isinstance(nifty_pct, (int, float)) and nifty_pct >= 0) else ""
     nifty_p_str = f"({sign}{nifty_pct:.2f}%)" if isinstance(nifty_pct, (int, float)) else ""
-    
-    msg = f"📊 <b>MORNING BUYING ZONE</b>\n"
-    msg += f"{now_str}\n\n"
-    msg += f"<b>NIFTY 50:</b> {nifty_v_str} {nifty_p_str}\n\n"
-    
-    msg += "━━━━━━━━━━━━━━━━━━\n\n"
-    msg += "<b>🟢 BUYING ZONE GUIDE</b>\n\n"
-    msg += "<b>❌ WAIT</b>\nExpensive → Wait\n\n"
-    msg += "<b>🟡 SMALL BUY</b>\nReasonable → Small entry\n\n"
-    msg += "<b>🟢 ACCUMULATE</b>\nAttractive → Build gradually\n\n"
-    msg += "<b>🟢🟢 ADD AGGRESSIVELY</b>\nVery attractive + strong fundamentals → Add more\n\n"
-    msg += "<b>🔎 INVESTIGATE WHY</b>\nExceptionally cheap → Find out why first\n\n"
-    
-    msg += "━━━━━━━━━━━━━━━━━━\n\n"
-    msg += "<b>FORTIS EXAMPLE ONLY</b>\n\n"
-    msg += "&gt; ₹1,050     ❌ Wait\n"
-    msg += "₹950–1,050   🟡 Small Buy\n"
-    msg += "₹850–950     🟢 Accumulate\n"
-    msg += "₹750–850     🟢🟢 Add Aggressively\n"
-    msg += "&lt; ₹750       🔎 Investigate Why\n\n"
-    msg += "<i>Example only. These prices are NOT universal thresholds.</i>\n\n"
-    
-    msg += "━━━━━━━━━━━━━━━━━━\n\n"
-    msg += "<b>🔥 TODAY'S OPPORTUNITIES</b>\n\n"
-    
-    render_order = [
-        "🟢🟢 ADD AGGRESSIVELY",
-        "🔎 INVESTIGATE WHY",
-        "🟢 ACCUMULATE",
-        "🟡 SMALL BUY"
+
+    msg = f"📊 <b>MORNING BUYING ZONE UPDATE</b>\n"
+    msg += f"<i>{now_str}</i>\n"
+    msg += f"<b>NIFTY 50:</b> {nifty_v_str} {nifty_p_str}\n"
+    msg += "━━━━━━━━━━━━━━━━━━━━\n\n"
+
+    # Display Top Opportunities
+    render_categories = [
+        ("🟢🟢 ADD AGGRESSIVELY", categories["🟢🟢 ADD AGGRESSIVELY"], 8),
+        ("🔎 INVESTIGATE WHY", categories["🔎 INVESTIGATE WHY"], 6),
+        ("🟢 ACCUMULATE", categories["🟢 ACCUMULATE"], 6),
+        ("🟡 SMALL BUY", categories["🟡 SMALL BUY"], 6),
     ]
-    
-    for cat in render_order:
-        msg += f"<b>{cat}</b>\n"
-        stocks = categories[cat]
+
+    total_opps = sum(len(stocks) for _, stocks, _ in render_categories)
+    msg += f"<b>🔥 TODAY'S OPPORTUNITIES ({total_opps} stocks)</b>\n\n"
+
+    for cat_name, stocks, max_show in render_categories:
         if not stocks:
-            msg += "None today.\n\n"
-        else:
-            for s in stocks:
-                sym = html_escape(s.get("Symbol", "?"))
-                cmp = html_escape(s.get("CMP", 0))
-                pe = html_escape(s.get("PE", "-"))
-                score = html_escape(s.get("Total Score", "-"))
-                action = html_escape(s.get("Final Action", "-"))
-                price_rng = html_escape(s.get("Buy/Sell Price Range", ""))
-                price_rng_line = f"Buy Zone: {price_rng}\n" if price_rng else ""
-                msg += f"<b>{sym}</b>\nCMP: ₹{cmp}\n{price_rng_line}PE: {pe} | Score: {score}\nFinal Action: {action}\n\n"
-            msg += "\n"
-            
+            continue
+        msg += f"<b>{cat_name} ({len(stocks)})</b>\n"
+        for s in stocks[:max_show]:
+            sym = html_escape(s.get("Symbol", "?"))
+            cmp = html_escape(s.get("CMP", 0))
+            score = html_escape(s.get("Total Score", "-"))
+            action = html_escape(s.get("Final Action", "-"))
+            price_rng = html_escape(s.get("Buy/Sell Price Range", ""))
+            rng_str = f" | Zone: {price_rng}" if price_rng else ""
+            msg += f"  • <b>{sym}</b>: CMP ₹{cmp} (Score {score}){rng_str} → {action}\n"
+        if len(stocks) > max_show:
+            msg += f"  <i>...and {len(stocks) - max_show} more</i>\n"
+        msg += "\n"
+
+    # Wait summary
     wait_count = len(categories["❌ WAIT"])
-    msg += "<b>❌ WAIT</b>\n"
-    if wait_count < 5:
-        stocks = categories["❌ WAIT"]
-        if not stocks:
-             msg += "None today.\n"
-        else:
-             for s in stocks:
-                sym = html_escape(s.get("Symbol", "?"))
-                cmp = html_escape(s.get("CMP", 0))
-                action = html_escape(s.get("Final Action", "-"))
-                msg += f"• {sym} | ₹{cmp} | {action}\n"
-    else:
-        msg += f"{wait_count} stocks\n"
-        
-    msg += "\n━━━━━━━━━━━━━━━━━━\n\n"
-    msg += "⚠️ <i>This is a screening/decision-support signal, not a guaranteed buy recommendation.</i>"
-    
-    log.info("[Morning] Sending Telegram update")
+    msg += f"<b>❌ WAIT / EXPENSIVE:</b> {wait_count} stocks\n"
+    msg += "\n━━━━━━━━━━━━━━━━━━━━\n"
+    msg += "⚠️ <i>Screening and decision-support signals. Review portfolio fit before entering.</i>"
+
+    log.info(f"[Morning] Sending Telegram update ({len(msg)} characters)")
     success = send_telegram(msg)
     if success:
         log.info("[Morning] Telegram update sent successfully!")

@@ -31,20 +31,52 @@ from config import *
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+def chunk_message(text, max_len=4000):
+    if len(text) <= max_len:
+        return [text]
+    chunks = []
+    lines = text.split("\n")
+    current_chunk = []
+    current_len = 0
+    for line in lines:
+        if current_len + len(line) + 1 > max_len:
+            if current_chunk:
+                chunks.append("\n".join(current_chunk))
+                current_chunk = [line]
+                current_len = len(line)
+            else:
+                # Single line exceeds max_len, hard-split
+                chunks.append(line[:max_len])
+                current_chunk = [line[max_len:]]
+                current_len = len(line[max_len:])
+        else:
+            current_chunk.append(line)
+            current_len += len(line) + 1
+    if current_chunk:
+        chunks.append("\n".join(current_chunk))
+    return chunks
+
 def send_telegram(message):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+    token = os.environ.get("TELEGRAM_TOKEN", "") or TELEGRAM_TOKEN
+    chat_id = os.environ.get("TELEGRAM_CHAT_ID", "") or TELEGRAM_CHAT_ID
+    if not token or not chat_id:
         log.warning("Telegram not configured — skipping alert")
         return False
     try:
-        url  = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
-        resp = requests.post(url, data=data, timeout=10)
-        if resp.status_code == 200:
-            log.info("Telegram alert sent")
-            return True
-        else:
-            log.warning(f"Telegram failed: {resp.text}")
-            return False
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        chunks = chunk_message(message, max_len=4000)
+        all_success = True
+        for idx, chunk in enumerate(chunks):
+            data = {"chat_id": chat_id, "text": chunk, "parse_mode": "HTML"}
+            resp = requests.post(url, data=data, timeout=10)
+            if resp.status_code == 200:
+                log.info(f"Telegram alert sent (part {idx + 1}/{len(chunks)})")
+            else:
+                log.warning(f"Telegram failed (part {idx + 1}/{len(chunks)}): {resp.text}")
+                all_success = False
+            if len(chunks) > 1 and idx < len(chunks) - 1:
+                time.sleep(0.5)
+        return all_success
     except Exception as e:
         log.warning(f"Telegram error: {e}")
         return False
