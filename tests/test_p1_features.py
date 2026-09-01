@@ -85,19 +85,23 @@ class TestReturnNumericFloats(unittest.TestCase):
 
     def test_return_calculations_produce_floats(self):
         """Simulate a price series and verify 1W and 1M returns are computed as floats."""
-        # 30 daily closes: starting at 100, ending at 110
-        closes = pd.Series([100.0 + i * 0.35 for i in range(30)])
+        # 70 daily closes: starting at 100, ending at 124.15
+        closes = pd.Series([100.0 + i * 0.35 for i in range(70)])
         cmp = float(closes.iloc[-1])
         p5 = float(closes.iloc[-6])
         p21 = float(closes.iloc[-22])
+        p63 = float(closes.iloc[-64])
 
         ret_1w = round((cmp / p5 - 1) * 100, 2)
         ret_1m = round((cmp / p21 - 1) * 100, 2)
+        ret_3m = round((cmp / p63 - 1) * 100, 2)
 
         self.assertIsInstance(ret_1w, float)
         self.assertIsInstance(ret_1m, float)
+        self.assertIsInstance(ret_3m, float)
         self.assertGreater(ret_1w, 0)
         self.assertGreater(ret_1m, 0)
+        self.assertGreater(ret_3m, 0)
 
     def test_negative_return_is_numeric_float(self):
         closes = pd.Series([120.0 - i * 0.5 for i in range(30)])

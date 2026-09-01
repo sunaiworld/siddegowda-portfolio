@@ -144,6 +144,13 @@ def fetch_technicals(sym, retries=3):
                 if p21 > 0:
                     return_1m = round((cmp / p21 - 1) * 100, 2)
 
+            # 3M Return % (numeric float, approx 63 trading sessions ago)
+            return_3m = ""
+            if len(close) >= 64:
+                p63 = float(close.iloc[-64])
+                if p63 > 0:
+                    return_3m = round((cmp / p63 - 1) * 100, 2)
+
             # Domestic Beta vs NIFTY 50
             nifty_history = get_nifty_history()
             beta_nifty = compute_nifty_beta(close, nifty_history) if nifty_history is not None else None
@@ -156,6 +163,7 @@ def fetch_technicals(sym, retries=3):
                 "day_chg_pct": day_chg_pct,
                 "return_1w": return_1w,
                 "return_1m": return_1m,
+                "return_3m": return_3m,
                 "beta_nifty": beta_nifty,
             }
         except Exception as e:

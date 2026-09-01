@@ -339,23 +339,24 @@ class TestFutureBuyTop10OpportunityBlock(unittest.TestCase):
 class TestCondensedNewsColumns(unittest.TestCase):
     """Tests for P2-1: Condensed News Columns in GITHUB DATA."""
 
-    def test_github_data_cols_contiguous_41_columns(self):
-        """GITHUB_DATA_COLS must have exactly 41 contiguous columns from 0 to 40."""
+    def test_github_data_cols_contiguous_42_columns(self):
+        """GITHUB_DATA_COLS must have exactly 42 contiguous columns from 0 to 41."""
         C = github_data_builder.GITHUB_DATA_COLS
-        self.assertEqual(len(C), 41)
+        self.assertEqual(len(C), 42)
         indices = sorted(C.values())
-        self.assertEqual(indices, list(range(41)))
+        self.assertEqual(indices, list(range(42)))
 
         self.assertEqual(C["symbol"], 0)
         self.assertEqual(C["day_chg_pct"], 11)
         self.assertEqual(C["return_1w"], 12)
         self.assertEqual(C["return_1m"], 13)
-        self.assertEqual(C["news_summary"], 29)
-        self.assertEqual(C["news_sentiment"], 30)
-        self.assertEqual(C["news_source"], 31)
-        self.assertEqual(C["quality"], 34)
-        self.assertEqual(C["total"], 37)
-        self.assertEqual(C["action"], 40)
+        self.assertEqual(C["return_3m"], 14)
+        self.assertEqual(C["news_summary"], 30)
+        self.assertEqual(C["news_sentiment"], 31)
+        self.assertEqual(C["news_source"], 32)
+        self.assertEqual(C["quality"], 35)
+        self.assertEqual(C["total"], 38)
+        self.assertEqual(C["action"], 41)
 
     def test_build_result_row_condenses_news_fields(self):
         """build_result_row properly condenses digest+reason and sentiment+score."""

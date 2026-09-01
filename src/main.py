@@ -197,9 +197,15 @@ def run_portfolio_update(sh):
 
     extra_syms = [s for s in all_held if s not in set(symbols)]
     if extra_syms:
-        log.info(f"Fetching prices for {len(extra_syms)} holdings-only symbol(s): {extra_syms}")
+        log.info(f"Fetching prices and technicals for {len(extra_syms)} holdings-only symbol(s): {extra_syms}")
         extra_prices = fetch_prices_batch(extra_syms)
         prices.update(extra_prices)
+        for es in extra_syms:
+            if es not in tech_map:
+                try:
+                    tech_map[es] = fetch_technicals(es)
+                except Exception as e:
+                    tech_map[es] = {}
 
     holdings, portfolio_live_value = {}, 0.0
     for sym in list(symbols) + extra_syms:
@@ -332,7 +338,7 @@ def run_portfolio_update(sh):
     log.info(f"[CHECKPOINT] About to write GITHUB DATA — {len(results)} rows built")
 
     try:
-        portfolio_rows = build_portfolio(prices, fund_map=fund_map, source_map=source_map)
+        portfolio_rows = build_portfolio(prices, fund_map=fund_map, source_map=source_map, tech_map=tech_map)
         with profiler.stage("[09] Portfolio sheet write", category="Google Sheets"):
             write_portfolio(sh, portfolio_rows)
     except Exception as e:
