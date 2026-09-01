@@ -54,11 +54,11 @@ class TestMomentumReturns(unittest.TestCase):
             
             print(f"[{sym}] 1W Return: {ret1w} | 1M Return: {ret1m}")
             
-            # Should be formatted like +X.XX% or -X.XX% or 0.00% or ""
+            # Should be numeric float or ""
             if ret1w != "":
-                self.assertTrue(ret1w.endswith("%"), f"Invalid format for 1W Return: {ret1w}")
+                self.assertIsInstance(ret1w, float, f"1W Return should be float: {ret1w}")
             if ret1m != "":
-                self.assertTrue(ret1m.endswith("%"), f"Invalid format for 1M Return: {ret1m}")
+                self.assertIsInstance(ret1m, float, f"1M Return should be float: {ret1m}")
 
     def test_build_result_row_structure(self):
         """Verify build_result_row puts return_1w and return_1m into correct row indices."""

@@ -56,7 +56,7 @@ def read_cached_rows():
         log.warning("GITHUB DATA tab not found")
         return []
 
-    raw = ws.get_all_values()[1:]  # skip header
+    raw = ws.get_all_values()[2:]  # skip group header (row 0) and column header (row 1)
     out = []
     for row in raw:
         if not row or not row[0]:

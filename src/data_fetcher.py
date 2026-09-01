@@ -72,89 +72,101 @@ def compute_nifty_beta(stock_closes, nifty_closes):
 # ══════════════════════════════════════════════
 # TECHNICAL INDICATORS
 # ══════════════════════════════════════════════
-def fetch_technicals(sym):
-    try:
-        profiler.increment("Yahoo requests")
-        df = yf.download(
-            sym + ".NS", period="1y", interval="1d",
-            progress=False, threads=False
-        )
-        if df is None or len(df) < 50:
-            return {}
+def fetch_technicals(sym, retries=3):
+    ticker = sym if (sym.endswith(".NS") or sym.endswith(".BO")) else f"{sym}.NS"
+    for attempt in range(retries):
+        try:
+            profiler.increment("Yahoo requests")
+            df = yf.download(
+                ticker, period="1y", interval="1d",
+                progress=False, threads=False
+            )
+            if df is None or df.empty or "Close" not in df:
+                return {}
 
-        close  = df["Close"].squeeze()
-        volume = df["Volume"].squeeze()
+            close  = df["Close"].squeeze().dropna()
+            volume = df["Volume"].squeeze().dropna() if "Volume" in df else pd.Series(dtype=float)
+            if len(close) < 2:
+                return {}
 
-        delta    = close.diff()
-        gain     = delta.clip(lower=0)
-        loss     = -delta.clip(upper=0)
-        avg_gain = gain.rolling(14).mean()
-        avg_loss = loss.rolling(14).mean()
-        rs       = avg_gain / avg_loss
-        rsi      = round(float(100 - (100 / (1 + rs.iloc[-1]))), 1)
+            delta    = close.diff()
+            gain     = delta.clip(lower=0)
+            loss     = -delta.clip(upper=0)
+            avg_gain = gain.rolling(14).mean()
+            avg_loss = loss.rolling(14).mean()
+            rs       = avg_gain / avg_loss
+            rsi      = round(float(100 - (100 / (1 + rs.iloc[-1]))), 1) if (len(close) >= 14 and not pd.isna(rs.iloc[-1])) else ""
 
-        sma50  = round(float(close.rolling(50).mean().iloc[-1]), 2)
-        sma200 = round(float(close.rolling(200).mean().iloc[-1]), 2) if len(close) >= 200 else None
-        ema20  = round(float(close.ewm(span=20).mean().iloc[-1]), 2)
-        cmp    = round(float(close.iloc[-1]), 2)
+            sma50  = round(float(close.rolling(50).mean().iloc[-1]), 2) if len(close) >= 50 else None
+            sma200 = round(float(close.rolling(200).mean().iloc[-1]), 2) if len(close) >= 200 else None
+            ema20  = round(float(close.ewm(span=20).mean().iloc[-1]), 2) if len(close) >= 20 else None
+            cmp    = round(float(close.iloc[-1]), 2)
 
-        vol_today = float(volume.iloc[-1])
-        vol_avg20 = float(volume.rolling(20).mean().iloc[-1])
-        vol_spike = round(vol_today / vol_avg20, 2) if vol_avg20 > 0 else 1.0
+            vol_today = float(volume.iloc[-1]) if len(volume) >= 1 else 0.0
+            vol_avg20 = float(volume.rolling(20).mean().iloc[-1]) if len(volume) >= 20 else 0.0
+            vol_spike = round(vol_today / vol_avg20, 2) if vol_avg20 > 0 else 1.0
 
-        if sma200:
-            if   cmp > sma50 > sma200: trend = "Strong Uptrend"
-            elif cmp > sma200:          trend = "Uptrend"
-            elif cmp < sma50 < sma200: trend = "Strong Downtrend"
-            elif cmp < sma200:          trend = "Downtrend"
-            else:                       trend = "Sideways"
-        else:
-            trend = "Uptrend" if cmp > sma50 else "Downtrend"
+            if sma200 and sma50:
+                if   cmp > sma50 > sma200: trend = "Strong Uptrend"
+                elif cmp > sma200:          trend = "Uptrend"
+                elif cmp < sma50 < sma200: trend = "Strong Downtrend"
+                elif cmp < sma200:          trend = "Downtrend"
+                else:                       trend = "Sideways"
+            elif sma50:
+                trend = "Uptrend" if cmp > sma50 else "Downtrend"
+            else:
+                trend = "Neutral"
 
-        cross = ""
-        if sma200 and len(close) >= 200:
-            prev_sma50  = float(close.rolling(50).mean().iloc[-2])
-            prev_sma200 = float(close.rolling(200).mean().iloc[-2])
-            if sma50 > sma200 and prev_sma50 <= prev_sma200:
-                cross = "Golden Cross"
-            elif sma50 < sma200 and prev_sma50 >= prev_sma200:
-                cross = "Death Cross"
+            cross = ""
+            if sma200 and len(close) >= 200:
+                prev_sma50  = float(close.rolling(50).mean().iloc[-2])
+                prev_sma200 = float(close.rolling(200).mean().iloc[-2])
+                if sma50 > sma200 and prev_sma50 <= prev_sma200:
+                    cross = "Golden Cross"
+                elif sma50 < sma200 and prev_sma50 >= prev_sma200:
+                    cross = "Death Cross"
 
-        # Day change % (numeric float)
-        prev_close = round(float(close.iloc[-2]), 2) if len(close) >= 2 else None
-        day_chg_pct = round((cmp - prev_close) / prev_close * 100, 2) if prev_close else ""
+            # Day change % (numeric float)
+            prev_close = round(float(close.iloc[-2]), 2) if len(close) >= 2 else None
+            day_chg_pct = round((cmp - prev_close) / prev_close * 100, 2) if (prev_close and prev_close > 0) else ""
 
-        # 1W Return % (numeric float, approx 5 trading sessions ago)
-        return_1w = ""
-        if len(close) >= 6:
-            p5 = float(close.iloc[-6])
-            if p5 > 0:
-                return_1w = round((cmp / p5 - 1) * 100, 2)
+            # 1W Return % (numeric float, approx 5 trading sessions ago)
+            return_1w = ""
+            if len(close) >= 6:
+                p5 = float(close.iloc[-6])
+                if p5 > 0:
+                    return_1w = round((cmp / p5 - 1) * 100, 2)
 
-        # 1M Return % (numeric float, approx 21 trading sessions ago)
-        return_1m = ""
-        if len(close) >= 22:
-            p21 = float(close.iloc[-22])
-            if p21 > 0:
-                return_1m = round((cmp / p21 - 1) * 100, 2)
+            # 1M Return % (numeric float, approx 21 trading sessions ago)
+            return_1m = ""
+            if len(close) >= 22:
+                p21 = float(close.iloc[-22])
+                if p21 > 0:
+                    return_1m = round((cmp / p21 - 1) * 100, 2)
 
-        # Domestic Beta vs NIFTY 50
-        nifty_history = get_nifty_history()
-        beta_nifty = compute_nifty_beta(close, nifty_history) if nifty_history is not None else None
+            # Domestic Beta vs NIFTY 50
+            nifty_history = get_nifty_history()
+            beta_nifty = compute_nifty_beta(close, nifty_history) if nifty_history is not None else None
 
-        return {
-            "rsi": rsi, "sma50": sma50,
-            "sma200": sma200 or "", "ema20": ema20,
-            "vol_spike": vol_spike, "trend": trend,
-            "cross": cross, "cmp_tech": cmp,
-            "day_chg_pct": day_chg_pct,
-            "return_1w": return_1w,
-            "return_1m": return_1m,
-            "beta_nifty": beta_nifty,
-        }
-    except Exception as e:
-        log.warning(f"  technicals failed {sym}: {e}")
-        return {}
+            return {
+                "rsi": rsi, "sma50": sma50 or "",
+                "sma200": sma200 or "", "ema20": ema20 or "",
+                "vol_spike": vol_spike, "trend": trend,
+                "cross": cross, "cmp_tech": cmp,
+                "day_chg_pct": day_chg_pct,
+                "return_1w": return_1w,
+                "return_1m": return_1m,
+                "beta_nifty": beta_nifty,
+            }
+        except Exception as e:
+            if "429" in str(e) or "Too Many" in str(e):
+                wait = (attempt + 1) * 15
+                log.warning(f"  Rate limited technicals {sym}, waiting {wait}s")
+                time.sleep(wait)
+            else:
+                log.warning(f"  technicals failed {sym}: {e}")
+                return {}
+    return {}
 
        
 # ══════════════════════════════════════════════
