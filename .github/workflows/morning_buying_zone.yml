@@ -2,20 +2,35 @@ name: Morning Buying Zone Update
 
 on:
   schedule:
-    # 04:30 UTC = 10:00 AM IST (Monday-Friday)
+    # Staggered triggers between 09:45 AM - 10:15 AM IST (04:15 - 04:45 UTC) Monday-Friday.
+    # Bypasses GitHub Actions :30 global queue backlog.
+    # The script is idempotent and delivers at most ONE update per day.
+    - cron: '15 4 * * 1-5'
     - cron: '30 4 * * 1-5'
+    - cron: '45 4 * * 1-5'
   workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force run and send Telegram alert even if already sent today'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONPATH: src
 
 jobs:
   update:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     
     steps:
     - name: Checkout Repository
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4.2.2
 
     - name: Set up Python
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5.6.0
       with:
         python-version: '3.11'
         cache: 'pip'
@@ -32,4 +47,8 @@ jobs:
         TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
-        python scripts/morning_buying_zone.py
+        if [ "${{ github.event.inputs.force }}" = "true" ]; then
+          python scripts/morning_buying_zone.py --force
+        else
+          python scripts/morning_buying_zone.py
+        fi

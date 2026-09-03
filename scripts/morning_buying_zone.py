@@ -84,24 +84,38 @@ def is_market_open():
         log.error(f"[Morning] Error checking market open status: {e}. Proceeding on weekday.")
         return True, 0.0, 0.0
 
+def normalize_zone(z):
+    s = str(z or "").upper().strip()
+    if "ADD AGGRESSIVELY" in s:
+        return "🟢🟢 ADD AGGRESSIVELY"
+    if "INVESTIGATE" in s:
+        return "🔎 INVESTIGATE WHY"
+    if "ACCUMULATE" in s:
+        return "🟢 ACCUMULATE"
+    if "SMALL BUY" in s:
+        return "🟠 SMALL BUY"
+    if "WAIT" in s:
+        return "❌ WAIT"
+    return None
+
 def send_telegram_morning_update(records, nifty_val, nifty_pct):
     categories = {
         "🟢🟢 ADD AGGRESSIVELY": [],
         "🔎 INVESTIGATE WHY": [],
         "🟢 ACCUMULATE": [],
-        "🟡 SMALL BUY": [],
+        "🟠 SMALL BUY": [],
         "❌ WAIT": []
     }
 
     for row in records:
-        zone = str(row.get("Buying Zone", "")).strip()
-        if zone in categories:
-            categories[zone].append(row)
+        norm = normalize_zone(row.get("Buying Zone", ""))
+        if norm in categories:
+            categories[norm].append(row)
 
     # Sort opportunities within each category by Total Score descending
     for cat in categories:
         categories[cat].sort(
-            key=lambda x: float(x.get("Total Score", 0)) if str(x.get("Total Score", "")).replace(".", "").isdigit() else 0,
+            key=lambda x: float(x.get("Total Score", 0)) if str(x.get("Total Score", "")).replace(".", "").replace("-", "").isdigit() else 0,
             reverse=True
         )
 
@@ -122,7 +136,7 @@ def send_telegram_morning_update(records, nifty_val, nifty_pct):
         ("🟢🟢 ADD AGGRESSIVELY", categories["🟢🟢 ADD AGGRESSIVELY"], 8),
         ("🔎 INVESTIGATE WHY", categories["🔎 INVESTIGATE WHY"], 6),
         ("🟢 ACCUMULATE", categories["🟢 ACCUMULATE"], 6),
-        ("🟡 SMALL BUY", categories["🟡 SMALL BUY"], 6),
+        ("🟠 SMALL BUY", categories["🟠 SMALL BUY"], 6),
     ]
 
     total_opps = sum(len(stocks) for _, stocks, _ in render_categories)
@@ -158,9 +172,29 @@ def send_telegram_morning_update(records, nifty_val, nifty_pct):
         log.error("[Morning] Failed to send telegram update.")
     return success
 
+def get_last_morning_date(sh):
+    try:
+        ws = sh.worksheet("Bot State")
+        val = ws.acell("B1").value
+        return str(val).strip() if val else ""
+    except Exception as e:
+        log.warning(f"[Morning] Could not read Bot State B1: {e}")
+        return ""
+
+def set_last_morning_date(sh, date_str):
+    try:
+        try:
+            ws = sh.worksheet("Bot State")
+        except Exception:
+            ws = sh.add_worksheet("Bot State", rows=2, cols=4)
+        ws.update_acell("B1", date_str)
+    except Exception as e:
+        log.warning(f"[Morning] Could not update Bot State B1: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="Morning Buying Zone Update")
     parser.add_argument("--dry-run", action="store_true", help="Perform dry-run without modifying Google Sheets or sending Telegram")
+    parser.add_argument("--force", action="store_true", help="Force update even if already sent today")
     args = parser.parse_args()
 
     log.info("[Morning] Starting market update")
@@ -186,11 +220,20 @@ def main():
         all_vals = ws.get_all_values()
     except Exception as e:
         log.error(f"[Morning] Failed to connect or read GITHUB DATA sheet: {e}")
-        return
+        sys.exit(1)
+
+    # 2. Daily idempotency check
+    ist = timezone(timedelta(hours=5, minutes=30))
+    today_ist_str = datetime.now(ist).strftime("%Y-%m-%d")
+    if not args.dry_run and not args.force:
+        last_date = get_last_morning_date(sh)
+        if last_date == today_ist_str:
+            log.info(f"[Morning] Today's morning update ({today_ist_str}) has already been delivered. Skipping duplicate run.")
+            return
 
     if len(all_vals) <= 2:
-        log.warning("[Morning] GITHUB DATA sheet is empty or missing data rows.")
-        return
+        log.error("[Morning] GITHUB DATA sheet is empty or missing data rows.")
+        sys.exit(1)
 
     # Extract symbols and baseline rows from GITHUB DATA
     data_rows = all_vals[2:]
@@ -319,26 +362,39 @@ def main():
         log.info("[Morning] DRY-RUN completed. No Google Sheet or Telegram modifications were made.")
         return
 
-    # Write updated values back to Google Sheet
-    log.info("[Morning] Updating GITHUB DATA")
-    try:
-        write_github_data(sh, updated_rows, tab_name="GITHUB DATA")
-        log.info("[Morning] Google Sheet update successful")
-    except Exception as e:
-        log.error(f"[Morning] Failed to update Google Sheets: {e}")
-        return
-
     # Build records array directly from updated_rows in memory
-    log.info("[Morning] Reading updated GITHUB DATA")
+    log.info("[Morning] Preparing Morning Buying Zone summary from computed memory rows")
     records = []
     headers = [GITHUB_DATA_HEADER_NAMES.get(k, k) for k in GITHUB_DATA_COLS.keys()]
     for r in updated_rows:
         records.append({headers[i]: r[i] for i in range(min(len(r), len(headers)))})
 
-    # Send Telegram message
+    # Send Telegram message FIRST so user is never blocked by sheet formatting failures
     success = send_telegram_morning_update(records, nifty_val, nifty_pct)
     if not success:
-        log.error("[Morning] Telegram update delivery failed! Exiting with status code 1 so GitHub Actions flags failure.")
+        log.error("[Morning] Telegram update delivery failed! Exiting with status code 1.")
+        sys.exit(1)
+
+    # Mark today's update as delivered to prevent duplicate alerts from subsequent cron schedules
+    set_last_morning_date(sh, today_ist_str)
+
+    # Write updated values back to Google Sheet with retries
+    log.info("[Morning] Updating GITHUB DATA in Google Sheets")
+    sheet_write_success = False
+    for attempt in range(3):
+        try:
+            write_github_data(sh, updated_rows, tab_name="GITHUB DATA")
+            log.info("[Morning] Google Sheet update successful")
+            sheet_write_success = True
+            break
+        except Exception as e:
+            wait = (attempt + 1) * 15
+            log.warning(f"[Morning] Google Sheet update attempt {attempt + 1}/3 failed: {e}. Retrying in {wait}s...")
+            import time
+            time.sleep(wait)
+
+    if not sheet_write_success:
+        log.error("[Morning] Failed to update Google Sheets after 3 attempts. Exiting with error.")
         sys.exit(1)
 
     log.info("[Morning] Completed successfully")
