@@ -447,7 +447,7 @@ def build_github_data_format_requests(ws_id, rows, start_row=0, freeze_rows=2, f
     reqs += get_group_header_color_reqs(ws_id, group_ranges, frozen_cols=FROZEN_COLS, row_idx=group_hdr_idx)
 
     # 3. Number formats for percentage and currency columns
-    pct_cols = [C["day_chg_pct"], C["return_1w"], C["return_1m"], C["return_3m"], C["div"], C["roe"], C["roa"], C["rev_growth"]]
+    pct_cols = [C["day_chg_pct"], C["return_1w"], C["return_1m"], C["return_3m"], C["return_6m"], C["div"], C["roe"], C["roa"], C["rev_growth"]]
     for col_idx in pct_cols:
         reqs += get_percentage_format_reqs(ws_id, data_start_idx, data_start_idx + num_rows, col_idx, col_idx + 1)
 
@@ -542,6 +542,16 @@ def build_github_data_format_requests(ws_id, rows, start_row=0, freeze_rows=2, f
                 reqs.append(color_cell_req(ws_id, rn, C["return_3m"], "fde9d9", "c62828"))
             else:
                 reqs.append(color_cell_req(ws_id, rn, C["return_3m"], "f1f1f1", "666666"))
+
+        # 6M Return %
+        ret6m_v = sf(row, "return_6m")
+        if ret6m_v is not None:
+            if ret6m_v > 0:
+                reqs.append(color_cell_req(ws_id, rn, C["return_6m"], "d9ead3", "0b8043"))
+            elif ret6m_v < 0:
+                reqs.append(color_cell_req(ws_id, rn, C["return_6m"], "fde9d9", "c62828"))
+            else:
+                reqs.append(color_cell_req(ws_id, rn, C["return_6m"], "f1f1f1", "666666"))
 
         # Buy 20% Less (% from 52W high)
         pct_high_v = sf(row, "pct_high")

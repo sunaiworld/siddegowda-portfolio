@@ -471,6 +471,7 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
         c["return_1w"] = t.get("return_1w", "")
         c["return_1m"] = t.get("return_1m", "")
         c["return_3m"] = t.get("return_3m", "")
+        c["return_6m"] = t.get("return_6m", "")
         
         if sym in source_map and source_map[sym]:
             c["investment_source"] = source_map[sym].upper()
@@ -523,7 +524,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
         "Investment Source": "investment_source",
         "Shares": "shares", "Avg Buy": "avg_buy", "CMP": "cmp",
         "Day Chg%": "day_chg_pct", "1W Return %": "return_1w",
-        "1M Return %": "return_1m", "3M Return %": "return_3m",
+        "1M Return %": "return_1m", "3M Return %": "return_3m", "6M Return %": "return_6m",
         "Invested": "invested", "Value": "value", "P&L": "pnl",
         "Return %": "return_pct", "Wt %": "wt_pct",
         "Stop Loss": "sl_price", "Target": "target", "Buy More@": "buy_more", "Signal": "signal"
@@ -573,7 +574,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     nc = len(headers)
     width_map = {
         "Symbol": 70, "Investment Source": 120, "Shares": 55, "Avg Buy": 70, "CMP": 65,
-        "Day Chg%": 55, "1W Return %": 65, "1M Return %": 65, "3M Return %": 65,
+        "Day Chg%": 55, "1W Return %": 65, "1M Return %": 65, "3M Return %": 65, "6M Return %": 65,
         "Invested": 85, "Value": 85, "P&L": 80, "Return %": 65, "Wt %": 55,
         "Stop Loss": 70, "Target": 70, "Buy More@": 70, "Signal": 100
     }
@@ -588,7 +589,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
             col_idx = headers.index(col_name)
             reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, len(all_data), col_idx, col_idx + 1)
 
-    pct_cols = ["Day Chg%", "1W Return %", "1M Return %", "3M Return %", "Return %", "Wt %"]
+    pct_cols = ["Day Chg%", "1W Return %", "1M Return %", "3M Return %", "6M Return %", "Return %", "Wt %"]
     for col_name in pct_cols:
         if col_name in headers:
             col_idx = headers.index(col_name)
@@ -607,8 +608,8 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
         if "Buy More@" in headers:
             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Buy More@"), "e8f0fe", "1967d2", bold=False))
 
-        # Color Day Chg%, 1W Return %, 1M Return %, 3M Return % with canonical return palette
-        for ret_col in ("Day Chg%", "1W Return %", "1M Return %", "3M Return %"):
+        # Color Day Chg%, 1W Return %, 1M Return %, 3M Return %, 6M Return % with canonical return palette
+        for ret_col in ("Day Chg%", "1W Return %", "1M Return %", "3M Return %", "6M Return %"):
             if ret_col in headers:
                 c_idx = headers.index(ret_col)
                 val_raw = row[c_idx] if c_idx < len(row) else ""

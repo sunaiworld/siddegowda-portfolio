@@ -40,19 +40,19 @@ GITHUB_DATA_COLS = {
     # Price Position
     "low52": 7, "cmp": 8, "high52": 9, "pct_high": 10,
     # Immediate Momentum & Risk
-    "day_chg_pct": 11, "return_1w": 12, "return_1m": 13, "return_3m": 14, "trend": 15, "technical_setup": 16,
-    "rsi": 17, "vol_spike": 18, "beta": 19,
+    "day_chg_pct": 11, "return_1w": 12, "return_1m": 13, "return_3m": 14, "return_6m": 15, "trend": 16, "technical_setup": 17,
+    "rsi": 18, "vol_spike": 19, "beta": 20,
     # Valuation
-    "eps": 20, "pe": 21, "bv": 22, "pb": 23, "div": 24, "fair_val": 25,
+    "eps": 21, "pe": 22, "bv": 23, "pb": 24, "div": 25, "fair_val": 26,
     # Financial Health & Efficiency
-    "rev_growth": 26, "roe": 27, "roa": 28, "debt_eq": 29,
+    "rev_growth": 27, "roe": 28, "roa": 29, "debt_eq": 30,
     # Sentiment & Qualitative Data
-    "news_summary": 30, "news_sentiment": 31, "news_source": 32,
-    "strengths": 33, "weaknesses": 34,
+    "news_summary": 31, "news_sentiment": 32, "news_source": 33,
+    "strengths": 34, "weaknesses": 35,
     # Automated Scoring
-    "quality": 35, "valuation": 36, "timing": 37, "total": 38,
+    "quality": 36, "valuation": 37, "timing": 38, "total": 39,
     # Final Decision (MUST stay last)
-    "buying_zone": 39, "price_range": 40, "action": 41,
+    "buying_zone": 40, "price_range": 41, "action": 42,
 }
 
 # Header text per column key
@@ -63,7 +63,7 @@ GITHUB_DATA_HEADER_NAMES = {
     "low52": "52W Low", "cmp": "CMP", "high52": "52W High",
     "buying_zone": "Buying Zone", "fair_val": "Fair Val", "price_range": "Buy/Sell Price Range",
     "action": "Final Action", "trend": "Trend",
-    "day_chg_pct": "Day Chg%", "return_1w": "1W Return %", "return_1m": "1M Return %", "return_3m": "3M Return %", "pct_high": "Buy 20% Less",
+    "day_chg_pct": "Day Chg%", "return_1w": "1W Return %", "return_1m": "1M Return %", "return_3m": "3M Return %", "return_6m": "6M Return %", "pct_high": "Buy 20% Less",
     "pe": "PE", "eps": "EPS", "bv": "Book Value", "pb": "P/B",
     "div": "Div Yield%",
     "rsi": "RSI",
@@ -85,7 +85,7 @@ GITHUB_DATA_COL_WIDTHS = {
     "low52": 60, "cmp": 65, "high52": 60,
     "buying_zone": 115, "fair_val": 70, "price_range": 150,
     "action": 90, "trend": 90,
-    "day_chg_pct": 55, "return_1w": 65, "return_1m": 65, "return_3m": 65, "pct_high": 75,
+    "day_chg_pct": 55, "return_1w": 65, "return_1m": 65, "return_3m": 65, "return_6m": 65, "pct_high": 75,
     "pe": 45, "eps": 45, "bv": 55, "pb": 45,
     "div": 50,
     "rsi": 45,
@@ -142,6 +142,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     return_1w   = tech.get("return_1w", "")
     return_1m   = tech.get("return_1m", "")
     return_3m   = tech.get("return_3m", "")
+    return_6m   = tech.get("return_6m", "")
 
     # News signals (already fetched by the news engine; zero cost here).
     # Passed as optional keys — scoring degrades gracefully to zero if absent.
@@ -215,6 +216,7 @@ def build_result_row(sym, cmp, f, tech, rev_gr, xirr_val="", news_data=None):
     row[C["return_1w"]]      = return_1w
     row[C["return_1m"]]      = return_1m
     row[C["return_3m"]]      = return_3m
+    row[C["return_6m"]]      = return_6m
     row[C["pct_high"]]       = pct_high_display
     row[C["pe"]]             = f.get("pe") or ""
     row[C["eps"]]            = f.get("eps") or ""
