@@ -573,10 +573,10 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
 
     nc = len(headers)
     width_map = {
-        "Symbol": 70, "Investment Source": 120, "Shares": 55, "Avg Buy": 70, "CMP": 65,
+        "Symbol": 100, "Investment Source": 120, "Shares": 55, "Avg Buy": 70, "CMP": 65,
         "Day Chg%": 55, "1W Return %": 65, "1M Return %": 65, "3M Return %": 65, "6M Return %": 65,
         "Invested": 85, "Value": 85, "P&L": 80, "Return %": 65, "Wt %": 55,
-        "Stop Loss": 70, "Target": 70, "Buy More@": 70, "Signal": 100
+        "Stop Loss": 70, "Target": 70, "Buy More@": 70, "Signal": 110
     }
     widths = [width_map.get(h, 70) for h in headers]
     
@@ -608,6 +608,45 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
         if "Buy More@" in headers:
             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Buy More@"), "e8f0fe", "1967d2", bold=False))
 
+        # Color P&L with canonical green/red
+        if "P&L" in headers:
+            pnl_idx = headers.index("P&L")
+            try:
+                pnl_v = float(str(row[pnl_idx]).replace("₹", "").replace(",", "").strip())
+                if pnl_v > 0:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, pnl_idx, "d9ead3", "0b8043", bold=True))
+                elif pnl_v < 0:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, pnl_idx, "fde9d9", "c62828", bold=True))
+            except (ValueError, TypeError):
+                pass
+
+        # Color Return % with canonical green/red
+        if "Return %" in headers:
+            ret_idx = headers.index("Return %")
+            try:
+                ret_v = float(str(row[ret_idx]).replace("%", "").replace(",", "").strip())
+                if ret_v > 0:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, ret_idx, "d9ead3", "0b8043", bold=True))
+                elif ret_v < 0:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, ret_idx, "fde9d9", "c62828", bold=True))
+            except (ValueError, TypeError):
+                pass
+
+        # Color Signal badge
+        if "Signal" in headers:
+            sig_idx = headers.index("Signal")
+            sig_v = str(row[sig_idx]).strip()
+            if "BUY MORE" in sig_v:
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, sig_idx, "c6efce", "276221", bold=True))
+            elif "TARGET HIT" in sig_v:
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, sig_idx, "d9ead3", "0b8043", bold=True))
+            elif "SELL" in sig_v or "SL HIT" in sig_v:
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, sig_idx, "fde9d9", "c62828", bold=True))
+            elif "HOLD" in sig_v:
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, sig_idx, "fff2cc", "7f4f00", bold=True))
+            elif "REVIEW" in sig_v:
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, sig_idx, "fce8b2", "7f4f00", bold=True))
+
         # Color Day Chg%, 1W Return %, 1M Return %, 3M Return %, 6M Return % with canonical return palette
         for ret_col in ("Day Chg%", "1W Return %", "1M Return %", "3M Return %", "6M Return %"):
             if ret_col in headers:
@@ -624,16 +663,45 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
                 except (ValueError, TypeError):
                     pass
 
-    # Color the full width of section header and subtotal rows
+    # Color and merge section header rows
     for h_idx in header_indices:
-        for col in range(nc):
-            reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, col, "0d1b2a", "ffffff", font_size=8))
+        reqs.append({
+            "mergeCells": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": h_idx, "endRowIndex": h_idx + 1,
+                    "startColumnIndex": 0, "endColumnIndex": nc
+                },
+                "mergeType": "MERGE_ALL"
+            }
+        })
+        reqs.append({
+            "repeatCell": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": h_idx, "endRowIndex": h_idx + 1,
+                    "startColumnIndex": 0, "endColumnIndex": nc
+                },
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": sheet_formatter.hex_rgb("1f4e78"),
+                    "textFormat": {"foregroundColor": sheet_formatter.hex_rgb("ffffff"), "bold": True, "fontSize": 9},
+                    "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+                }},
+                "fields": "userEnteredFormat"
+            }
+        })
+        reqs.append({
+            "updateDimensionProperties": {
+                "range": {"sheetId": ws.id, "dimension": "ROWS", "startIndex": h_idx, "endIndex": h_idx + 1},
+                "properties": {"pixelSize": 30}, "fields": "pixelSize"
+            }
+        })
             
     for s_idx in subtotal_indices:
         for col in range(nc):
             if col in [headers.index("P&L") if "P&L" in headers else -1, headers.index("Return %") if "Return %" in headers else -1]:
                 try:
-                    val = float(all_data[s_idx][col]) if all_data[s_idx][col] else 0.0
+                    val = float(str(all_data[s_idx][col]).replace("₹", "").replace("%", "").replace(",", "").strip()) if all_data[s_idx][col] else 0.0
                     bg = "d9ead3" if val > 0 else "fde9d9" if val < 0 else "f1f1f1"
                     fg = "0b8043" if val > 0 else "c62828" if val < 0 else "666666"
                     reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, bg, fg, bold=True, font_size=8))

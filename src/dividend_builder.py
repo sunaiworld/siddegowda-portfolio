@@ -196,6 +196,7 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
         get_percentage_format_reqs,
         get_true_percentage_format_reqs,
         color_cell_req,
+        clear_all_formatting_reqs,
     )
 
     tab_name = "Dividends"
@@ -219,32 +220,42 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
         sh.batch_update({"requests": [{"clearBasicFilter": {"sheetId": ws_id}}]})
     except Exception:
         pass
+
+    # Clear any native conditional formatting rules and reset cell formatting completely
+    try:
+        rules = sh.fetch_sheet_metadata({"includeGridData": False})
+        sheet_meta = next((s for s in rules.get('sheets', []) if s.get('properties', {}).get('sheetId') == ws_id), None)
+        if sheet_meta:
+            cond_formats = sheet_meta.get("conditionalFormats", [])
+            if cond_formats:
+                clear_cf_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws_id, "index": 0}} for _ in cond_formats]
+                batch_update_safe(sh, clear_cf_reqs)
+    except Exception as e:
+        log.warning(f"[Dividends] Could not clear conditional formats: {e}")
+
+    batch_update_safe(sh, clear_all_formatting_reqs(ws_id))
     update_sheet_safe(ws, sum_rows)
 
-    # ── Column widths (GITHUB DATA compact philosophy) ─────────────────────
-    # Stock: 90, each year-dividend col: 75, Total Dividend: 85,
-    # Amount Invested: 90, Dividend %: 70, Market Dividend Yield %: 80
+    # ── Column widths (First column 100px matching Portfolio / GITHUB DATA / Future Buy) ──
+    # Stock: 100, each year-dividend col: 80, Total Dividend: 90,
+    # Amount Invested: 95, Dividend %: 75, Market Dividend Yield %: 85
     num_year_cols = max(total_idx - 1, 0)
     widths = (
-        [90]                     # Stock
-        + [75] * num_year_cols   # Year dividend columns
-        + [85]                   # Total Dividend
+        [100]                    # Stock (matching Portfolio/GITHUB DATA/Future Buy)
+        + [80] * num_year_cols   # Year dividend columns
+        + [90]                   # Total Dividend
     )
     if invested_idx is not None:
-        widths += [90]           # Amount Invested
+        widths += [95]           # Amount Invested
     if pct_idx is not None:
-        widths += [70]           # Dividend %
+        widths += [75]           # Dividend %
     if market_yield_idx is not None:
-        widths += [80]           # Market Dividend Yield %
-    widths = (widths + [75] * num_cols)[:num_cols]
+        widths += [85]           # Market Dividend Yield %
+    widths = (widths + [80] * num_cols)[:num_cols]
 
-    # ── 1. Structural format ─────────────────────────────────────────────────
-    # Same call as write_github_data: header dark bg, white bold fs8, WRAP,
-    # freeze row1+col1, header height 50px, alternating f8f9fa/ffffff rows.
-    # num_rows here is DATA rows only (sum_rows minus its header row) — the
-    # alternating-row loop inside get_structural_format_reqs starts right
-    # after the header, so passing the full sum_rows length would tint one
-    # extra blank row past the real data.
+    # ── 1. Structural format (matching GITHUB DATA & Portfolio) ─────────────
+    # Header: #0d1b2a, white bold fs8, WRAP, freeze row1+col1, height 50px,
+    # alternating f8f9fa/ffffff rows.
     reqs = get_structural_format_reqs(
         ws_id, len(sum_rows) - 1, num_cols, widths, freeze_rows=1, freeze_cols=1
     )
@@ -263,90 +274,59 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
     if market_yield_idx is not None:
         reqs += get_true_percentage_format_reqs(ws_id, 1, len(sum_rows), market_yield_idx, market_yield_idx + 1)
 
-    # ── 3. Per-cell colour coding — identical approach to write_github_data ──
-    # No addConditionalFormatRule. Direct color_cell_req per row, applied
-    # after the structural background so they take visual precedence.
+    # ── 3. Per-cell colour coding — canonical palette like GITHUB DATA ──────
     def _safe_float(val):
         if val in (None, ""):
             return None
         try:
-            f = float(val)
+            f = float(str(val).replace("₹", "").replace("%", "").replace(",", "").strip())
             return None if math.isnan(f) or math.isinf(f) else f
         except (TypeError, ValueError):
             return None
 
-    # ── Precompute column-wise max for graduated heatmap ─────────────────────
-    # Indices of dividend-value columns: year cols (1..total_idx) + Total Dividend
-    div_col_indices = list(range(1, total_idx + 1))  # year cols + total_div
-    col_max = {}
-    for ci in div_col_indices:
-        vals = []
-        for row in sum_rows[1:]:
-            v = _safe_float(row[ci]) if ci < len(row) else None
-            if v is not None and v > 0:
-                vals.append(v)
-        col_max[ci] = max(vals) if vals else 0.0
-
-    def _heatmap_color(val, col_max_val):
-        """Return (bg, fg) based on value relative to column maximum."""
-        if val is None or col_max_val <= 0:
-            return None, None
-        ratio = val / col_max_val
-        
-        # Red & Green Style logic
-        if ratio >= 0.75:
-            return "0b8043", "ffffff"   # Dark green (Top tier)
-        elif ratio >= 0.50:
-            return "d9ead3", "0b8043"   # Light green (Upper mid tier)
-        elif ratio >= 0.25:
-            return "fde9d9", "c62828"   # Light red (Lower mid tier)
-        elif ratio > 0:
-            return "c62828", "ffffff"   # Dark red (Bottom tier)
-        return None, None
-
     for i, row in enumerate(sum_rows[1:], start=1):
         rn = i  # 0-indexed row index; row 0 = header, row 1 = first data row
 
-        # Stock column — cap-type colour (same logic as GITHUB DATA cap_type)
-        sym = str(row[0]).strip()
-        if fund_map:
-            mcap_f = _safe_float(fund_map.get(sym, {}).get("mcap"))
-            if mcap_f is not None:
-                if mcap_f >= 25000:
-                    reqs.append(color_cell_req(ws_id, rn, 0, "d9ead3", "0b8043")) # Large Cap -> Green
-                elif mcap_f >= 5000:
-                    reqs.append(color_cell_req(ws_id, rn, 0, "fff2cc", "7f4f00")) # Mid Cap -> Yellow
-                else:
-                    reqs.append(color_cell_req(ws_id, rn, 0, "fde9d9", "c62828")) # Small Cap -> Red
+        # Stock column — clean bold font (no harsh cap-type background fills)
+        reqs.append({
+            "repeatCell": {
+                "range": {
+                    "sheetId": ws_id,
+                    "startRowIndex": rn, "endRowIndex": rn + 1,
+                    "startColumnIndex": 0, "endColumnIndex": 1
+                },
+                "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+                "fields": "userEnteredFormat.textFormat.bold"
+            }
+        })
 
-        # Year-dividend columns + Total Dividend — graduated heatmap
-        for ci in div_col_indices:
-            if ci >= len(row):
-                continue
-            val = _safe_float(row[ci])
-            bg, fg = _heatmap_color(val, col_max.get(ci, 0.0))
-            if bg:
-                reqs.append(color_cell_req(ws_id, rn, ci, bg, fg, bold=False))
+        # Total Dividend — soft light green accent if received dividend > 0
+        if total_idx < len(row):
+            tot_val = _safe_float(row[total_idx])
+            if tot_val and tot_val > 0:
+                reqs.append(color_cell_req(ws_id, rn, total_idx, "d9ead3", "0b8043", bold=True))
 
-        # Dividend % — stored as plain number
-        # Red and Green colour logic based on 2% threshold
-        if pct_idx is not None:
+        # Dividend % — canonical palette
+        if pct_idx is not None and pct_idx < len(row):
             pct_val = _safe_float(row[pct_idx])
             if pct_val is not None:
-                if pct_val >= 2:
-                    reqs.append(color_cell_req(ws_id, rn, pct_idx, "d9ead3", "0b8043")) # >= 2% Green
+                if pct_val >= 2.0:
+                    reqs.append(color_cell_req(ws_id, rn, pct_idx, "d9ead3", "0b8043", bold=True))  # >= 2% Green
+                elif pct_val > 0:
+                    reqs.append(color_cell_req(ws_id, rn, pct_idx, "fff2cc", "7f4f00", bold=True))  # > 0% Amber
                 else:
-                    reqs.append(color_cell_req(ws_id, rn, pct_idx, "fde9d9", "c62828")) # < 2% Red
+                    reqs.append(color_cell_req(ws_id, rn, pct_idx, "f1f1f1", "666666", bold=False)) # Neutral
 
-        # Market Dividend Yield % — stored as fraction (0.0403 = 4.03%)
-        # Red and Green colour logic based on 2% threshold
-        if market_yield_idx is not None:
+        # Market Dividend Yield % — canonical palette
+        if market_yield_idx is not None and market_yield_idx < len(row):
             my_val = _safe_float(row[market_yield_idx])
             if my_val is not None:
                 if my_val >= 0.02:
-                    reqs.append(color_cell_req(ws_id, rn, market_yield_idx, "d9ead3", "0b8043")) # >= 2% Green
+                    reqs.append(color_cell_req(ws_id, rn, market_yield_idx, "d9ead3", "0b8043", bold=True))  # >= 2% Green
+                elif my_val > 0:
+                    reqs.append(color_cell_req(ws_id, rn, market_yield_idx, "fff2cc", "7f4f00", bold=True))  # > 0% Amber
                 else:
-                    reqs.append(color_cell_req(ws_id, rn, market_yield_idx, "fde9d9", "c62828")) # < 2% Red
+                    reqs.append(color_cell_req(ws_id, rn, market_yield_idx, "f1f1f1", "666666", bold=False)) # Neutral
 
     # ── 4. Filter over full table ─────────────────────────────────────────────
     reqs.append({
@@ -362,22 +342,6 @@ def write_dividends_tab(sh, sum_rows, fund_map=None):
             }
         }
     })
-    
-    # Clear any native conditional formatting rules to ensure our cell colors show
-    try:
-        rules = sh.fetch_sheet_metadata({"includeGridData": False})
-        sheet_meta = next((s for s in rules.get('sheets', []) if s.get('properties', {}).get('sheetId') == ws_id), None)
-        if sheet_meta:
-            cond_formats = sheet_meta.get("conditionalFormats", [])
-            if cond_formats:
-                log.info(f"[DIAGNOSTIC] Found {len(cond_formats)} existing conditional format rules. Clearing them safely.")
-                clear_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws_id, "index": 0}} for _ in cond_formats]
-                batch_update_safe(sh, clear_reqs)
-    except Exception as e:
-        log.warning(f"[DIAGNOSTIC] Failed to clear conditional formats: {e}")
 
-    log.info(f"[DIVIDENDS DEBUG] Data rows: {len(sum_rows) - 1}")
-    log.info(f"[DIVIDENDS DEBUG] Formatting requests generated: {len(reqs)}")
     batch_update_safe(sh, reqs)
-    log.info(f"Wrote {len(sum_rows)} summary rows to {tab_name} tab (A:{chr(64 + num_cols)}).")
-    log.info(f"[DIVIDENDS DEBUG] Formatting requests sent: {len(reqs)}")
+    log.info(f"Wrote {len(sum_rows)} summary rows to {tab_name} tab (A:{chr(64 + num_cols)}) with canonical style.")

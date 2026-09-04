@@ -505,7 +505,7 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
     subtotal_indices = []
 
     def _add_section(title, rows, tot_inv, tot_val):
-        header_indices.append(len(all_data) + 1)
+        header_indices.append(len(all_data))
         all_data.append([title] + [""] * (len(_ALL_HEADERS) - 1))
         
         for r in rows:
@@ -520,7 +520,7 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
                 r["mf_score"], r["trend"], r["ai_decision"], r["ai_reason"]
             ])
             
-        subtotal_indices.append(len(all_data) + 1)
+        subtotal_indices.append(len(all_data))
         tpnl = round(tot_val - tot_inv, 2)
         tret = round((tpnl / tot_inv) * 100, 2) if tot_inv else 0
         all_data.append([
@@ -538,10 +538,10 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         _add_section("ZERODHA - SELF", zerodha_rows, total_invested_z, total_value_z)
 
     # TOTAL / TAX HARVESTING
-    header_indices.append(len(all_data) + 1)
+    header_indices.append(len(all_data))
     all_data.append(["TOTAL / TAX HARVESTING"] + [""] * (len(_ALL_HEADERS) - 1))
     
-    subtotal_indices.append(len(all_data) + 1)
+    subtotal_indices.append(len(all_data))
     total_invested = total_invested_g + total_invested_z
     total_value = total_value_g + total_value_z
     tot_pnl = round(total_value - total_invested, 2)
@@ -554,8 +554,9 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         "", "", "", "", "", "", ""
     ])
 
-    ws.clear()
-    ws.update("A1", all_data, value_input_option="RAW")
+    sheet_writer.clear_sheet_safe(ws)
+    sheet_writer.batch_update_safe(sh, sheet_formatter.clear_all_formatting_reqs(ws.id))
+    sheet_writer.update_sheet_safe(ws, "A1", all_data, value_input_option="RAW")
     log.info(f"write_mutual_funds: wrote {len(all_data)} rows to '{tab_name}'")
 
     # Formatting
@@ -594,18 +595,18 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col, col + 1)
 
     for i, row in enumerate(all_data):
-        rn = i + 1
+        rn = i
         if i == 0 or len(row) <= 1 or row[0] == "" or "SUBTOTAL" in row[0] or "TOTAL" in row[0] or "GROWW" in row[0] or "ZERODHA" in row[0]:
             continue
 
         try:
-            pnl = float(row[7]) if row[7] else 0.0
+            pnl = float(str(row[7]).replace("₹", "").replace(",", "").strip()) if row[7] else 0.0
             req = sheet_formatter.color_positive_negative(ws.id, rn, 7, pnl)
             if req: reqs.append(req)
         except: pass
         
         try:
-            ret_pct = float(row[8]) if row[8] else 0.0
+            ret_pct = float(str(row[8]).replace("%", "").replace(",", "").strip()) if row[8] else 0.0
             req = sheet_formatter.color_positive_negative(ws.id, rn, 8, ret_pct)
             if req: reqs.append(req)
         except: pass
@@ -638,7 +639,7 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         # 1Y / 3Y / 5Y Ret% (cols 21, 22, 23) — color_positive_negative (same as GITHUB DATA)
         for ret_col in [21, 22, 23]:
             try:
-                ret_v = float(row[ret_col]) if len(row) > ret_col and row[ret_col] else 0.0
+                ret_v = float(str(row[ret_col]).replace("%", "").replace(",", "").strip()) if len(row) > ret_col and row[ret_col] else 0.0
                 req_r = sheet_formatter.color_positive_negative(ws.id, rn, ret_col, ret_v)
                 if req_r: reqs.append(req_r)
             except: pass
@@ -653,13 +654,52 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
                 else:             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "fde9d9", "c62828"))
         except: pass
 
-    # Color the full width of section header and subtotal rows
+    # Merge and style section headers as dark blue banners
     for h_idx in header_indices:
-        for col in range(nc):
-            reqs.append(sheet_formatter.color_cell_req(ws.id, h_idx, col, "0d1b2a", "ffffff"))
+        reqs.append({
+            "mergeCells": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": h_idx, "endRowIndex": h_idx + 1,
+                    "startColumnIndex": 0, "endColumnIndex": nc
+                },
+                "mergeType": "MERGE_ALL"
+            }
+        })
+        reqs.append({
+            "repeatCell": {
+                "range": {
+                    "sheetId": ws.id,
+                    "startRowIndex": h_idx, "endRowIndex": h_idx + 1,
+                    "startColumnIndex": 0, "endColumnIndex": nc
+                },
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": sheet_formatter.hex_rgb("1f4e78"),
+                    "textFormat": {"foregroundColor": sheet_formatter.hex_rgb("ffffff"), "bold": True, "fontSize": 9},
+                    "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+                }},
+                "fields": "userEnteredFormat"
+            }
+        })
+        reqs.append({
+            "updateDimensionProperties": {
+                "range": {"sheetId": ws.id, "dimension": "ROWS", "startIndex": h_idx, "endIndex": h_idx + 1},
+                "properties": {"pixelSize": 30}, "fields": "pixelSize"
+            }
+        })
+
+    # Style subtotal rows
     for s_idx in subtotal_indices:
         for col in range(nc):
-            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff"))
+            if col in (7, 8):  # PnL (col 7), Return % (col 8)
+                try:
+                    val = float(str(all_data[s_idx][col]).replace("₹", "").replace("%", "").replace(",", "").strip()) if all_data[s_idx][col] else 0.0
+                    bg = "d9ead3" if val > 0 else "fde9d9" if val < 0 else "f1f1f1"
+                    fg = "0b8043" if val > 0 else "c62828" if val < 0 else "666666"
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, bg, fg, bold=True, font_size=8))
+                    continue
+                except: pass
+            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff", font_size=8))
 
     # Filter over the full table
     reqs.append({

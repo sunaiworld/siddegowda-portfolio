@@ -79,7 +79,7 @@ GITHUB_DATA_HEADER_NAMES = {
 
 # Column pixel width per key
 GITHUB_DATA_COL_WIDTHS = {
-    "symbol": 70, "sector": 75, "industry": 90, "archetype": 80,
+    "symbol": 100, "sector": 75, "industry": 90, "archetype": 80,
     "econ_sens": 110, "inv_role": 110,
     "technical_setup": 110,
     "low52": 60, "cmp": 65, "high52": 60,
