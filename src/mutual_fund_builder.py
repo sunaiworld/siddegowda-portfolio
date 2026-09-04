@@ -654,18 +654,8 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
                 else:             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "fde9d9", "c62828"))
         except: pass
 
-    # Merge and style section headers as dark blue banners
+    # Style section headers as dark blue banners
     for h_idx in header_indices:
-        reqs.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws.id,
-                    "startRowIndex": h_idx, "endRowIndex": h_idx + 1,
-                    "startColumnIndex": 0, "endColumnIndex": nc
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
         reqs.append({
             "repeatCell": {
                 "range": {
@@ -676,7 +666,7 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
                 "cell": {"userEnteredFormat": {
                     "backgroundColor": sheet_formatter.hex_rgb("1f4e78"),
                     "textFormat": {"foregroundColor": sheet_formatter.hex_rgb("ffffff"), "bold": True, "fontSize": 9},
-                    "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+                    "horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE"
                 }},
                 "fields": "userEnteredFormat"
             }

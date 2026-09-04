@@ -68,9 +68,17 @@ class TestSheetStylingUnification(unittest.TestCase):
         self.assertTrue(mock_batch.called)
 
         reqs = mock_batch.call_args[0][1]
-        # Check that mergeCells request was generated for section header
+        # Check that no mergeCells request is generated across frozen/unfrozen boundary
         merge_reqs = [r for r in reqs if "mergeCells" in r]
-        self.assertTrue(len(merge_reqs) >= 1)
+        self.assertEqual(len(merge_reqs), 0)
+
+        # Check that banner repeatCell was generated for section header with dark blue background
+        banner_reqs = [
+            r for r in reqs
+            if "repeatCell" in r
+            and r["repeatCell"].get("cell", {}).get("userEnteredFormat", {}).get("backgroundColor", {}).get("red") == 31 / 255
+        ]
+        self.assertTrue(len(banner_reqs) >= 1)
 
         # Check that color_cell_req was generated for P&L, Return %, and Signal
         repeat_reqs = [r for r in reqs if "repeatCell" in r and "fields" in r["repeatCell"] and "userEnteredFormat.backgroundColor" in r["repeatCell"]["fields"]]

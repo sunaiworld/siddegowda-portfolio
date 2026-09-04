@@ -663,18 +663,8 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
                 except (ValueError, TypeError):
                     pass
 
-    # Color and merge section header rows
+    # Color section header rows as dark blue banners
     for h_idx in header_indices:
-        reqs.append({
-            "mergeCells": {
-                "range": {
-                    "sheetId": ws.id,
-                    "startRowIndex": h_idx, "endRowIndex": h_idx + 1,
-                    "startColumnIndex": 0, "endColumnIndex": nc
-                },
-                "mergeType": "MERGE_ALL"
-            }
-        })
         reqs.append({
             "repeatCell": {
                 "range": {
@@ -685,7 +675,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
                 "cell": {"userEnteredFormat": {
                     "backgroundColor": sheet_formatter.hex_rgb("1f4e78"),
                     "textFormat": {"foregroundColor": sheet_formatter.hex_rgb("ffffff"), "bold": True, "fontSize": 9},
-                    "horizontalAlignment": "CENTER", "verticalAlignment": "MIDDLE"
+                    "horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE"
                 }},
                 "fields": "userEnteredFormat"
             }
