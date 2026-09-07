@@ -2,12 +2,14 @@ name: Morning Buying Zone Update
 
 on:
   schedule:
-    # Staggered triggers between 09:45 AM - 10:15 AM IST (04:15 - 04:45 UTC) Monday-Friday.
-    # Bypasses GitHub Actions :30 global queue backlog.
-    # The script is idempotent and delivers at most ONE update per day.
-    - cron: '15 4 * * 1-5'
-    - cron: '30 4 * * 1-5'
-    - cron: '45 4 * * 1-5'
+    # Staggered triggers from 09:00 AM IST to 10:30 AM IST (03:30–05:00 UTC) Monday-Friday.
+    # IST = UTC + 5:30  →  10:00 AM IST = 04:30 UTC (target)
+    # Window is 90 minutes wide to absorb GitHub Actions runner queue delays (often 30–60 min).
+    # The script is idempotent: Bot State sheet ensures at most ONE Telegram alert per day.
+    - cron: '30 3 * * 1-5'   # 03:30 UTC = 09:00 AM IST  (earliest trigger)
+    - cron: '0 4 * * 1-5'    # 04:00 UTC = 09:30 AM IST
+    - cron: '30 4 * * 1-5'   # 04:30 UTC = 10:00 AM IST  ← target
+    - cron: '0 5 * * 1-5'    # 05:00 UTC = 10:30 AM IST  (latest trigger)
   workflow_dispatch:
     inputs:
       force:
