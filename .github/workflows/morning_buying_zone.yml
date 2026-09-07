@@ -1,22 +1,35 @@
 name: Morning Buying Zone Update
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SCHEDULING ARCHITECTURE
+# ─────────────────────────────────────────────────────────────────────────────
+# PRIMARY TRIGGER: External scheduler (cron-job.org or equivalent)
+#   → Calls GitHub workflow_dispatch API at exactly 04:30 UTC (10:00 AM IST)
+#   → This fires OUTSIDE GitHub's queue system — not affected by GitHub delays
+#   → Setup: see docs/SCHEDULING.md for exact cron-job.org configuration
+#
+# BACKUP TRIGGER: GitHub schedule cron '30 4 * * 1-5'
+#   → Fires if the external scheduler is unavailable (PAT expired, cron-job down)
+#   → Single entry only — multiple stagger entries caused repeated afternoon runs
+#   → If workflow_dispatch already ran today, Bot State idempotency exits silently
+#
+# TIMEZONE NOTE: GitHub Actions cron is always UTC.
+#   10:00 AM IST = 04:30 UTC  (IST = UTC + 5:30)
+# ─────────────────────────────────────────────────────────────────────────────
+
 on:
-  schedule:
-    # Staggered triggers from 09:00 AM IST to 10:30 AM IST (03:30–05:00 UTC) Monday-Friday.
-    # IST = UTC + 5:30  →  10:00 AM IST = 04:30 UTC (target)
-    # Window is 90 minutes wide to absorb GitHub Actions runner queue delays (often 30–60 min).
-    # The script is idempotent: Bot State sheet ensures at most ONE Telegram alert per day.
-    - cron: '30 3 * * 1-5'   # 03:30 UTC = 09:00 AM IST  (earliest trigger)
-    - cron: '0 4 * * 1-5'    # 04:00 UTC = 09:30 AM IST
-    - cron: '30 4 * * 1-5'   # 04:30 UTC = 10:00 AM IST  ← target
-    - cron: '0 5 * * 1-5'    # 05:00 UTC = 10:30 AM IST  (latest trigger)
   workflow_dispatch:
     inputs:
       force:
-        description: 'Force run and send Telegram alert even if already sent today'
+        description: 'Force run even if already sent today (bypasses idempotency)'
         required: false
         default: false
         type: boolean
+  schedule:
+    # BACKUP ONLY — primary scheduling is via external workflow_dispatch trigger.
+    # Single cron: 04:30 UTC = 10:00 AM IST, Monday–Friday.
+    # If the external scheduler triggered today, Bot State B1 will block this run.
+    - cron: '30 4 * * 1-5'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -26,8 +39,23 @@ jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    
+
     steps:
+    - name: Log Trigger Timing
+      run: |
+        echo "========================================"
+        echo "  MORNING BUYING ZONE — TIMING AUDIT"
+        echo "========================================"
+        echo "Trigger event  : ${{ github.event_name }}"
+        echo "Workflow run # : ${{ github.run_number }}"
+        echo "Runner UTC     : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "Runner IST     : $(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S IST')"
+        echo ""
+        echo "Expected trigger: 04:30 UTC = 10:00 AM IST"
+        echo "Actual UTC time : $(date -u '+%H:%M:%S UTC')"
+        echo "Actual IST time : $(TZ='Asia/Kolkata' date '+%H:%M:%S IST')"
+        echo "========================================"
+
     - name: Checkout Repository
       uses: actions/checkout@v4.2.2
 
@@ -54,3 +82,11 @@ jobs:
         else
           python scripts/morning_buying_zone.py
         fi
+
+    - name: Log Completion Timing
+      if: always()
+      run: |
+        echo "========================================"
+        echo "Completed UTC : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "Completed IST : $(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S IST')"
+        echo "========================================"
