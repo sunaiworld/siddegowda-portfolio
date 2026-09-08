@@ -342,7 +342,7 @@ def write_future_buy_tab(sh, rows, tab_name="Future Buy", sector_weights=None, p
     # Main Watchlist Table (starts at index 13 when len(top10)==10: 0=title, 1=hdr, 2..11=top10, 12=blank, 13=group_banner, 14=col_hdr, 15..=data)
     watchlist_start_idx = 2 + len(top10) + 1
     reqs += build_github_data_format_requests(
-        ws.id, rows, start_row=watchlist_start_idx, freeze_rows=2, freeze_cols=1
+        ws.id, rows, start_row=watchlist_start_idx, freeze_rows=2, freeze_cols=1, tab_name=tab_name
     )
 
     try:

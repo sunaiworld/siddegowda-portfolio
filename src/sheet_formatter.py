@@ -408,7 +408,79 @@ def get_weight_gradient_rule(ws_id, start_row, end_row, col_idx):
     }
 
 
-def build_github_data_format_requests(ws_id, rows, start_row=0, freeze_rows=2, freeze_cols=1):
+def get_mcap_category(mcap_val):
+    """
+    Classifies a company's market cap into 'Large Cap', 'Mid Cap', or 'Small Cap'.
+    Accepts:
+    - Formatted string with Cr (e.g. '₹50,000 Cr')
+    - Category name string (e.g. 'Large Cap', 'Mid Cap', 'Small Cap')
+    - Numeric value in Crores (e.g. 50000, 15000, 2500)
+    Returns: 'Large Cap' | 'Mid Cap' | 'Small Cap' | None
+    """
+    if mcap_val is None:
+        return None
+
+    s = str(mcap_val).strip()
+    if not s:
+        return None
+
+    s_lower = s.lower()
+    if "large" in s_lower:
+        return "Large Cap"
+    if "mid" in s_lower:
+        return "Mid Cap"
+    if "small" in s_lower:
+        return "Small Cap"
+
+    try:
+        clean_v = s.replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip()
+        val = float(clean_v)
+        if val >= 25000:
+            return "Large Cap"
+        elif val >= 5000:
+            return "Mid Cap"
+        elif val > 0:
+            return "Small Cap"
+        else:
+            return None
+    except (ValueError, TypeError):
+        return None
+
+
+def get_future_buy_eps_colors(eps_val, mcap_category):
+    """
+    Returns (bg_hex, fg_hex) for EPS cell in Future Buy tab based on Market Cap:
+    - Small Cap: EPS >= 5 and <= 20 -> Green, else Red
+    - Mid Cap:   EPS >= 20 and <= 50 -> Green, else Red
+    - Large Cap: EPS >= 50 -> Green, else Red
+    Returns None if eps_val or mcap_category cannot be determined.
+    """
+    if eps_val is None or mcap_category is None:
+        return None
+
+    try:
+        if isinstance(eps_val, str):
+            clean_eps = eps_val.replace("₹", "").replace(",", "").strip()
+            v = float(clean_eps)
+        else:
+            v = float(eps_val)
+    except (ValueError, TypeError):
+        return None
+
+    if mcap_category == "Small Cap":
+        is_green = (5.0 <= v <= 20.0)
+    elif mcap_category == "Mid Cap":
+        is_green = (20.0 <= v <= 50.0)
+    elif mcap_category == "Large Cap":
+        is_green = (v >= 50.0)
+    else:
+        is_green = (v > 0)
+
+    # Green: ("d9ead3", "0b8043"), Red: ("fde9d9", "c62828")
+    return ("d9ead3", "0b8043") if is_green else ("fde9d9", "c62828")
+
+
+def build_github_data_format_requests(ws_id, rows, start_row=0, freeze_rows=2, freeze_cols=1, tab_name=None):
     """
     CANONICAL FORMATTING ENGINE FOR 41-COLUMN GITHUB-DATA-STYLE TABLES.
     Used identically by GITHUB DATA, Future Buy, and any watchlist tab.
@@ -416,11 +488,15 @@ def build_github_data_format_requests(ws_id, rows, start_row=0, freeze_rows=2, f
     start_row: Row index where the table starts.
                - If 0 (direct table): group header is at row 0, column headers at row 1, data starts at row 2.
                - If >0 (e.g. 13 below a Top 10 block): group header is at row start_row, column headers at start_row + 1, data starts at start_row + 2.
+    tab_name: Name of the worksheet being formatted (e.g. 'Future Buy'). Enables tab-specific
+              refinements like Market Cap-aware EPS conditional formatting while preserving
+              standard formatting on other tabs.
     """
     from github_data_builder import (
         GITHUB_DATA_COLS, GITHUB_DATA_HEADER_NAMES, GITHUB_DATA_COL_WIDTHS,
         GROUP_DEFS
     )
+    is_future_buy = bool(tab_name and "future buy" in str(tab_name).lower())
     C = GITHUB_DATA_COLS
     num_cols = len(C)
     widths = [GITHUB_DATA_COL_WIDTHS.get(key, 70) for key in C]
@@ -569,8 +645,19 @@ def build_github_data_format_requests(ws_id, rows, start_row=0, freeze_rows=2, f
 
         # EPS
         if eps_v is not None:
-            reqs.append(color_cell_req(ws_id, rn, C["eps"], "d9ead3", "0b8043") if eps_v > 0
-                        else color_cell_req(ws_id, rn, C["eps"], "fde9d9", "c62828"))
+            if is_future_buy:
+                mcap_raw = row[C["mcap"]] if len(row) > C["mcap"] else None
+                mcap_cat = get_mcap_category(mcap_raw if mcap_raw not in ("", None) else mcap_tier_v)
+                eps_colors = get_future_buy_eps_colors(eps_v, mcap_cat)
+                if eps_colors:
+                    bg, fg = eps_colors
+                    reqs.append(color_cell_req(ws_id, rn, C["eps"], bg, fg))
+                else:
+                    reqs.append(color_cell_req(ws_id, rn, C["eps"], "d9ead3", "0b8043") if eps_v > 0
+                                else color_cell_req(ws_id, rn, C["eps"], "fde9d9", "c62828"))
+            else:
+                reqs.append(color_cell_req(ws_id, rn, C["eps"], "d9ead3", "0b8043") if eps_v > 0
+                            else color_cell_req(ws_id, rn, C["eps"], "fde9d9", "c62828"))
 
         # P/B
         if pb_v is not None:
