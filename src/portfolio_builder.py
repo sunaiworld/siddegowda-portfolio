@@ -327,7 +327,7 @@ def _resolve_imports_root(imports_dir):
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), imports_dir),
     ]
     for c in candidates:
-        if os.path.isdir(os.path.join(c, "zerodha")) or os.path.isdir(os.path.join(c, "groww")):
+        if os.path.isdir(os.path.join(c, "zerodha")) or os.path.isdir(os.path.join(c, "groww")) or os.path.isdir(os.path.join(c, "Wife")):
             return c
     return imports_dir
 
@@ -363,6 +363,26 @@ def load_all_trades(imports_dir="data/imports"):
                 log.warning(f"  Groww import failed for {os.path.basename(path)}: {e}")
 
     log.info(f"Loaded {len(trades)} raw trade rows from data/imports (Zerodha + Groww)")
+    trades.sort(key=lambda t: str(t.get("date", "")))
+    return trades
+
+
+def load_wife_trades(imports_dir="data/imports"):
+    """Loads all CSV tradebook files under data/imports/Wife/ using Zerodha CSV format."""
+    imports_root = _resolve_imports_root(imports_dir)
+    wife_dir = os.path.join(imports_root, "Wife")
+    trades = []
+
+    if os.path.isdir(wife_dir):
+        zerodha_importer_path = os.path.join(imports_root, "zerodha", "import_zerodha.py")
+        zerodha_mod = _load_broker_importer("_zerodha_importer_wife", zerodha_importer_path)
+        for path in sorted(glob.glob(os.path.join(wife_dir, "*.csv"))):
+            try:
+                trades.extend(zerodha_mod.import_zerodha(path))
+            except Exception as e:
+                log.warning(f"  Wife import failed for {os.path.basename(path)}: {e}")
+
+    log.info(f"Loaded {len(trades)} raw trade rows from data/imports/Wife")
     trades.sort(key=lambda t: str(t.get("date", "")))
     return trades
 
@@ -416,11 +436,12 @@ import math
 def is_valid_price(p):
     return p is not None and isinstance(p, (int, float)) and not math.isnan(p) and p > 0
 
-def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_map=None, tech_map=None):
+def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_map=None, tech_map=None, trades=None):
     if fund_map is None: fund_map = {}
     if source_map is None: source_map = {}
     if tech_map is None: tech_map = {}
-    trades = load_all_trades(imports_dir)
+    if trades is None:
+        trades = load_all_trades(imports_dir)
     holdings = compute_holdings(trades)
 
     # Compute combined natively
@@ -516,9 +537,7 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
     return {"groww": [], "zerodha": [], "combined": combined_rows}
 
 
-def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
-    ws = sh.worksheet(tab_name)
-    
+def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     headers = PORTFOLIO_COLUMNS
     col_keys = {
         "Investment Source": "investment_source",
@@ -538,7 +557,8 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
 
     header_indices.append(len(all_data))
     group_row = [""] * len(headers)
-    group_row[SYMBOL_COL] = "COMBINED - PORTFOLIO VIEW ONLY"
+    default_title = "WIFE PORTFOLIO - VIEW ONLY" if "wife" in tab_name.lower() else "COMBINED - PORTFOLIO VIEW ONLY"
+    group_row[SYMBOL_COL] = view_title or default_title
     all_data.append(group_row)
     
     if combined_rows:
@@ -558,12 +578,17 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio"):
     tot_ret = round((tot_pnl / tot_inv) * 100, 2) if tot_inv else 0
     
     subtotal_row = [""] * len(headers)
-    subtotal_row[SYMBOL_COL] = "COMBINED TOTAL"
+    subtotal_row[SYMBOL_COL] = "WIFE PORTFOLIO TOTAL" if "wife" in tab_name.lower() else "COMBINED TOTAL"
     if "Invested" in headers: subtotal_row[headers.index("Invested")] = round(tot_inv, 2)
     if "Value" in headers: subtotal_row[headers.index("Value")] = round(tot_val, 2)
     if "P&L" in headers: subtotal_row[headers.index("P&L")] = tot_pnl
     if "Return %" in headers: subtotal_row[headers.index("Return %")] = tot_ret
     all_data.append(subtotal_row)
+
+    try:
+        ws = sh.worksheet(tab_name)
+    except Exception:
+        ws = sh.add_worksheet(tab_name, rows=len(all_data) + 20, cols=len(headers))
 
     sheet_writer.clear_sheet_safe(ws)
 

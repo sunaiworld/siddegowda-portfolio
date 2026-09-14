@@ -179,8 +179,9 @@ def run_portfolio_update(sh):
     # watchlist symbols.  This ensures a stock first bought in a new broker
     # import file (not yet in the Portfolio sheet's col B) is captured in
     # the holdings dict and written to Portfolio on the next run.
-    from portfolio_builder import compute_holdings
+    from portfolio_builder import compute_holdings, load_wife_trades
     raw_held = compute_holdings(load_all_trades())
+    raw_wife_held = compute_holdings(load_wife_trades())
     
     all_held = {}
     for key, h in raw_held.items():
@@ -195,7 +196,9 @@ def run_portfolio_update(sh):
         c = all_held[sym]["cost"]
         all_held[sym] = (c / q if q else 0.0, q, c)
 
-    extra_syms = [s for s in all_held if s not in set(symbols)]
+    wife_syms = [h["symbol"] for h in raw_wife_held.values()]
+    extra_syms = [s for s in list(all_held.keys()) + wife_syms if s not in set(symbols)]
+    extra_syms = list(dict.fromkeys(extra_syms))
     if extra_syms:
         log.info(f"Fetching prices and technicals for {len(extra_syms)} holdings-only symbol(s): {extra_syms}")
         extra_prices = fetch_prices_batch(extra_syms)
@@ -344,6 +347,17 @@ def run_portfolio_update(sh):
     except Exception as e:
         log.error(f"[CHECKPOINT] Portfolio build/write FAILED: {e}", exc_info=True)
         raise
+
+    try:
+        wife_trades = load_wife_trades()
+        if wife_trades:
+            wife_portfolio_rows = build_portfolio(
+                prices, fund_map=fund_map, source_map=source_map, tech_map=tech_map, trades=wife_trades
+            )
+            write_portfolio(sh, wife_portfolio_rows, tab_name="Wife_Portfolio")
+            log.info("✓ Wife_Portfolio tab written successfully")
+    except Exception as e:
+        log.warning(f"Could not build/write Wife_Portfolio: {e}", exc_info=True)
 
     dash = portfolio_analytics.compute_portfolio_dashboard(
         holdings, fund_map, trades, portfolio_live_value,
