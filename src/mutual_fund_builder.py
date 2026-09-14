@@ -98,8 +98,11 @@ def load_all_mf_trades(imports_dir="data/imports"):
     root      = _resolve_imports_root(imports_dir)
     mf_dir    = os.path.join(root, "mutual_funds")
     groww_dir = os.path.join(root, "groww")
+    wife_dir  = os.path.join(root, "Wife")
     trades    = []
+    seen_trade_sigs = set()
 
+    # 1. Zerodha MF tradebooks (Self)
     if os.path.isdir(mf_dir):
         importer_path = os.path.join(mf_dir, "import_mf_zerodha.py")
         if os.path.isfile(importer_path):
@@ -116,6 +119,26 @@ def load_all_mf_trades(imports_dir="data/imports"):
         else:
             log.warning("import_mf_zerodha.py not found in mutual_funds/")
 
+    # 2. Wife MF Order History (data/imports/Wife/Wife_Mutual_Funds_*.xlsx)
+    if os.path.isdir(wife_dir) and os.path.isdir(mf_dir):
+        g_importer = os.path.join(mf_dir, "import_mf_groww.py")
+        if os.path.isfile(g_importer):
+            g_mod = _load_importer("_import_mf_groww_wife", g_importer)
+            wife_files = sorted(glob.glob(os.path.join(wife_dir, "*Mutual_Funds*.xlsx")))
+            if not wife_files:
+                wife_files = sorted(glob.glob(os.path.join(wife_dir, "*.xlsx")))
+            for path in wife_files:
+                try:
+                    rows = g_mod.import_mf_groww(path)
+                    for r in rows:
+                        r["broker"] = "Wife"
+                        seen_trade_sigs.add((str(r.get("date")), str(r.get("fund_name")), float(r.get("units") or 0), float(r.get("amount") or 0)))
+                    trades.extend(rows)
+                    log.info(f"  MF Wife {os.path.basename(path)}: {len(rows)} rows")
+                except Exception as e:
+                    log.warning(f"  MF Wife import failed for {os.path.basename(path)}: {e}")
+
+    # 3. Groww MF Order History (Dad / Other)
     if os.path.isdir(groww_dir):
         g_importer = os.path.join(mf_dir, "import_mf_groww.py") if os.path.isdir(mf_dir) else ""
         if g_importer and os.path.isfile(g_importer):
@@ -123,6 +146,10 @@ def load_all_mf_trades(imports_dir="data/imports"):
             for path in sorted(glob.glob(os.path.join(groww_dir, "Mutual_Funds_*.xlsx"))):
                 try:
                     rows = g_mod.import_mf_groww(path)
+                    # Check if rows are identical duplicate of Wife trades
+                    if rows and all((str(r.get("date")), str(r.get("fund_name")), float(r.get("units") or 0), float(r.get("amount") or 0)) in seen_trade_sigs for r in rows):
+                        log.info(f"  Skipping duplicate Groww MF file {os.path.basename(path)}: already imported as Wife mutual funds")
+                        continue
                     trades.extend(rows)
                     log.info(f"  MF Groww {os.path.basename(path)}: {len(rows)} rows")
                 except Exception as e:
@@ -397,6 +424,11 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
     existing_gain = {}
     if len(existing) > 1:
         try:
+            def _clean_fn(name):
+                return (name.replace(" - Wife mutual funds", "")
+                            .replace(" (Wife mutual funds)", "")
+                            .strip())
+
             hdr = [str(c).strip() for c in existing[0]]
             fn_col  = 0
             nav_col = next((i for i, h in enumerate(hdr) if "Current NAV" in h), 3)
@@ -406,21 +438,28 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
                 fn = str(row[fn_col]).strip() if len(row) > fn_col else ""
                 if not fn or fn == "TOTAL":
                     continue
+                clean_name = _clean_fn(fn)
                 try:
-                    existing_nav[fn] = float(str(row[nav_col]).replace(",", "")) if len(row) > nav_col else 0
+                    v = float(str(row[nav_col]).replace(",", "")) if len(row) > nav_col else 0
+                    existing_nav[fn] = v
+                    existing_nav[clean_name] = v
                 except Exception:
                     pass
                 try:
                     dg  = float(str(row[dg_col]).replace(",", ""))  if len(row) > dg_col  else 0
                     dgp = float(str(row[dgp_col]).replace(",", "")) if len(row) > dgp_col else 0
                     existing_gain[fn] = [dg, dgp]
+                    existing_gain[clean_name] = [dg, dgp]
                 except Exception:
                     existing_gain[fn] = [0, 0]
         except Exception as e:
             log.warning(f"Could not read existing MF values: {e}")
 
+    wife_rows = []
     groww_rows = []
     zerodha_rows = []
+    total_invested_w = 0.0
+    total_value_w = 0.0
     total_invested_g = 0.0
     total_value_g = 0.0
     total_invested_z = 0.0
@@ -438,11 +477,14 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         invested  = h["total_invested"]
         broker    = h.get("broker", "")
 
-        curr_nav  = existing_nav.get(fn, 0) or tx.get("amfi_nav", 0) or avg_nav
+        is_wife = broker.lower() == "wife"
+        display_fn = f"{fn} - Wife mutual funds" if is_wife else fn
+
+        curr_nav  = existing_nav.get(display_fn, 0) or existing_nav.get(fn, 0) or tx.get("amfi_nav", 0) or avg_nav
         curr_val  = round(units * curr_nav, 2)
         pnl       = round(curr_val - invested, 2)
         ret_pct   = round((pnl / invested) * 100, 2) if invested else 0
-        dg, dgp   = existing_gain.get(fn, [0, 0])
+        dg, dgp   = existing_gain.get(display_fn, existing_gain.get(fn, [0, 0]))
 
         if   ret_pct >= 100: signal = "STAR"
         elif ret_pct >= 50:  signal = "MULTI"
@@ -468,7 +510,7 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
             ret_1y = ret_3y = ret_5y = mf_score = trend = ai_decision = ai_reason = ""
 
         row_dict = {
-            "fn": fn, "cat": cat, "avg_nav": avg_nav, "curr_nav": curr_nav,
+            "fn": display_fn, "cat": cat, "avg_nav": avg_nav, "curr_nav": curr_nav,
             "units": round(units, 3), "invested": invested, "curr_val": curr_val,
             "pnl": pnl, "ret_pct": ret_pct, "dg": dg, "dgp": dgp, "wt": wt,
             "signal": signal,
@@ -484,7 +526,11 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
             "mf_score": mf_score, "trend": trend, "ai_decision": ai_decision, "ai_reason": ai_reason
         }
 
-        if broker.lower() == "groww":
+        if is_wife:
+            wife_rows.append(row_dict)
+            total_invested_w += invested
+            total_value_w += curr_val
+        elif broker.lower() == "groww":
             groww_rows.append(row_dict)
             total_invested_g += invested
             total_value_g += curr_val
@@ -494,6 +540,8 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
             total_value_z += curr_val
 
     # Recalculate weight%
+    for r in wife_rows:
+        r["wt"] = round((r["curr_val"] / total_value_w) * 100, 2) if total_value_w else 0
     for r in groww_rows:
         r["wt"] = round((r["curr_val"] / total_value_g) * 100, 2) if total_value_g else 0
     for r in zerodha_rows:
@@ -532,6 +580,8 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         ])
         all_data.append([""] * len(_ALL_HEADERS))
 
+    if wife_rows:
+        _add_section("WIFE MUTUAL FUNDS", wife_rows, total_invested_w, total_value_w)
     if groww_rows:
         _add_section("GROWW - DAD", groww_rows, total_invested_g, total_value_g)
     if zerodha_rows:
@@ -542,8 +592,8 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
     all_data.append(["TOTAL / TAX HARVESTING"] + [""] * (len(_ALL_HEADERS) - 1))
     
     subtotal_indices.append(len(all_data))
-    total_invested = total_invested_g + total_invested_z
-    total_value = total_value_g + total_value_z
+    total_invested = total_invested_w + total_invested_g + total_invested_z
+    total_value = total_value_w + total_value_g + total_value_z
     tot_pnl = round(total_value - total_invested, 2)
     tot_ret = round((tot_pnl / total_invested) * 100, 2) if total_invested else 0
     all_data.append([
@@ -562,15 +612,8 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
     # Formatting
     nc = len(_ALL_HEADERS)
     # Compact column widths — GITHUB DATA compact philosophy
-    # Fund Name(180), Category(80), Avg NAV(65), Curr NAV(65),
-    # Units(60), Invested(85), Curr Val(85), P&L(80), Return%(65),
-    # Day Gain Rs(75), Day Gain%(65), Weight%(55), Signal(75),
-    # Holding Days(70), Tax Type(60), Unrealised(85), Harvestable(85),
-    # LTCG Units(65), Harvest Units(70), Tax Harvest(65), Reason(170),
-    # 1Y Ret%(60), 3Y Ret%(60), 5Y Ret%(60), MF Score(65),
-    # Trend(80), AI Decision(90), Decision Reason(170)
     widths = [
-        180, 80, 65, 65, 60, 85, 85, 80, 65, 75, 65, 55, 75,
+        260, 80, 65, 65, 60, 85, 85, 80, 65, 75, 65, 55, 75,
         70, 60, 85, 85, 65, 70, 65, 170,
         60, 60, 60, 65, 80, 90, 170,
     ]
@@ -596,7 +639,7 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
 
     for i, row in enumerate(all_data):
         rn = i
-        if i == 0 or len(row) <= 1 or row[0] == "" or "SUBTOTAL" in row[0] or "TOTAL" in row[0] or "GROWW" in row[0] or "ZERODHA" in row[0]:
+        if i == 0 or len(row) <= 1 or row[0] == "" or "SUBTOTAL" in row[0] or "TOTAL" in row[0] or "GROWW" in row[0] or "ZERODHA" in row[0] or "WIFE" in row[0]:
             continue
 
         try:

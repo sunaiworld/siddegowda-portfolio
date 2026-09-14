@@ -40,23 +40,36 @@ def fetch_amfi_data():
         if not line or ";" not in line:
             continue
         parts = line.split(";")
-        if len(parts) >= 5:
-            code = parts[0]
-            isin = parts[1].strip()
+        code = parts[0].strip()
+        isin = parts[1].strip() if len(parts) > 1 else ""
+        if not isin or isin == "-":
+            continue
+
+        if len(parts) >= 8:
+            # Modern 8-column AMFI format: Code; ISIN-Growth; ISIN-Reinv; Scheme Name; Plan; Option; NAV; Date
+            name = f"{parts[3].strip()} {parts[4].strip()} {parts[5].strip()}".strip()
+            try:
+                nav = float(parts[6].strip())
+            except ValueError:
+                continue
+            date_str = parts[7].strip() if len(parts) > 7 else ""
+        elif len(parts) >= 5:
+            # Legacy AMFI format: Code; ISIN-Growth; ISIN-Reinv; Scheme Name; NAV; Date
             name = parts[3].strip()
             try:
-                nav = float(parts[4])
+                nav = float(parts[4].strip())
             except ValueError:
                 continue
             date_str = parts[5].strip() if len(parts) > 5 else ""
+        else:
+            continue
 
-            if isin and isin != "-":
-                parsed[isin] = {
-                    "nav": nav,
-                    "name": name,
-                    "scheme_code": code,
-                    "date": date_str
-                }
+        parsed[isin] = {
+            "nav": nav,
+            "name": name,
+            "scheme_code": code,
+            "date": date_str
+        }
     
     _cache_navs = parsed
     log.info(f"Loaded {len(parsed)} MF schemes from AMFI.")

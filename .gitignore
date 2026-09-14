@@ -17,3 +17,7 @@ data/imports/groww/Stocks_Order_History_*.xlsx
 # OS artefacts
 .DS_Store
 Thumbs.db
+
+# Cache directories
+.cache/
+data/.cache/

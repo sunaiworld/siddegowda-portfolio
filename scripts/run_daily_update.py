@@ -89,6 +89,7 @@ def main():
     safe_print("")
     safe_print("✓ Portfolio updated")
     safe_print("✓ Wife_Portfolio updated")
+    safe_print("✓ Mutual Funds updated")
     safe_print("✓ GITHUB DATA updated")
     safe_print("✓ Future Buy updated")
     safe_print("")
