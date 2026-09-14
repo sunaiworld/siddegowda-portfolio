@@ -138,7 +138,7 @@ def load_all_mf_trades(imports_dir="data/imports"):
                 except Exception as e:
                     log.warning(f"  MF Wife import failed for {os.path.basename(path)}: {e}")
 
-    # 3. Groww MF Order History (Dad / Other)
+    # 3. Groww MF Order History (Dad)
     if os.path.isdir(groww_dir):
         g_importer = os.path.join(mf_dir, "import_mf_groww.py") if os.path.isdir(mf_dir) else ""
         if g_importer and os.path.isfile(g_importer):
@@ -146,12 +146,10 @@ def load_all_mf_trades(imports_dir="data/imports"):
             for path in sorted(glob.glob(os.path.join(groww_dir, "Mutual_Funds_*.xlsx"))):
                 try:
                     rows = g_mod.import_mf_groww(path)
-                    # Check if rows are identical duplicate of Wife trades
-                    if rows and all((str(r.get("date")), str(r.get("fund_name")), float(r.get("units") or 0), float(r.get("amount") or 0)) in seen_trade_sigs for r in rows):
-                        log.info(f"  Skipping duplicate Groww MF file {os.path.basename(path)}: already imported as Wife mutual funds")
-                        continue
+                    for r in rows:
+                        r["broker"] = "Groww"
                     trades.extend(rows)
-                    log.info(f"  MF Groww {os.path.basename(path)}: {len(rows)} rows")
+                    log.info(f"  MF Groww (Dad) {os.path.basename(path)}: {len(rows)} rows")
                 except Exception as e:
                     log.warning(f"  MF Groww import failed for {os.path.basename(path)}: {e}")
         else:
@@ -580,10 +578,10 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         ])
         all_data.append([""] * len(_ALL_HEADERS))
 
-    if wife_rows:
-        _add_section("WIFE MUTUAL FUNDS", wife_rows, total_invested_w, total_value_w)
     if groww_rows:
         _add_section("GROWW - DAD", groww_rows, total_invested_g, total_value_g)
+    if wife_rows:
+        _add_section("WIFE MUTUAL FUNDS", wife_rows, total_invested_w, total_value_w)
     if zerodha_rows:
         _add_section("ZERODHA - SELF", zerodha_rows, total_invested_z, total_value_z)
 

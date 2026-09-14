@@ -25,9 +25,11 @@ class TestWifeMutualFunds(unittest.TestCase):
         wife_trades = [t for t in trades if t.get("broker") == "Wife"]
         self.assertEqual(len(wife_trades), 19, "Expected 19 trades in Wife mutual fund order history")
 
+        groww_trades = [t for t in trades if t.get("broker") == "Groww"]
+        self.assertEqual(len(groww_trades), 19, "Expected 19 trades in Dad Groww mutual fund order history")
+
         # Verify canonical MF schema fields
-        for t in wife_trades:
-            self.assertEqual(t["broker"], "Wife")
+        for t in wife_trades + groww_trades:
             self.assertIn("fund_name", t)
             self.assertIn("date", t)
             self.assertIn("action", t)
@@ -87,16 +89,21 @@ class TestWifeMutualFunds(unittest.TestCase):
         # 1. Header row
         self.assertEqual(table[0][0], "Fund Name")
 
-        # 2. Wife Section Banner in column 0
+        # 2. Section Banners in column 0
+        groww_banner_idx = next(i for i, r in enumerate(table) if r[0] == "GROWW - DAD")
         wife_banner_idx = next(i for i, r in enumerate(table) if r[0] == "WIFE MUTUAL FUNDS")
+        self.assertIsNotNone(groww_banner_idx)
         self.assertIsNotNone(wife_banner_idx)
+        self.assertLess(groww_banner_idx, wife_banner_idx, "GROWW - DAD should appear before WIFE MUTUAL FUNDS")
 
         # 3. Every Wife fund row must mention 'Wife mutual funds' in Column 0 ('Fund Name')
         wife_rows = [r for r in table if " - Wife mutual funds" in str(r[0])]
         self.assertEqual(len(wife_rows), 8, "All 8 Wife funds must mention 'Wife mutual funds' in Fund Name column")
 
-        # 4. Wife subtotal row
+        # 4. Subtotal rows
+        groww_subtotal = next(r for r in table if r[0] == "GROWW - DAD SUBTOTAL")
         wife_subtotal = next(r for r in table if r[0] == "WIFE MUTUAL FUNDS SUBTOTAL")
+        self.assertAlmostEqual(float(groww_subtotal[5]), 950028.0, places=1)
         self.assertAlmostEqual(float(wife_subtotal[5]), 950028.0, places=1)
 
         # 5. Combined total row
