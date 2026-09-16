@@ -1,0 +1,1108 @@
+{
+  "INF174K01LT0": {
+    "fund_name": "Kotak Midcap Fund - Direct Plan",
+    "yf_symbol": "0P0000XV5R.BO",
+    "updated_at": "2026-09-16T22:04:47.877460",
+    "holdings": [
+      {
+        "raw_symbol": "FORTIS.BO",
+        "clean_symbol": "FORTIS",
+        "name": "Fortis Healthcare Ltd",
+        "weight": 0.035760902,
+        "isin": "INE061F01013"
+      },
+      {
+        "raw_symbol": "IPCALAB.BO",
+        "clean_symbol": "IPCALAB",
+        "name": "Ipca Laboratories Ltd",
+        "weight": 0.0342232,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "VMM.NS",
+        "clean_symbol": "VMM",
+        "name": "Vishal Mega Mart Ltd",
+        "weight": 0.031133398,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "517569",
+        "clean_symbol": "517569",
+        "name": "KEI Industries Ltd",
+        "weight": 0.0295181,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "LTF.BO",
+        "clean_symbol": "LTF",
+        "name": "L&T Finance Ltd",
+        "weight": 0.0285663,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "FEDERALBNK.NS",
+        "clean_symbol": "FEDERALBNK",
+        "name": "The Federal Bank Ltd",
+        "weight": 0.027560402,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "MPHASIS.BO",
+        "clean_symbol": "MPHASIS",
+        "name": "Mphasis Ltd",
+        "weight": 0.0270464,
+        "isin": "INE356A01018"
+      },
+      {
+        "raw_symbol": "GVT&D.BO",
+        "clean_symbol": "GVT&D",
+        "name": "GE Vernova T&D India Ltd",
+        "weight": 0.024217898,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "INDIANB.BO",
+        "clean_symbol": "INDIANB",
+        "name": "Indian Bank",
+        "weight": 0.0233825,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "SOLARINDS.NS",
+        "clean_symbol": "SOLARINDS",
+        "name": "Solar Industries India Ltd",
+        "weight": 0.022953998,
+        "isin": ""
+      }
+    ]
+  },
+  "INF966L01721": {
+    "fund_name": "Quant Infrastructure Fund - Direct Plan",
+    "yf_symbol": "0P0000XW4O.BO",
+    "updated_at": "2026-09-16T22:16:25.309529",
+    "holdings": [
+      {
+        "raw_symbol": "MOTHERSON.NS",
+        "clean_symbol": "MOTHERSON",
+        "name": "Samvardhana Motherson International Ltd",
+        "weight": 0.0879689,
+        "isin": "INE775A01035"
+      },
+      {
+        "raw_symbol": "ADANIGREEN.BO",
+        "clean_symbol": "ADANIGREEN",
+        "name": "Adani Green Energy Ltd",
+        "weight": 0.08742621,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "500235",
+        "clean_symbol": "500235",
+        "name": "Kalyani Steels Ltd",
+        "weight": 0.0683356,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ADANIPOWER.BO",
+        "clean_symbol": "ADANIPOWER",
+        "name": "Adani Power Ltd",
+        "weight": 0.0671679,
+        "isin": "INE814H01011"
+      },
+      {
+        "raw_symbol": "ADANIENT.BO",
+        "clean_symbol": "ADANIENT",
+        "name": "Adani Enterprises Ltd",
+        "weight": 0.0619819,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ICICIBANK.NS",
+        "clean_symbol": "ICICIBANK",
+        "name": "ICICI Bank Ltd",
+        "weight": 0.0483775,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "BHEL.BO",
+        "clean_symbol": "BHEL",
+        "name": "Bharat Heavy Electricals Ltd",
+        "weight": 0.046459697,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "NCC.NS",
+        "clean_symbol": "NCC",
+        "name": "NCC Ltd",
+        "weight": 0.039046,
+        "isin": "INE868B01028"
+      },
+      {
+        "raw_symbol": "ADANIENSOL.BO",
+        "clean_symbol": "ADANIENSOL",
+        "name": "Adani Energy Solutions Ltd",
+        "weight": 0.0374992,
+        "isin": ""
+      }
+    ]
+  },
+  "INF966L01689": {
+    "fund_name": "Quant Small Cap Fund - Direct Plan",
+    "yf_symbol": "0P0000XW4J.BO",
+    "updated_at": "2026-09-16T22:16:27.105157",
+    "holdings": [
+      {
+        "raw_symbol": "500183",
+        "clean_symbol": "500183",
+        "name": "HFCL Ltd",
+        "weight": 0.0544088,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ADANIENT.BO",
+        "clean_symbol": "ADANIENT",
+        "name": "Adani Enterprises Ltd",
+        "weight": 0.0471952,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "RBLBANK.NS",
+        "clean_symbol": "RBLBANK",
+        "name": "RBL Bank Ltd",
+        "weight": 0.0464639,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ADANIPOWER.BO",
+        "clean_symbol": "ADANIPOWER",
+        "name": "Adani Power Ltd",
+        "weight": 0.037171498,
+        "isin": "INE814H01011"
+      },
+      {
+        "raw_symbol": "AEGISLOG.BO",
+        "clean_symbol": "AEGISLOG",
+        "name": "Aegis Logistics Ltd",
+        "weight": 0.033924602,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ADANIGREEN.BO",
+        "clean_symbol": "ADANIGREEN",
+        "name": "Adani Green Energy Ltd",
+        "weight": 0.0295357,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ANANDRATHI.BO",
+        "clean_symbol": "ANANDRATHI",
+        "name": "Anand Rathi Wealth Ltd",
+        "weight": 0.028893001,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "MANAPPURAM.BO",
+        "clean_symbol": "MANAPPURAM",
+        "name": "Manappuram Finance Ltd",
+        "weight": 0.0279579,
+        "isin": "INE522D01027"
+      },
+      {
+        "raw_symbol": "ASTERDM.BO",
+        "clean_symbol": "ASTERDM",
+        "name": "Aster DM Quality Care Ltd Ordinary Shares",
+        "weight": 0.0272816,
+        "isin": ""
+      }
+    ]
+  },
+  "INF277K011O1": {
+    "fund_name": "Tata Small Cap Fund Direct Plan Growth",
+    "yf_symbol": "0P0001EUZZ.BO",
+    "updated_at": "2026-09-16T22:16:28.351174",
+    "holdings": [
+      {
+        "raw_symbol": "506655",
+        "clean_symbol": "506655",
+        "name": "Sudarshan Chemical Industries Ltd",
+        "weight": 0.048256602,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "KIRLPNU.BO",
+        "clean_symbol": "KIRLPNU",
+        "name": "Kirloskar Pneumatic Co Ltd",
+        "weight": 0.045843102,
+        "isin": "INE811A01020"
+      },
+      {
+        "raw_symbol": "USHAMART.BO",
+        "clean_symbol": "USHAMART",
+        "name": "Usha Martin Ltd",
+        "weight": 0.044240497,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "IDFCFIRSTB.NS",
+        "clean_symbol": "IDFCFIRSTB",
+        "name": "IDFC First Bank Ltd",
+        "weight": 0.0392459,
+        "isin": "INE092T01019"
+      },
+      {
+        "raw_symbol": "500164",
+        "clean_symbol": "500164",
+        "name": "Godrej Industries Ltd",
+        "weight": 0.0342242,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "TEGA.BO",
+        "clean_symbol": "TEGA",
+        "name": "Tega Industries Ltd",
+        "weight": 0.0314985,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "WOCKPHARMA.BO",
+        "clean_symbol": "WOCKPHARMA",
+        "name": "Wockhardt Ltd",
+        "weight": 0.0302108,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "CELLO.BO",
+        "clean_symbol": "CELLO",
+        "name": "Cello World Ltd",
+        "weight": 0.0272184,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "QUESS.BO",
+        "clean_symbol": "QUESS",
+        "name": "Quess Corp Ltd",
+        "weight": 0.0268662,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "CARTRADE.BO",
+        "clean_symbol": "CARTRADE",
+        "name": "CarTrade Tech Ltd",
+        "weight": 0.0242158,
+        "isin": ""
+      }
+    ]
+  },
+  "INF966L01911": {
+    "fund_name": "Quant Flexi Cap Fund - Direct Plan",
+    "yf_symbol": "0P0000XW4X.BO",
+    "updated_at": "2026-09-16T22:16:29.662292",
+    "holdings": [
+      {
+        "raw_symbol": "MOTHERSON.NS",
+        "clean_symbol": "MOTHERSON",
+        "name": "Samvardhana Motherson International Ltd",
+        "weight": 0.085251905,
+        "isin": "INE775A01035"
+      },
+      {
+        "raw_symbol": "ADANIENT.BO",
+        "clean_symbol": "ADANIENT",
+        "name": "Adani Enterprises Ltd",
+        "weight": 0.083997294,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ADANIPOWER.BO",
+        "clean_symbol": "ADANIPOWER",
+        "name": "Adani Power Ltd",
+        "weight": 0.083545305,
+        "isin": "INE814H01011"
+      },
+      {
+        "raw_symbol": "AUROPHARMA.NS",
+        "clean_symbol": "AUROPHARMA",
+        "name": "Aurobindo Pharma Ltd",
+        "weight": 0.0653782,
+        "isin": "INE406A01037"
+      },
+      {
+        "raw_symbol": "ICICIBANK.NS",
+        "clean_symbol": "ICICIBANK",
+        "name": "ICICI Bank Ltd",
+        "weight": 0.063712,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ICICIAMC.NS",
+        "clean_symbol": "ICICIAMC",
+        "name": "ICICI Prudential Asset Management Co Ltd",
+        "weight": 0.057845898,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ADANIENSOL.BO",
+        "clean_symbol": "ADANIENSOL",
+        "name": "Adani Energy Solutions Ltd",
+        "weight": 0.0400049,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ADANIGREEN.BO",
+        "clean_symbol": "ADANIGREEN",
+        "name": "Adani Green Energy Ltd",
+        "weight": 0.0399679,
+        "isin": ""
+      }
+    ]
+  },
+  "INF966L01887": {
+    "fund_name": "Quant Mid Cap Fund Direct Plan - Growth",
+    "yf_symbol": "0P0000XW4V.BO",
+    "updated_at": "2026-09-16T22:16:30.906432",
+    "holdings": [
+      {
+        "raw_symbol": "AUROPHARMA.NS",
+        "clean_symbol": "AUROPHARMA",
+        "name": "Aurobindo Pharma Ltd",
+        "weight": 0.0994789,
+        "isin": "INE406A01037"
+      },
+      {
+        "raw_symbol": "LLOYDSME.BO",
+        "clean_symbol": "LLOYDSME",
+        "name": "Lloyds Metals & Energy Ltd",
+        "weight": 0.0926953,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "500483",
+        "clean_symbol": "500483",
+        "name": "Tata Communications Ltd",
+        "weight": 0.085021496,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "IRB.BO",
+        "clean_symbol": "IRB",
+        "name": "IRB Infrastructure Developers Ltd",
+        "weight": 0.061561897,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "INDUSTOWER.BO",
+        "clean_symbol": "INDUSTOWER",
+        "name": "Indus Towers Ltd Ordinary Shares",
+        "weight": 0.0594802,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "PREMIERENE.NS",
+        "clean_symbol": "PREMIERENE",
+        "name": "Premier Energies Ltd",
+        "weight": 0.050928,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "BHEL.BO",
+        "clean_symbol": "BHEL",
+        "name": "Bharat Heavy Electricals Ltd",
+        "weight": 0.0465479,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ICICIBANK.NS",
+        "clean_symbol": "ICICIBANK",
+        "name": "ICICI Bank Ltd",
+        "weight": 0.0463056,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "NAM-INDIA.BO",
+        "clean_symbol": "NAM-INDIA",
+        "name": "Nippon Life India Asset Management Ltd Ordinary Shares",
+        "weight": 0.045382198,
+        "isin": ""
+      }
+    ]
+  },
+  "INF174K01KT2": {
+    "fund_name": "Kotak Small Cap Fund - Direct Plan",
+    "yf_symbol": "0P0000XV6I.BO",
+    "updated_at": "2026-09-16T22:16:32.035610",
+    "holdings": [
+      {
+        "raw_symbol": "ASTERDM.BO",
+        "clean_symbol": "ASTERDM",
+        "name": "Aster DM Quality Care Ltd Ordinary Shares",
+        "weight": 0.042903498,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "VIJAYA.BO",
+        "clean_symbol": "VIJAYA",
+        "name": "Vijaya Diagnostic Centre Ltd",
+        "weight": 0.042087797,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "SANSERA.BO",
+        "clean_symbol": "SANSERA",
+        "name": "Sansera Engineering Ltd",
+        "weight": 0.0415055,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "KIMS.BO",
+        "clean_symbol": "KIMS",
+        "name": "Krishna Institute of Medical Sciences Ltd",
+        "weight": 0.0324568,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "KPIL.BO",
+        "clean_symbol": "KPIL",
+        "name": "Kalpataru Projects International Ltd",
+        "weight": 0.025429498,
+        "isin": "INE220B01022"
+      },
+      {
+        "raw_symbol": "MINDACORP.NS",
+        "clean_symbol": "MINDACORP",
+        "name": "Minda Corp Ltd",
+        "weight": 0.023924101,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "CENTURYPLY.BO",
+        "clean_symbol": "CENTURYPLY",
+        "name": "Century Plyboards (India) Ltd",
+        "weight": 0.022460101,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "FIVESTAR.BO",
+        "clean_symbol": "FIVESTAR",
+        "name": "Five-Star Business Finance Ltd",
+        "weight": 0.0211537,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "SHRIRAMFIN.NS",
+        "clean_symbol": "SHRIRAMFIN",
+        "name": "Shriram Finance Ltd",
+        "weight": 0.020324199,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "532331",
+        "clean_symbol": "532331",
+        "name": "Ajanta Pharma Ltd",
+        "weight": 0.01988,
+        "isin": ""
+      }
+    ]
+  },
+  "INF966L01BX0": {
+    "fund_name": "Quant Bfsi Fund - Direct Plan",
+    "yf_symbol": "0P0001R3FQ.BO",
+    "updated_at": "2026-09-16T22:16:33.339253",
+    "holdings": [
+      {
+        "raw_symbol": "CGCL.BO",
+        "clean_symbol": "CGCL",
+        "name": "Capri Global Capital Ltd",
+        "weight": 0.098822206,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "MANAPPURAM.BO",
+        "clean_symbol": "MANAPPURAM",
+        "name": "Manappuram Finance Ltd",
+        "weight": 0.094798096,
+        "isin": "INE522D01027"
+      },
+      {
+        "raw_symbol": "500116",
+        "clean_symbol": "500116",
+        "name": "IDBI Bank Ltd",
+        "weight": 0.0945439,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ICICIAMC.NS",
+        "clean_symbol": "ICICIAMC",
+        "name": "ICICI Prudential Asset Management Co Ltd",
+        "weight": 0.0903133,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "LICHSGFIN.NS",
+        "clean_symbol": "LICHSGFIN",
+        "name": "LIC Housing Finance Ltd",
+        "weight": 0.081945,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "PIRAMALFIN.BO",
+        "clean_symbol": "PIRAMALFIN",
+        "name": "Piramal Finance Ltd",
+        "weight": 0.081159204,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "YESBANK.BO",
+        "clean_symbol": "YESBANK",
+        "name": "Yes Bank Ltd",
+        "weight": 0.0627658,
+        "isin": "INE528G01035"
+      },
+      {
+        "raw_symbol": "KISSHT.NS",
+        "clean_symbol": "KISSHT",
+        "name": "OnEMI Technology Solutions Ltd",
+        "weight": 0.053987198,
+        "isin": ""
+      }
+    ]
+  },
+  "INF194KB1AL4": {
+    "fund_name": "Bandhan Small Cap Fund Direct Plan-Growth",
+    "yf_symbol": "0P0001J6FU.BO",
+    "updated_at": "2026-09-16T22:16:34.443259",
+    "holdings": [
+      {
+        "raw_symbol": "RECLTD.BO",
+        "clean_symbol": "RECLTD",
+        "name": "REC Ltd",
+        "weight": 0.0303022,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "SOBHA.BO",
+        "clean_symbol": "SOBHA",
+        "name": "Sobha Ltd",
+        "weight": 0.0286179,
+        "isin": "INE671H01015"
+      },
+      {
+        "raw_symbol": "LTFOODS.BO",
+        "clean_symbol": "LTFOODS",
+        "name": "LT Foods Ltd",
+        "weight": 0.0210588,
+        "isin": "INE818H01020"
+      },
+      {
+        "raw_symbol": "SBIN.NS",
+        "clean_symbol": "SBIN",
+        "name": "State Bank of India",
+        "weight": 0.020044701,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "CHOLAHLDNG.BO",
+        "clean_symbol": "CHOLAHLDNG",
+        "name": "Cholamandalam Financial Holdings Ltd",
+        "weight": 0.0169852,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "SOUTHBANK.BO",
+        "clean_symbol": "SOUTHBANK",
+        "name": "The South Indian Bank Ltd",
+        "weight": 0.0164926,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "500101",
+        "clean_symbol": "500101",
+        "name": "Arvind Ltd",
+        "weight": 0.015399099,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "PARADEEP.BO",
+        "clean_symbol": "PARADEEP",
+        "name": "Paradeep Phosphates Ltd",
+        "weight": 0.013855601,
+        "isin": "INE088F01024"
+      },
+      {
+        "raw_symbol": "PNBHOUSING.NS",
+        "clean_symbol": "PNBHOUSING",
+        "name": "PNB Housing Finance Ltd",
+        "weight": 0.0136758005,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "KTKBANK.BO",
+        "clean_symbol": "KTKBANK",
+        "name": "Karnataka Bank Ltd",
+        "weight": 0.0125315,
+        "isin": "INE614B01018"
+      }
+    ]
+  },
+  "INF00XX01747": {
+    "fund_name": "Iti Small Cap Fund Direct Plan Growth",
+    "yf_symbol": "0P0001J49Z.BO",
+    "updated_at": "2026-09-16T22:16:35.458199",
+    "holdings": [
+      {
+        "raw_symbol": "ACUTAAS.BO",
+        "clean_symbol": "ACUTAAS",
+        "name": "Acutaas Chemicals Ltd",
+        "weight": 0.034793,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "WELCORP.BO",
+        "clean_symbol": "WELCORP",
+        "name": "Welspun Corp Ltd",
+        "weight": 0.025906898,
+        "isin": "INE191B01025"
+      },
+      {
+        "raw_symbol": "LAURUSLABS.BO",
+        "clean_symbol": "LAURUSLABS",
+        "name": "Laurus Labs Ltd",
+        "weight": 0.0241294,
+        "isin": "INE947Q01028"
+      },
+      {
+        "raw_symbol": "590003",
+        "clean_symbol": "590003",
+        "name": "Karur Vysya Bank Ltd",
+        "weight": 0.020982299,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "WABAG.BO",
+        "clean_symbol": "WABAG",
+        "name": "VA Tech Wabag Ltd",
+        "weight": 0.0193069,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "CARTRADE.BO",
+        "clean_symbol": "CARTRADE",
+        "name": "CarTrade Tech Ltd",
+        "weight": 0.0187828,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "MCX.NS",
+        "clean_symbol": "MCX",
+        "name": "Multi Commodity Exchange of India Ltd",
+        "weight": 0.0187247,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "532497",
+        "clean_symbol": "532497",
+        "name": "Radico Khaitan Ltd",
+        "weight": 0.0180788,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "NEULANDLAB.BO",
+        "clean_symbol": "NEULANDLAB",
+        "name": "Neuland Laboratories Ltd",
+        "weight": 0.0171864,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "APARINDS.BO",
+        "clean_symbol": "APARINDS",
+        "name": "Apar Industries Ltd",
+        "weight": 0.017112201,
+        "isin": "INE372A01015"
+      }
+    ]
+  },
+  "INF209KB1O82": {
+    "fund_name": "Aditya Birla Sun Life Psu Equity Fund - Direct Plan",
+    "yf_symbol": "0P0001IV9T.BO",
+    "updated_at": "2026-09-16T22:16:36.477844",
+    "holdings": [
+      {
+        "raw_symbol": "SBIN.NS",
+        "clean_symbol": "SBIN",
+        "name": "State Bank of India",
+        "weight": 0.17847781,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "NTPC.BO",
+        "clean_symbol": "NTPC",
+        "name": "NTPC Ltd",
+        "weight": 0.0711303,
+        "isin": "INE733E01010"
+      },
+      {
+        "raw_symbol": "BHEL.BO",
+        "clean_symbol": "BHEL",
+        "name": "Bharat Heavy Electricals Ltd",
+        "weight": 0.0677639,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "POWERGRID.BO",
+        "clean_symbol": "POWERGRID",
+        "name": "Power Grid Corp Of India Ltd",
+        "weight": 0.0613284,
+        "isin": "INE752E01010"
+      },
+      {
+        "raw_symbol": "BEL.NS",
+        "clean_symbol": "BEL",
+        "name": "Bharat Electronics Ltd",
+        "weight": 0.048752498,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "MAHABANK.BO",
+        "clean_symbol": "MAHABANK",
+        "name": "Bank of Maharashtra",
+        "weight": 0.0440697,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "UNIONBANK.BO",
+        "clean_symbol": "UNIONBANK",
+        "name": "Union Bank of India",
+        "weight": 0.0426954,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "GAIL.BO",
+        "clean_symbol": "GAIL",
+        "name": "GAIL (India) Ltd",
+        "weight": 0.038266398,
+        "isin": "INE129A01019"
+      },
+      {
+        "raw_symbol": "PNBHOUSING.NS",
+        "clean_symbol": "PNBHOUSING",
+        "name": "PNB Housing Finance Ltd",
+        "weight": 0.0370217,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "500547",
+        "clean_symbol": "500547",
+        "name": "Bharat Petroleum Corp Ltd",
+        "weight": 0.0350987,
+        "isin": ""
+      }
+    ]
+  },
+  "INF247L01445": {
+    "fund_name": "Motilal Oswal Midcap Fund - Direct Plan",
+    "yf_symbol": "0P00012ALS.BO",
+    "updated_at": "2026-09-16T22:16:37.637984",
+    "holdings": [
+      {
+        "raw_symbol": "KALYANKJIL.BO",
+        "clean_symbol": "KALYANKJIL",
+        "name": "Kalyan Jewellers India Ltd",
+        "weight": 0.088746995,
+        "isin": "INE303R01014"
+      },
+      {
+        "raw_symbol": "PAYTM.BO",
+        "clean_symbol": "PAYTM",
+        "name": "One97 Communications Ltd",
+        "weight": 0.0808445,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ETERNAL.BO",
+        "clean_symbol": "ETERNAL",
+        "name": "Eternal Ltd",
+        "weight": 0.0637495,
+        "isin": "INE758T01015"
+      },
+      {
+        "raw_symbol": "COFORGE.BO",
+        "clean_symbol": "COFORGE",
+        "name": "Coforge Ltd",
+        "weight": 0.0558345,
+        "isin": "INE591G01025"
+      },
+      {
+        "raw_symbol": "ABCAPITAL.BO",
+        "clean_symbol": "ABCAPITAL",
+        "name": "Aditya Birla Capital Ltd",
+        "weight": 0.0520067,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "517569",
+        "clean_symbol": "517569",
+        "name": "KEI Industries Ltd",
+        "weight": 0.048072,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "PERSISTENT.NS",
+        "clean_symbol": "PERSISTENT",
+        "name": "Persistent Systems Ltd",
+        "weight": 0.0474705,
+        "isin": "INE262H01021"
+      },
+      {
+        "raw_symbol": "GROWW.NS",
+        "clean_symbol": "GROWW",
+        "name": "Billionbrains Garage Ventures Ltd",
+        "weight": 0.0408271,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "SHRIRAMFIN.NS",
+        "clean_symbol": "SHRIRAMFIN",
+        "name": "Shriram Finance Ltd",
+        "weight": 0.037459802,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "DIXON.BO",
+        "clean_symbol": "DIXON",
+        "name": "Dixon Technologies (India) Ltd",
+        "weight": 0.034835897,
+        "isin": "INE935N01020"
+      }
+    ]
+  },
+  "INF0R8701046": {
+    "fund_name": "Helios Flexi Cap Fund-Direct Plan-Growth",
+    "yf_symbol": "0P0001RR6I.BO",
+    "updated_at": "2026-09-16T22:16:39.231408",
+    "holdings": [
+      {
+        "raw_symbol": "ETERNAL.BO",
+        "clean_symbol": "ETERNAL",
+        "name": "Eternal Ltd",
+        "weight": 0.0440624,
+        "isin": "INE758T01015"
+      },
+      {
+        "raw_symbol": "ICICIBANK.NS",
+        "clean_symbol": "ICICIBANK",
+        "name": "ICICI Bank Ltd",
+        "weight": 0.0417859,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ADANIPORTS.BO",
+        "clean_symbol": "ADANIPORTS",
+        "name": "Adani Ports & Special Economic Zone Ltd",
+        "weight": 0.0367172,
+        "isin": "INE742F01042"
+      },
+      {
+        "raw_symbol": "HDFCBANK.NS",
+        "clean_symbol": "HDFCBANK",
+        "name": "HDFC Bank Ltd",
+        "weight": 0.035281602,
+        "isin": "INE040A01034"
+      },
+      {
+        "raw_symbol": "PAYTM.BO",
+        "clean_symbol": "PAYTM",
+        "name": "One97 Communications Ltd",
+        "weight": 0.0308297,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "500034",
+        "clean_symbol": "500034",
+        "name": "Bajaj Finance Ltd",
+        "weight": 0.0293895,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "RELIANCE.NS",
+        "clean_symbol": "RELIANCE",
+        "name": "Reliance Industries Ltd",
+        "weight": 0.028855199,
+        "isin": "INE002A01018"
+      },
+      {
+        "raw_symbol": "ADANIENT.BO",
+        "clean_symbol": "ADANIENT",
+        "name": "Adani Enterprises Ltd",
+        "weight": 0.027338099,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "SBIN.NS",
+        "clean_symbol": "SBIN",
+        "name": "State Bank of India",
+        "weight": 0.024756702,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "DIXON.BO",
+        "clean_symbol": "DIXON",
+        "name": "Dixon Technologies (India) Ltd",
+        "weight": 0.0246175,
+        "isin": "INE935N01020"
+      }
+    ]
+  },
+  "INF205KA1494": {
+    "fund_name": "Invesco India Flexi Cap Fund-Direct Plan - Growth",
+    "yf_symbol": "0P0001OAAV.BO",
+    "updated_at": "2026-09-16T22:16:40.507900",
+    "holdings": [
+      {
+        "raw_symbol": "ICICIBANK.NS",
+        "clean_symbol": "ICICIBANK",
+        "name": "ICICI Bank Ltd",
+        "weight": 0.0595408,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "500034",
+        "clean_symbol": "500034",
+        "name": "Bajaj Finance Ltd",
+        "weight": 0.033422302,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "LT.NS",
+        "clean_symbol": "LT",
+        "name": "Larsen & Toubro Ltd",
+        "weight": 0.0330959,
+        "isin": "INE018A01030"
+      },
+      {
+        "raw_symbol": "SAILIFE.NS",
+        "clean_symbol": "SAILIFE",
+        "name": "Sai Life Sciences Ltd",
+        "weight": 0.025355302,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "TITAN.NS",
+        "clean_symbol": "TITAN",
+        "name": "Titan Co Ltd",
+        "weight": 0.024898902,
+        "isin": "INE280A01028"
+      },
+      {
+        "raw_symbol": "BHARTIARTL.NS",
+        "clean_symbol": "BHARTIARTL",
+        "name": "Bharti Airtel Ltd",
+        "weight": 0.0247246,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "MCX.NS",
+        "clean_symbol": "MCX",
+        "name": "Multi Commodity Exchange of India Ltd",
+        "weight": 0.0230018,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "MAXHEALTH.BO",
+        "clean_symbol": "MAXHEALTH",
+        "name": "Max Healthcare Institute Ltd Ordinary Shares",
+        "weight": 0.022177301,
+        "isin": "INE027H01010"
+      },
+      {
+        "raw_symbol": "500251",
+        "clean_symbol": "500251",
+        "name": "Trent Ltd",
+        "weight": 0.0217171,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "TMCV.BO",
+        "clean_symbol": "TMCV",
+        "name": "Tata Motors Ltd",
+        "weight": 0.0206988,
+        "isin": "INE1TAE01010"
+      }
+    ]
+  },
+  "INF205K013T3": {
+    "fund_name": "Invesco India Small Cap Fund - Direct Growth",
+    "yf_symbol": "0P0001EQU4.BO",
+    "updated_at": "2026-09-16T22:16:41.634750",
+    "holdings": [
+      {
+        "raw_symbol": "SAILIFE.NS",
+        "clean_symbol": "SAILIFE",
+        "name": "Sai Life Sciences Ltd",
+        "weight": 0.050441198,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "ETERNAL.BO",
+        "clean_symbol": "ETERNAL",
+        "name": "Eternal Ltd",
+        "weight": 0.046048198,
+        "isin": "INE758T01015"
+      },
+      {
+        "raw_symbol": "AMBER.NS",
+        "clean_symbol": "AMBER",
+        "name": "Amber Enterprises India Ltd Ordinary Shares",
+        "weight": 0.0399575,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "CPPLUS.NS",
+        "clean_symbol": "CPPLUS",
+        "name": "Aditya Infotech Ltd",
+        "weight": 0.0378375,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "KIMS.BO",
+        "clean_symbol": "KIMS",
+        "name": "Krishna Institute of Medical Sciences Ltd",
+        "weight": 0.0354283,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "INDIGO.NS",
+        "clean_symbol": "INDIGO",
+        "name": "InterGlobe Aviation Ltd",
+        "weight": 0.0331094,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "MAXHEALTH.BO",
+        "clean_symbol": "MAXHEALTH",
+        "name": "Max Healthcare Institute Ltd Ordinary Shares",
+        "weight": 0.0303053,
+        "isin": "INE027H01010"
+      },
+      {
+        "raw_symbol": "CRAFTSMAN.BO",
+        "clean_symbol": "CRAFTSMAN",
+        "name": "Craftsman Automation Ltd",
+        "weight": 0.025780799,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "PARADEEP.BO",
+        "clean_symbol": "PARADEEP",
+        "name": "Paradeep Phosphates Ltd",
+        "weight": 0.025492301,
+        "isin": "INE088F01024"
+      },
+      {
+        "raw_symbol": "AGARWALEYE.NS",
+        "clean_symbol": "AGARWALEYE",
+        "name": "Dr Agarwal\u2019s Health Care Ltd",
+        "weight": 0.024437102,
+        "isin": ""
+      }
+    ]
+  }
+}

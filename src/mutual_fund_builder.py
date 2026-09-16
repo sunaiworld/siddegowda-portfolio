@@ -35,6 +35,7 @@ import sheet_writer
 from config import *
 import mf_data_fetcher
 import mf_analyzer
+import mf_stock_overlap
 
 log = logging.getLogger(__name__)
 
@@ -507,7 +508,12 @@ _OVERLAP_HEADERS = [
 _ALL_HEADERS = _EXISTING_HEADERS + _NEW_HEADERS + _DECISION_HEADERS + _OVERLAP_HEADERS
 
 
-def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, tab_name="Mutual Funds"):
+def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_data=None, tab_name="Mutual Funds"):
+    if overlap_data is None:
+        overlap_data = compute_mf_overlap(holdings)
+    if stock_overlap_data is None:
+        stock_overlap_data = mf_stock_overlap.compute_mf_stock_overlap(holdings)
+
     try:
         ws = sh.worksheet(tab_name)
     except Exception:
@@ -711,6 +717,17 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, tab_name="Mutu
         "", ""
     ])
 
+    scheme_rows_end_idx = len(all_data)
+
+    stock_overlap_meta = None
+    if stock_overlap_data:
+        banner_row_idx = len(all_data) + 1  # 1 spacer row
+        table_hdr_row_idx = banner_row_idx + 1
+        data_start_row_idx = table_hdr_row_idx + 1
+        stock_overlap_meta = (banner_row_idx, table_hdr_row_idx, data_start_row_idx)
+        stock_rows = mf_stock_overlap.build_stock_overlap_table_rows(stock_overlap_data, num_cols=len(_ALL_HEADERS))
+        all_data.extend(stock_rows)
+
     sheet_writer.clear_sheet_safe(ws)
     sheet_writer.batch_update_safe(sh, sheet_formatter.clear_all_formatting_reqs(ws.id))
     sheet_writer.update_sheet_safe(ws, "A1", all_data, value_input_option="RAW")
@@ -730,30 +747,30 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, tab_name="Mutu
 
     # Currency cols (0-indexed): AvgNAV(2), CurrNAV(3), Invested(5), CurrVal(6), PnL(7), DayGainRs(9), Unrealised(15), Harvestable(16)
     for col in [2, 3, 5, 6, 7, 9, 15, 16]:
-        reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, len(all_data), col, col + 1)
+        reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, scheme_rows_end_idx, col, col + 1)
     # Percent cols (0-indexed): Return%(8), DayGain%(10), Weight%(11)
     for col in [8, 10, 11]:
-        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col, col + 1)
+        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, scheme_rows_end_idx, col, col + 1)
     # 3 decimal precision for Units (4), LTCG Units (17), Harvest Units (18)
     for col in [4, 17, 18]:
         reqs += [{"repeatCell": {
-            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": len(all_data), "startColumnIndex": col, "endColumnIndex": col + 1},
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": scheme_rows_end_idx, "startColumnIndex": col, "endColumnIndex": col + 1},
             "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.000"}}},
             "fields": "userEnteredFormat.numberFormat"
         }}]
     # Percent cols for 1Y Ret%(21), 3Y Ret%(22), 5Y Ret%(23)
     for col in [21, 22, 23]:
-        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col, col + 1)
+        reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, scheme_rows_end_idx, col, col + 1)
     # Center alignment for Overlap (col 28)
     reqs.append({
         "repeatCell": {
-            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": len(all_data), "startColumnIndex": 28, "endColumnIndex": 29},
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": scheme_rows_end_idx, "startColumnIndex": 28, "endColumnIndex": 29},
             "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
             "fields": "userEnteredFormat.horizontalAlignment"
         }
     })
 
-    for i, row in enumerate(all_data):
+    for i, row in enumerate(all_data[:scheme_rows_end_idx]):
         rn = i
         if i == 0 or len(row) <= 1 or row[0] == "" or "SUBTOTAL" in row[0] or "TOTAL" in row[0] or "GROWW" in row[0] or "ZERODHA" in row[0] or "WIFE" in row[0]:
             continue
@@ -855,6 +872,13 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, tab_name="Mutu
                 except: pass
             reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff", font_size=8))
 
+    # Apply formatting for Underlying Stock Overlap section if present
+    if stock_overlap_meta and stock_overlap_data:
+        b_idx, th_idx, ds_idx = stock_overlap_meta
+        reqs += mf_stock_overlap.get_stock_overlap_format_reqs(
+            ws.id, b_idx, th_idx, ds_idx, stock_overlap_data, num_cols=nc
+        )
+
     # Filter over the full table
     reqs.append({
         "setBasicFilter": {
@@ -888,5 +912,6 @@ def run_mutual_fund_update(sh, imports_dir="data/imports"):
         return
     tax_data = compute_tax_harvest(holdings)
     overlap_data = compute_mf_overlap(holdings)
-    write_mutual_funds(sh, holdings, tax_data, overlap_data=overlap_data)
+    stock_overlap_data = mf_stock_overlap.compute_mf_stock_overlap(holdings)
+    write_mutual_funds(sh, holdings, tax_data, overlap_data=overlap_data, stock_overlap_data=stock_overlap_data)
     log.info(f"Mutual Fund update complete: {len(holdings)} funds")
