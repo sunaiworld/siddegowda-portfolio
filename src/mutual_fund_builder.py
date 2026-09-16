@@ -390,6 +390,101 @@ def compute_tax_harvest(holdings, current_navs=None, ltcg_booked=None):
     return results
 
 
+# COMPUTE MUTUAL FUND OVERLAP
+
+_ACCOUNT_PRIORITY = {
+    "GROWW - DAD": 1,
+    "ZERODHA - SELF": 2,
+    "WIFE MUTUAL FUNDS": 3,
+}
+
+
+def _account_name(broker):
+    b = str(broker).strip().lower()
+    if b == "groww":
+        return "GROWW - DAD"
+    elif b == "wife":
+        return "WIFE MUTUAL FUNDS"
+    elif b == "zerodha":
+        return "ZERODHA - SELF"
+    return broker.upper() if broker else "UNKNOWN"
+
+
+def _normalize_fund_key(name):
+    """
+    Produce a normalized key for fund comparison if ISIN is not available.
+    Removes account indicators, punctuation, and common plan/option keywords
+    (e.g., 'direct', 'growth', 'idcw', 'regular', 'plan', etc.)
+    while preserving the core fund family and scheme identity.
+    """
+    if not name:
+        return ""
+    clean = re.sub(r"\s*-\s*Wife mutual funds", "", name, flags=re.IGNORECASE)
+    clean = re.sub(r"\(Wife mutual funds\)", "", clean, flags=re.IGNORECASE)
+    clean = re.sub(r"[^\w\s]", " ", clean.lower())
+    stop_words = {
+        "fund", "direct", "plan", "growth", "the", "and", "&", "of",
+        "a", "an", "regular", "idcw", "option", "dividend", "bonus",
+        "payout", "reinvestment", "scheme"
+    }
+    tokens = [w for w in clean.split() if w not in stop_words and len(w) > 1]
+    return " ".join(tokens)
+
+
+def _get_fund_canonical_id(holding):
+    """
+    Returns the canonical mutual-fund scheme identifier.
+    Prefers ISIN (e.g. INF966L01689).
+    Falls back to a normalized fund key if ISIN is absent.
+    """
+    isin = str(holding.get("isin") or "").strip().upper()
+    if isin:
+        return isin
+    return _normalize_fund_key(holding.get("fund_name", ""))
+
+
+def compute_mf_overlap(holdings):
+    """
+    Identifies mutual funds held across multiple accounts/brokers.
+
+    Returns a dict keyed by holding_key (e.g. 'Groww:INF966L01689'):
+    {
+        "overlap": "YES" | "NO",
+        "overlap_with": "ZERODHA - SELF" (or comma-separated other accounts, or "" if NO)
+    }
+    """
+    scheme_to_accounts = {}
+    for key, h in holdings.items():
+        cid = _get_fund_canonical_id(h)
+        if not cid:
+            continue
+        acc = _account_name(h.get("broker", ""))
+        scheme_to_accounts.setdefault(cid, set()).add(acc)
+
+    overlap_info = {}
+    for key, h in holdings.items():
+        cid = _get_fund_canonical_id(h)
+        my_acc = _account_name(h.get("broker", ""))
+        all_accs = scheme_to_accounts.get(cid, set())
+        other_accs = sorted([a for a in all_accs if a != my_acc],
+                            key=lambda a: _ACCOUNT_PRIORITY.get(a, 99))
+        if other_accs:
+            overlap = "YES"
+            overlap_with = ", ".join(other_accs)
+        else:
+            overlap = "NO"
+            overlap_with = ""
+
+        overlap_info[key] = {
+            "overlap": overlap,
+            "overlap_with": overlap_with
+        }
+
+    overlapping_count = sum(1 for v in overlap_info.values() if v["overlap"] == "YES")
+    log.info(f"compute_mf_overlap: {len(overlap_info)} funds analysed ({overlapping_count} overlapping)")
+    return overlap_info
+
+
 # WRITE MUTUAL FUNDS SHEET
 
 _EXISTING_HEADERS = [
@@ -406,10 +501,13 @@ _DECISION_HEADERS = [
     "1Y Ret%", "3Y Ret%", "5Y Ret%",
     "MF Score", "Trend", "AI Decision", "Decision Reason",
 ]
-_ALL_HEADERS = _EXISTING_HEADERS + _NEW_HEADERS + _DECISION_HEADERS
+_OVERLAP_HEADERS = [
+    "Overlap", "Overlap With",
+]
+_ALL_HEADERS = _EXISTING_HEADERS + _NEW_HEADERS + _DECISION_HEADERS + _OVERLAP_HEADERS
 
 
-def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
+def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, tab_name="Mutual Funds"):
     try:
         ws = sh.worksheet(tab_name)
     except Exception:
@@ -452,6 +550,9 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
                     existing_gain[fn] = [0, 0]
         except Exception as e:
             log.warning(f"Could not read existing MF values: {e}")
+
+    if overlap_data is None:
+        overlap_data = compute_mf_overlap(holdings)
 
     wife_rows = []
     groww_rows = []
@@ -507,6 +608,10 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         else:
             ret_1y = ret_3y = ret_5y = mf_score = trend = ai_decision = ai_reason = ""
 
+        ol_info = overlap_data.get(key, {})
+        overlap_val = ol_info.get("overlap", "NO")
+        overlap_with_val = ol_info.get("overlap_with", "")
+
         row_dict = {
             "fn": display_fn, "cat": cat, "avg_nav": avg_nav, "curr_nav": curr_nav,
             "units": round(units, 3), "invested": invested, "curr_val": curr_val,
@@ -521,7 +626,8 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
             "rec":          tx.get("recommendation", ""),
             "reason":       tx.get("reason", ""),
             "ret_1y": ret_1y, "ret_3y": ret_3y, "ret_5y": ret_5y,
-            "mf_score": mf_score, "trend": trend, "ai_decision": ai_decision, "ai_reason": ai_reason
+            "mf_score": mf_score, "trend": trend, "ai_decision": ai_decision, "ai_reason": ai_reason,
+            "overlap": overlap_val, "overlap_with": overlap_with_val
         }
 
         if is_wife:
@@ -563,7 +669,8 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
                 r["ltcg_units"], r["harvest_units"],
                 r["rec"], r["reason"],
                 r["ret_1y"], r["ret_3y"], r["ret_5y"],
-                r["mf_score"], r["trend"], r["ai_decision"], r["ai_reason"]
+                r["mf_score"], r["trend"], r["ai_decision"], r["ai_reason"],
+                r["overlap"], r["overlap_with"],
             ])
             
         subtotal_indices.append(len(all_data))
@@ -574,7 +681,8 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
             round(tot_inv, 2), round(tot_val, 2), tpnl, tret,
             "", "", 100.0, "",
             "", "", tpnl, "", "", "", "", "",
-            "", "", "", "", "", "", ""
+            "", "", "", "", "", "", "",
+            "", ""
         ])
         all_data.append([""] * len(_ALL_HEADERS))
 
@@ -599,7 +707,8 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         round(total_invested, 2), round(total_value, 2), tot_pnl, tot_ret,
         "", "", 100.0, "",
         "", "", tot_pnl, "", "", "", "", "",
-        "", "", "", "", "", "", ""
+        "", "", "", "", "", "", "",
+        "", ""
     ])
 
     sheet_writer.clear_sheet_safe(ws)
@@ -614,6 +723,7 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
         260, 80, 65, 65, 60, 85, 85, 80, 65, 75, 65, 55, 75,
         70, 60, 85, 85, 65, 70, 65, 170,
         60, 60, 60, 65, 80, 90, 170,
+        65, 140,
     ]
     reqs = sheet_formatter.get_structural_format_reqs(
         ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=1)
@@ -634,6 +744,14 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
     # Percent cols for 1Y Ret%(21), 3Y Ret%(22), 5Y Ret%(23)
     for col in [21, 22, 23]:
         reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, len(all_data), col, col + 1)
+    # Center alignment for Overlap (col 28)
+    reqs.append({
+        "repeatCell": {
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": len(all_data), "startColumnIndex": 28, "endColumnIndex": 29},
+            "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
+            "fields": "userEnteredFormat.horizontalAlignment"
+        }
+    })
 
     for i, row in enumerate(all_data):
         rn = i
@@ -694,6 +812,11 @@ def write_mutual_funds(sh, holdings, tax_data, tab_name="Mutual Funds"):
                 elif mf_sc >= 35: reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "fff2cc", "7f4f00"))
                 else:             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "fde9d9", "c62828"))
         except: pass
+
+        # Overlap column colour (col 28)
+        ol_cell = str(row[28]) if len(row) > 28 else ""
+        if   ol_cell == "YES": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 28, "fff2cc", "7f4f00", bold=True))
+        elif ol_cell == "NO":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 28, "e8eaf6", "3949ab", bold=False))
 
     # Style section headers as dark blue banners
     for h_idx in header_indices:
@@ -764,5 +887,6 @@ def run_mutual_fund_update(sh, imports_dir="data/imports"):
         log.warning("No active MF holdings — skipping write")
         return
     tax_data = compute_tax_harvest(holdings)
-    write_mutual_funds(sh, holdings, tax_data)
+    overlap_data = compute_mf_overlap(holdings)
+    write_mutual_funds(sh, holdings, tax_data, overlap_data=overlap_data)
     log.info(f"Mutual Fund update complete: {len(holdings)} funds")
