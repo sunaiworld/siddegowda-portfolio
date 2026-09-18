@@ -33,6 +33,19 @@ import news_engine.news_cache as news_cache
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("morning_update")
 
+IST_TZ = timezone(timedelta(hours=5, minutes=30))
+
+def get_timing_strings():
+    """Return explicit timezone-aware (UTC, IST) ISO-formatted strings."""
+    now_utc = datetime.now(timezone.utc)
+    now_ist = now_utc.astimezone(IST_TZ)
+    return now_utc.strftime("%Y-%m-%d %H:%M:%S UTC"), now_ist.strftime("%Y-%m-%d %H:%M:%S IST")
+
+def log_timing(checkpoint: str):
+    """Log an explicit timezone-aware checkpoint with UTC and IST timestamps."""
+    utc_str, ist_str = get_timing_strings()
+    log.info(f"[TIMING] {checkpoint:<26} | UTC: {utc_str} | IST: {ist_str}")
+
 def html_escape(val):
     if val is None:
         return ""
@@ -197,6 +210,7 @@ def main():
     parser.add_argument("--force", action="store_true", help="Force update even if already sent today")
     args = parser.parse_args()
 
+    log_timing("workflow start")
     log.info("[Morning] Starting market update")
 
     # 1. Check market open status
@@ -204,6 +218,7 @@ def main():
     if not is_open:
         if not args.dry_run:
             log.info("[Morning] Market is not open or it's a holiday. Aborting update.")
+            log_timing("workflow completed (holiday/closed)")
             return
         else:
             log.info("[Morning] Market check: Closed/Holiday, but proceeding because --dry-run is enabled.")
@@ -229,6 +244,7 @@ def main():
         last_date = get_last_morning_date(sh)
         if last_date == today_ist_str:
             log.info(f"[Morning] Today's morning update ({today_ist_str}) has already been delivered. Skipping duplicate run.")
+            log_timing("workflow completed (already delivered today)")
             return
 
     if len(all_vals) <= 2:
@@ -248,6 +264,7 @@ def main():
 
     total_symbols = len(symbols)
     log.info(f"[Morning] Found {total_symbols} stock(s) in GITHUB DATA")
+    log_timing("data-fetch start")
     log.info("[Morning] Fetching market data")
 
     # ---------------------------------------------------------------------------
@@ -292,6 +309,8 @@ def main():
             tech_map[sym] = tech
             rev_map[sym] = rev_gr
 
+    log_timing("data-fetch end")
+    log_timing("calculation start")
     log.info("[Morning] Recalculating Buying Zones")
 
     updated_rows = []
@@ -348,6 +367,7 @@ def main():
             log.error(f"[Morning] Error recalculating {sym}: {e}. Preserving previous values.")
             updated_rows.append(prev_raw)
 
+    log_timing("calculation end")
     log.info(f"[Morning] Stocks processed: {processed_count}/{total_symbols}")
 
     if args.dry_run:
@@ -360,6 +380,7 @@ def main():
                 f"Zone: '{ch['old_zone']}' -> '{ch['new_zone']}' | Score: {ch['old_score']} -> {ch['new_score']}"
             )
         log.info("[Morning] DRY-RUN completed. No Google Sheet or Telegram modifications were made.")
+        log_timing("workflow completed (dry-run)")
         return
 
     # Build records array directly from updated_rows in memory
@@ -370,15 +391,18 @@ def main():
         records.append({headers[i]: r[i] for i in range(min(len(r), len(headers)))})
 
     # Send Telegram message FIRST so user is never blocked by sheet formatting failures
+    log_timing("Telegram send start")
     success = send_telegram_morning_update(records, nifty_val, nifty_pct)
     if not success:
         log.error("[Morning] Telegram update delivery failed! Exiting with status code 1.")
         sys.exit(1)
+    log_timing("Telegram send completed")
 
     # Mark today's update as delivered to prevent duplicate alerts from subsequent cron schedules
     set_last_morning_date(sh, today_ist_str)
 
     # Write updated values back to Google Sheet with retries
+    log_timing("Google Sheets write start")
     log.info("[Morning] Updating GITHUB DATA in Google Sheets")
     sheet_write_success = False
     for attempt in range(3):
@@ -396,7 +420,9 @@ def main():
     if not sheet_write_success:
         log.error("[Morning] Failed to update Google Sheets after 3 attempts. Exiting with error.")
         sys.exit(1)
+    log_timing("Google Sheets write completed")
 
+    log_timing("workflow completed")
     log.info("[Morning] Completed successfully")
 
 if __name__ == "__main__":

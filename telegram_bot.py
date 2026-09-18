@@ -15,7 +15,9 @@ import logging
 from telegram import Bot
 from telegram.constants import ParseMode
 
-from config import BOT_TOKEN, CHAT_ID
+import os
+BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 from services.sheets_state import get_offset, set_offset, _get_sheet
 import handlers
 from src.main import run_portfolio_update, build_alert_message, send_telegram

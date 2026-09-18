@@ -6,12 +6,11 @@ GitHub Actions `schedule` cron is **not reliable** for time-critical workflows.
 Forensic analysis of 21 actual runs showed GitHub missing the scheduled slot
 by 4–12 hours on multiple days (Aug 27–Sep 7, 2026).
 
-**Root cause confirmed**: GitHub deferred the `04:xx UTC` window entirely and
-executed catch-up runs at `08:50–16:45 UTC = 14:20–22:15 IST` instead of
-the intended `04:30 UTC = 10:00 AM IST`.
-
-The solution: an **external scheduler** makes the GitHub API call at exactly
-`04:30 UTC`, bypassing GitHub's internal queue system.
+**Root cause confirmed**:
+1. GitHub Actions schedule cron operates strictly on UTC. The intended execution time is 10:00 AM IST = 04:30 UTC (`30 4 * * 1-5`).
+2. GitHub deferred the `04:30 UTC` execution until `08:50–09:35 UTC = 14:20–15:05 IST` (around 2:30 PM IST).
+3. The root cause of this massive 4.5-hour delay was repository-level queue throttling caused by `telegram-bot.yml`, which was configured to poll every 5 minutes (`*/5 * * * *`, 288 runs/day) and failing repeatedly on every run. This flooded the Actions runner queue and caused GitHub's scheduler to deprioritize all scheduled workflows in this repository.
+4. Removing the 5-minute poller schedule unblocks repository scheduling. External webhook triggering via `workflow_dispatch` remains supported for millisecond precision.
 
 ---
 

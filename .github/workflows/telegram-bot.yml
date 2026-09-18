@@ -1,8 +1,10 @@
 name: Telegram Bot Poller
 
+# Trigger manually via workflow_dispatch only.
+# NOTE: Scheduled 5-minute cron ('*/5 * * * *') is removed because high-frequency
+# polling in GitHub Actions overwhelms runner quotas and causes GitHub's scheduler
+# to delay all scheduled repository workflows (including Morning Buying Zone) by 4-5 hours.
 on:
-  schedule:
-    - cron: "*/5 * * * *"   # GitHub Actions minimum practical interval
   workflow_dispatch: {}
 
 jobs:

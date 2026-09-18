@@ -3,21 +3,24 @@ name: Morning Buying Zone Update
 # ─────────────────────────────────────────────────────────────────────────────
 # SCHEDULING ARCHITECTURE
 # ─────────────────────────────────────────────────────────────────────────────
-# PRIMARY TRIGGER: External scheduler (cron-job.org or equivalent)
-#   → Calls GitHub workflow_dispatch API at exactly 04:30 UTC (10:00 AM IST)
-#   → This fires OUTSIDE GitHub's queue system — not affected by GitHub delays
-#   → Setup: see docs/SCHEDULING.md for exact cron-job.org configuration
+# TARGET TIME: 10:00 AM IST (Asia/Kolkata), Monday through Friday.
 #
-# BACKUP TRIGGER: GitHub schedule cron '30 4 * * 1-5'
-#   → Fires if the external scheduler is unavailable (PAT expired, cron-job down)
-#   → Single entry only — multiple stagger entries caused repeated afternoon runs
-#   → If workflow_dispatch already ran today, Bot State idempotency exits silently
+# TIMEZONE CONVERSION:
+#   GitHub Actions schedule cron is strictly evaluated in UTC.
+#   IST = UTC + 5:30 (India Standard Time has no Daylight Saving Time).
+#   10:00 AM IST - 05:30 = 04:30 UTC.
+#   Cron expression: '30 4 * * 1-5' (04:30 UTC = 10:00 AM IST).
 #
-# TIMEZONE NOTE: GitHub Actions cron is always UTC.
-#   10:00 AM IST = 04:30 UTC  (IST = UTC + 5:30)
+# IDEMPOTENCY:
+#   morning_buying_zone.py tracks today's date in IST (YYYY-MM-DD) in the
+#   Google Sheet 'Bot State' tab (cell B1).
+#   Ensures exactly ONE Telegram update and sheet write per trading day.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
+  schedule:
+    # 04:30 UTC = 10:00 AM IST, Monday–Friday
+    - cron: '30 4 * * 1-5'
   workflow_dispatch:
     inputs:
       force:
@@ -25,11 +28,6 @@ on:
         required: false
         default: false
         type: boolean
-  schedule:
-    # BACKUP ONLY — primary scheduling is via external workflow_dispatch trigger.
-    # Single cron: 04:30 UTC = 10:00 AM IST, Monday–Friday.
-    # If the external scheduler triggered today, Bot State B1 will block this run.
-    - cron: '30 4 * * 1-5'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -54,6 +52,14 @@ jobs:
         echo "Expected trigger: 04:30 UTC = 10:00 AM IST"
         echo "Actual UTC time : $(date -u '+%H:%M:%S UTC')"
         echo "Actual IST time : $(TZ='Asia/Kolkata' date '+%H:%M:%S IST')"
+        python3 -c "
+        from datetime import datetime, timezone, timedelta
+        now_utc = datetime.now(timezone.utc)
+        target_today_utc = now_utc.replace(hour=4, minute=30, second=0, microsecond=0)
+        diff_sec = (now_utc - target_today_utc).total_seconds()
+        diff_min = round(diff_sec / 60, 1)
+        print(f'Timing Offset   : {diff_min:+0.1f} minutes from scheduled 04:30 UTC (10:00 AM IST)')
+        " || true
         echo "========================================"
 
     - name: Checkout Repository
