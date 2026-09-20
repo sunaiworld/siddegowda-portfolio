@@ -21,6 +21,7 @@ import portfolio_analytics
 import sheet_formatter
 import sheet_writer
 import smallcase_loader
+import corporate_actions
 
 from news_engine.sources import google_news_rss
 from news_engine import classifier
@@ -127,28 +128,58 @@ def trades_to_legacy_rows(trades):
     return rows
 
 
+def _parse_trade_date_iso(raw):
+    raw = str(raw).strip()
+    if not raw: return ""
+    if " " in raw: raw = raw.split(" ")[0]
+    for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d", "%d-%b-%Y"]:
+        try:
+            return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
+        except:
+            pass
+    return raw
+
+
 def get_avg_buy_and_qty(sym, trades):
     total_cost, total_qty = 0.0, 0.0
-    for t in trades:
-        if not t[0]: continue
-        if t[0].strip().upper() != sym: continue
+    sym_clean = sym.strip().upper() if sym else ""
+    splits = corporate_actions.get_splits_for_symbol(sym_clean)
+    applied_splits = set()
+
+    matching = [t for t in trades if t[0] and t[0].strip().upper() == sym_clean]
+    matching.sort(key=lambda t: _parse_trade_date_iso(t[1]) if len(t) > 1 else "")
+
+    for t in matching:
+        t_date = _parse_trade_date_iso(t[1]) if len(t) > 1 else ""
         try:
             typ   = t[2].strip().upper()
             qty   = float(t[3])
             price = float(t[4])
-            if typ == "BUY":
-                total_cost += qty * price
-                total_qty  += qty
-            elif typ == "SELL" and total_qty > 0:
-                # Clamp sell to available qty — older broker exports may start
-                # mid-stream (sells before tracked buys), which would otherwise
-                # produce negative total_qty and corrupt subsequent cost basis.
-                sell_qty = min(qty, total_qty)
-                avg = total_cost / total_qty
-                total_cost -= sell_qty * avg
-                total_qty  -= sell_qty
         except:
             continue
+        if qty <= 0: continue
+
+        if splits:
+            for s_date, ratio in splits:
+                if s_date <= t_date and s_date not in applied_splits:
+                    total_qty = round(total_qty * ratio, 4)
+                    applied_splits.add(s_date)
+
+        if typ == "BUY":
+            total_cost += qty * price
+            total_qty  += qty
+        elif typ == "SELL" and total_qty > 0:
+            sell_qty = min(qty, total_qty)
+            avg = total_cost / total_qty
+            total_cost -= sell_qty * avg
+            total_qty  -= sell_qty
+
+    if splits:
+        for s_date, ratio in splits:
+            if s_date not in applied_splits:
+                total_qty = round(total_qty * ratio, 4)
+                applied_splits.add(s_date)
+
     total_qty = max(total_qty, 0.0)
     avg_buy   = round(total_cost / total_qty, 2) if total_qty > 0 else None
     return avg_buy, total_qty
@@ -174,9 +205,14 @@ def compute_xirr(cashflows, dates):
 
 def get_xirr(sym, trades, current_price):
     cashflows, dates, running_qty = [], [], 0.0
-    for t in trades:
-        if not t[0]: continue
-        if t[0].strip().upper() != sym: continue
+    sym_clean = sym.strip().upper() if sym else ""
+    splits = corporate_actions.get_splits_for_symbol(sym_clean)
+    applied_splits = set()
+
+    matching = [t for t in trades if t[0] and t[0].strip().upper() == sym_clean]
+    matching.sort(key=lambda t: _parse_trade_date_iso(t[1]) if len(t) > 1 else "")
+
+    for t in matching:
         try:
             raw = str(t[1]).strip()
             dt  = None
@@ -184,6 +220,14 @@ def get_xirr(sym, trades, current_price):
                 try: dt = datetime.strptime(raw, fmt).date(); break
                 except: pass
             if not dt: continue
+            iso_date = dt.strftime("%Y-%m-%d")
+
+            if splits:
+                for s_date, ratio in splits:
+                    if s_date <= iso_date and s_date not in applied_splits:
+                        running_qty = round(running_qty * ratio, 4)
+                        applied_splits.add(s_date)
+
             typ   = t[2].strip().upper()
             qty   = float(t[3])
             price = float(t[4])
@@ -191,14 +235,19 @@ def get_xirr(sym, trades, current_price):
                 cashflows.append(-qty * price); dates.append(dt)
                 running_qty += qty
             elif typ == "SELL":
-                # Clamp sell to available qty — prevents negative terminal value
-                # when exports start mid-stream with sells before tracked buys.
                 sell_qty = min(qty, running_qty) if running_qty > 0 else 0.0
                 if sell_qty > 0:
                     cashflows.append(sell_qty * price); dates.append(dt)
                 running_qty = max(running_qty - qty, 0.0)
         except:
             continue
+
+    if splits:
+        for s_date, ratio in splits:
+            if s_date not in applied_splits:
+                running_qty = round(running_qty * ratio, 4)
+                applied_splits.add(s_date)
+
     if running_qty > 0 and current_price:
         cashflows.append(running_qty * current_price)
         dates.append(date.today())
@@ -389,14 +438,18 @@ def load_wife_trades(imports_dir="data/imports"):
 
 
 def compute_holdings(trades):
-    book = {}
-    for t in trades:
+    book = {}  # (broker, sym) -> [cost, qty]
+    applied_splits = {}  # (broker, sym) -> set of applied split dates
+    last_isin = {}  # (broker, sym) -> isin
+
+    sorted_trades = sorted(trades, key=lambda t: _parse_trade_date_iso(t.get("date", "")))
+
+    for t in sorted_trades:
         sym = str(t.get("symbol", "")).strip().upper()
-        isin = str(t.get("isin", "")).strip().upper()
-        if not isin:
-            isin = sym
-        if not isin:
+        if not sym:
             continue
+        isin = str(t.get("isin", "")).strip().upper() or sym
+
         try:
             action = str(t.get("action", "")).strip().upper()
             t_qty   = float(t.get("quantity", 0) or 0)
@@ -405,25 +458,46 @@ def compute_holdings(trades):
             continue
         if t_qty <= 0:
             continue
-            
+
         broker = str(t.get("broker", "Combined")).strip().title() or "Combined"
-        key = (broker, isin)
-        cost, qty, existing_sym = book.get(key, (0.0, 0.0, ""))
+        key = (broker, sym)
+        last_isin[key] = isin
+
+        if key not in book:
+            book[key] = [0.0, 0.0]
+            applied_splits[key] = set()
+
+        t_date = _parse_trade_date_iso(t.get("date", ""))
+        splits = corporate_actions.get_splits_for_symbol(sym)
+        if splits:
+            for s_date, ratio in splits:
+                if s_date <= t_date and s_date not in applied_splits[key]:
+                    book[key][1] = round(book[key][1] * ratio, 4)
+                    applied_splits[key].add(s_date)
+
         if action == "BUY":
-            cost += t_qty * t_price
-            qty  += t_qty
-        elif action == "SELL" and qty > 0:
-            sell_qty = min(t_qty, qty)
-            avg = cost / qty
-            cost -= sell_qty * avg
-            qty  -= sell_qty
-            
-        book[key] = (cost, max(qty, 0.0), sym or existing_sym)
+            book[key][0] += t_qty * t_price
+            book[key][1] += t_qty
+        elif action == "SELL" and book[key][1] > 0:
+            sell_qty = min(t_qty, book[key][1])
+            avg = book[key][0] / book[key][1]
+            book[key][0] -= sell_qty * avg
+            book[key][1] -= sell_qty
+
+    # Apply any remaining splits that occurred after the last trade date
+    for (broker, sym), vals in book.items():
+        splits = corporate_actions.get_splits_for_symbol(sym)
+        if splits:
+            for s_date, ratio in splits:
+                if s_date not in applied_splits.get((broker, sym), set()):
+                    vals[1] = round(vals[1] * ratio, 4)
+                    applied_splits[(broker, sym)].add(s_date)
 
     holdings = {}
-    for (broker, isin), (cost, qty, sym) in book.items():
-        if qty > 1e-6:
-            holdings[f"{broker}:{isin}"] = {
+    for (broker, sym), (cost, qty) in book.items():
+        if qty > 1e-4:
+            isin = last_isin.get((broker, sym), sym)
+            holdings[f"{broker}:{sym}"] = {
                 "symbol": sym,
                 "isin": isin,
                 "broker": broker,
@@ -512,6 +586,10 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
             c["investment_source"] = "ETF"
         elif c.get("brokers") == {"Groww"}:
             c["investment_source"] = "DAD"
+        elif c.get("brokers") == {"Zerodha"}:
+            c["investment_source"] = "SELF"
+        elif "Zerodha" in c.get("brokers", set()) and "Groww" in c.get("brokers", set()):
+            c["investment_source"] = "SELF & DAD"
         elif c["invested"] > 0:
             c["investment_source"] = "SELF"
         else:
@@ -522,7 +600,7 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
             c["sl_price"] = ""
             c["target"] = ""
             c["buy_more"] = round(c["avg_buy"] * 0.90, 2)
-            if len(c["isins"]) > 1:
+            if len(c["isins"]) > 1 and sym not in corporate_actions.SPLIT_REGISTRY:
                 c["signal"] = "REQUIRES REVIEW (Corp Action)"
             elif c["cmp"] <= c["buy_more"]:
                 c["signal"] = "BUY MORE"
@@ -532,7 +610,7 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
             c["sl_price"] = round(c["avg_buy"] * (1 - SL_PCT), 2)
             c["target"] = round(c["avg_buy"] * (1 + TARGET_PCT), 2)
             c["buy_more"] = round(c["avg_buy"] * 0.90, 2)
-            if len(c["isins"]) > 1:
+            if len(c["isins"]) > 1 and sym not in corporate_actions.SPLIT_REGISTRY:
                 c["signal"] = "REQUIRES REVIEW (Corp Action)"
             elif c["cmp"] <= c["sl_price"]:
                 c["signal"] = "SELL - SL HIT"
