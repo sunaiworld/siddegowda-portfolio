@@ -47,6 +47,7 @@ sys.path.append(str(project_root / "src"))
 
 import main as m           # noqa: E402  (reuse, not reimplement)
 import fund_cache          # noqa: E402
+import smallcase_loader     # noqa: E402
 
 logging.basicConfig(
     level=logging.INFO,
@@ -188,8 +189,9 @@ def main():
         log.error("No trades found - aborting Portfolio tab update")
         return
 
-    symbols = sorted({t[0] for t in trades})
-    log.info(f"{len(symbols)} distinct symbols in trade_log.csv")
+    sc_symbols = smallcase_loader.get_smallcase_exclusion_set()
+    symbols = sorted({t[0] for t in trades if smallcase_loader.normalize_symbol(t[0]) not in sc_symbols})
+    log.info(f"{len(symbols)} distinct independent symbols in trade_log.csv (smallcases excluded)")
 
     # Qty + avg buy price per symbol - reuses main.py's cost-basis math
     holdings = {}
@@ -197,7 +199,7 @@ def main():
         avg_buy, qty = m.get_avg_buy_and_qty(sym, trades)
         if qty > 0:
             holdings[sym] = {"qty": qty, "avg_buy": avg_buy}
-    log.info(f"{len(holdings)} open positions (qty > 0)")
+    log.info(f"{len(holdings)} open independent positions (qty > 0)")
 
     if not holdings:
         log.warning("No open positions - nothing to write")

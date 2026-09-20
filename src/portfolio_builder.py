@@ -20,6 +20,7 @@ import fund_cache
 import portfolio_analytics
 import sheet_formatter
 import sheet_writer
+import smallcase_loader
 
 from news_engine.sources import google_news_rss
 from news_engine import classifier
@@ -405,7 +406,8 @@ def compute_holdings(trades):
         if t_qty <= 0:
             continue
             
-        key = isin
+        broker = str(t.get("broker", "Combined")).strip().title() or "Combined"
+        key = (broker, isin)
         cost, qty, existing_sym = book.get(key, (0.0, 0.0, ""))
         if action == "BUY":
             cost += t_qty * t_price
@@ -419,11 +421,12 @@ def compute_holdings(trades):
         book[key] = (cost, max(qty, 0.0), sym or existing_sym)
 
     holdings = {}
-    for isin, (cost, qty, sym) in book.items():
+    for (broker, isin), (cost, qty, sym) in book.items():
         if qty > 1e-6:
-            holdings[isin] = {
+            holdings[f"{broker}:{isin}"] = {
                 "symbol": sym,
-                "broker": "Combined",
+                "isin": isin,
+                "broker": broker,
                 "avg_buy": round(cost / qty, 2),
                 "qty": round(qty, 4),
                 "cost": round(cost, 2)
@@ -436,7 +439,7 @@ import math
 def is_valid_price(p):
     return p is not None and isinstance(p, (int, float)) and not math.isnan(p) and p > 0
 
-def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_map=None, tech_map=None, trades=None):
+def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_map=None, tech_map=None, trades=None, exclude_smallcases=True):
     if fund_map is None: fund_map = {}
     if source_map is None: source_map = {}
     if tech_map is None: tech_map = {}
@@ -444,15 +447,22 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
         trades = load_all_trades(imports_dir)
     holdings = compute_holdings(trades)
 
+    smallcase_map, smallcase_symbols = smallcase_loader.load_all_smallcases(imports_dir)
+    
+    if exclude_smallcases:
+        broker_sym_set = {h["symbol"] for h in holdings.values() if h.get("qty", 0) > 0}
+        smallcase_loader.generate_smallcase_audit(broker_sym_set, smallcase_map)
+
     # Compute combined natively
     combined_dict = {}
-    smallcase_syms = set()
-    for t in trades:
-        if "smallcase" in str(t.get("import_source", "")).lower() or "smallcase" in str(t.get("notes", "")).lower():
-            smallcase_syms.add(str(t.get("symbol", "")).strip().upper())
 
     for key, h in holdings.items():
         sym = h["symbol"]
+        norm_sym = smallcase_loader.normalize_symbol(sym)
+        if exclude_smallcases and norm_sym in smallcase_symbols:
+            # Stock is held in a smallcase -> completely excluded from Portfolio tab
+            continue
+
         qty = h["qty"]
         invested_raw = h["cost"]
         cmp = prices.get(sym)
@@ -469,12 +479,14 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
                 "invested": 0.0,
                 "value": 0.0,
                 "cmp": cmp,
-                "isins": set()
+                "isins": set(),
+                "brokers": set()
             }
         combined_dict[sym]["shares"] += qty
         combined_dict[sym]["invested"] += invested
         combined_dict[sym]["value"] += value
-        combined_dict[sym]["isins"].add(key)
+        combined_dict[sym]["isins"].add(h.get("isin", key))
+        combined_dict[sym]["brokers"].add(h.get("broker", "Combined"))
 
     combined_rows = []
     portfolio_live_value_c = sum(c["value"] for c in combined_dict.values())
@@ -498,8 +510,8 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
             c["investment_source"] = source_map[sym].upper()
         elif fund_map.get(sym, {}).get("sector") == "ETFs" or "BEES" in sym.upper() or sym.upper().endswith("ETF") or sym.upper() in ("ICICIB22", "CPSEETF", "SETFNIF50", "GOLDBEES", "NIFTYBEES"):
             c["investment_source"] = "ETF"
-        elif sym in smallcase_syms:
-            c["investment_source"] = "SMALLCASE"
+        elif c.get("brokers") == {"Groww"}:
+            c["investment_source"] = "DAD"
         elif c["invested"] > 0:
             c["investment_source"] = "SELF"
         else:

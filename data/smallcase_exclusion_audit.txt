@@ -1,0 +1,49 @@
+================================================================================
+SIDDEGOWDA PORTFOLIO — SMALLCASE EXCLUSION AUDIT REPORT
+================================================================================
+Total Broker Holdings Symbols : 61
+Total Unique Smallcase Symbols: 91
+Number of Excluded Symbols    : 35
+Remaining Portfolio Symbols   : 26
+--------------------------------------------------------------------------------
+Symbol          | Smallcase(s)                                  | Source
+--------------------------------------------------------------------------------
+ADANIPORTS      | Transporting India Theme, Infra Tracker       | Groww_Smallcase, Zerodha_Smallcase
+BERGEPAINT      | Dividend Aristocrats Model                    | Zerodha_Smallcase
+BPCL            | Energy Tracker                                | Zerodha_Smallcase
+CGPOWER         | Infra Tracker                                 | Zerodha_Smallcase
+COFORGE         | IT Tracker                                    | Zerodha_Smallcase
+CRISIL          | Dividend Aristocrats Model                    | Zerodha_Smallcase
+FINCABLES       | Growth & Value Multicap Model                 | Zerodha_Smallcase
+GAIL            | Energy Tracker                                | Zerodha_Smallcase
+GESHIP          | Growth & Value Multicap Model                 | Zerodha_Smallcase
+GLENMARK        | Growth & Value Multicap Model                 | Zerodha_Smallcase
+INDHOTEL        | House of Tata Tracker                         | Zerodha_Smallcase
+ITC             | Dividend Aristocrats Model                    | Zerodha_Smallcase
+JSWINFRA        | Transporting India Theme, Infra Tracker       | Groww_Smallcase, Zerodha_Smallcase
+KPIL            | Growth & Value Multicap Model                 | Zerodha_Smallcase
+LTM             | IT Tracker                                    | Zerodha_Smallcase
+MOTHERSON       | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
+MPHASIS         | IT Tracker                                    | Zerodha_Smallcase
+NATIONALUM      | Growth & Value Multicap Model                 | Zerodha_Smallcase
+NCC             | Infra Tracker                                 | Zerodha_Smallcase
+NHPC            | Energy Tracker                                | Zerodha_Smallcase
+NMDC            | Growth & Value Multicap Model                 | Zerodha_Smallcase
+NTPC            | Energy Tracker, Infra Tracker                 | Zerodha_Smallcase
+OIL             | Energy Tracker                                | Zerodha_Smallcase
+ONGC            | Energy Tracker                                | Zerodha_Smallcase
+PERSISTENT      | IT Tracker                                    | Zerodha_Smallcase
+POWERGRID       | Energy Tracker, Infra Tracker                 | Zerodha_Smallcase
+PRICOLLTD       | Growth & Value Multicap Model                 | Zerodha_Smallcase
+RELIANCE        | Dividend Aristocrats Model, Energy Tracker    | Zerodha_Smallcase
+SCHAEFFLER      | Dividend Aristocrats Model                    | Zerodha_Smallcase
+STAR            | Growth & Value Multicap Model                 | Zerodha_Smallcase
+TATACONSUM      | House of Tata Tracker                         | Zerodha_Smallcase
+TATAPOWER       | Electric Mobility Theme, Energy Tracker, House of Tata Tracker | Groww_Smallcase, Zerodha_Smallcase
+TCS             | House of Tata Tracker, IT Tracker             | Zerodha_Smallcase
+TECHNOE         | Infra Tracker                                 | Zerodha_Smallcase
+ZFCVINDIA       | Dividend Aristocrats Model                    | Zerodha_Smallcase
+================================================================================
+
+Remaining Independent Portfolio Symbols (26):
+ACC, APLAPOLLO, CASTROLIND, DIXON, ETERNAL, GOLDBEES, HDFCLIFE, HEROMOTOCO, HINDALCO, HINDZINC, IEX, JKCEMENT, JSL, LUPIN, MAHKTECH, MOIL, MON100, PAGEIND, PIIND, POLICYBZR, PVRINOX, SHYAMMETL, SILVERBEES, SUZLON, TIINDIA, WAAREEENER

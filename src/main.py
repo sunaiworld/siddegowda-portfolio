@@ -14,6 +14,7 @@ import dividend_builder
 import growth_screener_builder
 import history_tracker
 import monthly_snapshot
+import smallcase_loader
 from profiler import profiler
 
 #!/usr/bin/env python3
@@ -97,8 +98,10 @@ def run_portfolio_update(sh):
     of truth, no duplicated pipeline logic).
     """
     profiler.start_stage("[01] Load configuration")
-    symbols = read_symbols(sh)
+    raw_symbols = read_symbols(sh)
     source_map = read_portfolio_sources(sh)
+    sc_symbols = smallcase_loader.get_smallcase_exclusion_set()
+    symbols = [s for s in raw_symbols if smallcase_loader.normalize_symbol(s) not in sc_symbols]
     if not symbols:
         profiler.stop_stage("[01] Load configuration", category="Python processing")
         return None
@@ -186,6 +189,9 @@ def run_portfolio_update(sh):
     all_held = {}
     for key, h in raw_held.items():
         sym = h["symbol"]
+        norm_sym = smallcase_loader.normalize_symbol(sym)
+        if norm_sym in sc_symbols:
+            continue
         if sym not in all_held:
             all_held[sym] = {"qty": 0.0, "cost": 0.0}
         all_held[sym]["qty"] += h["qty"]
@@ -341,7 +347,7 @@ def run_portfolio_update(sh):
     log.info(f"[CHECKPOINT] About to write GITHUB DATA — {len(results)} rows built")
 
     try:
-        portfolio_rows = build_portfolio(prices, fund_map=fund_map, source_map=source_map, tech_map=tech_map)
+        portfolio_rows = build_portfolio(prices, fund_map=fund_map, source_map=source_map, tech_map=tech_map, exclude_smallcases=True)
         with profiler.stage("[09] Portfolio sheet write", category="Google Sheets"):
             write_portfolio(sh, portfolio_rows)
     except Exception as e:
@@ -352,7 +358,7 @@ def run_portfolio_update(sh):
         wife_trades = load_wife_trades()
         if wife_trades:
             wife_portfolio_rows = build_portfolio(
-                prices, fund_map=fund_map, source_map=source_map, tech_map=tech_map, trades=wife_trades
+                prices, fund_map=fund_map, source_map=source_map, tech_map=tech_map, trades=wife_trades, exclude_smallcases=False
             )
             write_portfolio(sh, wife_portfolio_rows, tab_name="Wife_Portfolio")
             log.info("✓ Wife_Portfolio tab written successfully")
