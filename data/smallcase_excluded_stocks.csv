@@ -1,19 +1,50 @@
 Symbol,Smallcases,Sources,File_Origins
 ADANIPORTS,Transporting India Theme; Infra Tracker,Groww_Smallcase; Zerodha_Smallcase,Transporting_India_Theme_20_9_2026.csv; Infra_Tracker_20_9_2026.csv
+APARINDS,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
+ARE&M,Electric Mobility Theme,Groww_Smallcase,Electric_Mobility_Theme_20_9_2026.csv
+BAJAJ-AUTO,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
+BALKRISIND,Auto Tracker,Groww_Smallcase,Auto_Tracker_20_9_2026.csv
+BELRISE,Auto Tracker,Groww_Smallcase,Auto_Tracker_20_9_2026.csv
 BERGEPAINT,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv
+BLACKBUCK,Transporting India Theme,Groww_Smallcase,Transporting_India_Theme_20_9_2026.csv
 BPCL,Energy Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv
+CCL,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
 CGPOWER,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
+CIEINDIA,Auto Tracker,Groww_Smallcase,Auto_Tracker_20_9_2026.csv
+COALINDIA,Energy Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv
 COFORGE,IT Tracker,Zerodha_Smallcase,IT_Tracker_20_9_2026.csv
+CONCOR,Transporting India Theme,Groww_Smallcase,Transporting_India_Theme_20_9_2026.csv
 CRISIL,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv
+DELHIVERY,Transporting India Theme,Groww_Smallcase,Transporting_India_Theme_20_9_2026.csv
+EICHERMOT,Auto Tracker; Transporting India Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Transporting_India_Theme_20_9_2026.csv
+EMBASSY,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
+ENDURANCE,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
+ENGINERSIN,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
+EXIDEIND,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
 FINCABLES,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
 GAIL,Energy Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv
+GATEWAY,Transporting India Theme,Groww_Smallcase,Transporting_India_Theme_20_9_2026.csv
 GESHIP,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
 GLENMARK,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
+GPPL,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
+HCG,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
+HCLTECH,IT Tracker,Zerodha_Smallcase,IT_Tracker_20_9_2026.csv
+HYUNDAI,Auto Tracker,Groww_Smallcase,Auto_Tracker_20_9_2026.csv
 INDHOTEL,House of Tata Tracker,Zerodha_Smallcase,House_of_Tata_Tracker_20_9_2026.csv
+INDIGRID,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
+INFY,IT Tracker,Zerodha_Smallcase,IT_Tracker_20_9_2026.csv
+IPCALAB,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
 ITC,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv
+JSWENERGY,Energy Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv
 JSWINFRA,Transporting India Theme; Infra Tracker,Groww_Smallcase; Zerodha_Smallcase,Transporting_India_Theme_20_9_2026.csv; Infra_Tracker_20_9_2026.csv
+KEI,Dividend Aristocrats Model; Infra Tracker,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv; Infra_Tracker_20_9_2026.csv
+KIRLPNU,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv
 KPIL,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
+LT,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
 LTM,IT Tracker,Zerodha_Smallcase,IT_Tracker_20_9_2026.csv
+M&M,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
+MARICO,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
+MINDSPACE,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
 MOTHERSON,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
 MPHASIS,IT Tracker,Zerodha_Smallcase,IT_Tracker_20_9_2026.csv
 NATIONALUM,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
@@ -21,16 +52,38 @@ NCC,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
 NHPC,Energy Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv
 NMDC,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
 NTPC,Energy Tracker; Infra Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv; Infra_Tracker_20_9_2026.csv
+OFSS,IT Tracker,Zerodha_Smallcase,IT_Tracker_20_9_2026.csv
 OIL,Energy Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv
 ONGC,Energy Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv
+PARADEEP,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
 PERSISTENT,IT Tracker,Zerodha_Smallcase,IT_Tracker_20_9_2026.csv
+POLYCAB,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
 POWERGRID,Energy Tracker; Infra Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv; Infra_Tracker_20_9_2026.csv
 PRICOLLTD,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
+RAINBOW,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
 RELIANCE,Dividend Aristocrats Model; Energy Tracker,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv; Energy_Tracker_20_9_2026.csv
 SCHAEFFLER,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv
+SHADOWFAX,Transporting India Theme,Groww_Smallcase,Transporting_India_Theme_20_9_2026.csv
+SIEMENS,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
+SONACOMS,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
 STAR,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
+SUNDARMFIN,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv
+SUPRAJIT,Auto Tracker,Groww_Smallcase,Auto_Tracker_20_9_2026.csv
+TATACAP,House of Tata Tracker,Zerodha_Smallcase,House_of_Tata_Tracker_20_9_2026.csv
 TATACONSUM,House of Tata Tracker,Zerodha_Smallcase,House_of_Tata_Tracker_20_9_2026.csv
 TATAPOWER,Electric Mobility Theme; Energy Tracker; House of Tata Tracker,Groww_Smallcase; Zerodha_Smallcase,Electric_Mobility_Theme_20_9_2026.csv; Energy_Tracker_20_9_2026.csv; House_of_Tata_Tracker_20_9_2026.csv
+TATASTEEL,House of Tata Tracker,Zerodha_Smallcase,House_of_Tata_Tracker_20_9_2026.csv
+TATATECH,House of Tata Tracker,Zerodha_Smallcase,House_of_Tata_Tracker_20_9_2026.csv
+TCI,Transporting India Theme,Groww_Smallcase,Transporting_India_Theme_20_9_2026.csv
 TCS,House of Tata Tracker; IT Tracker,Zerodha_Smallcase,House_of_Tata_Tracker_20_9_2026.csv; IT_Tracker_20_9_2026.csv
+TECHM,IT Tracker,Zerodha_Smallcase,IT_Tracker_20_9_2026.csv
 TECHNOE,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
+TIPSMUSIC,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
+TITAGARH,Transporting India Theme,Groww_Smallcase,Transporting_India_Theme_20_9_2026.csv
+TITAN,House of Tata Tracker,Zerodha_Smallcase,House_of_Tata_Tracker_20_9_2026.csv
+TVSMOTOR,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
+ULTRACEMCO,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
+UNOMINDA,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
+VIJAYA,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
+VOLTAS,House of Tata Tracker,Zerodha_Smallcase,House_of_Tata_Tracker_20_9_2026.csv
 ZFCVINDIA,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv

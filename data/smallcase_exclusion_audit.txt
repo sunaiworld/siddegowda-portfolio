@@ -1,28 +1,59 @@
 ================================================================================
 SIDDEGOWDA PORTFOLIO — SMALLCASE EXCLUSION AUDIT REPORT
 ================================================================================
-Total Broker Holdings Symbols : 61
+Total Broker Holdings Symbols : 214
 Total Unique Smallcase Symbols: 91
-Number of Excluded Symbols    : 35
-Remaining Portfolio Symbols   : 26
+Number of Excluded Symbols    : 88
+Remaining Portfolio Symbols   : 126
 --------------------------------------------------------------------------------
 Symbol          | Smallcase(s)                                  | Source
 --------------------------------------------------------------------------------
 ADANIPORTS      | Transporting India Theme, Infra Tracker       | Groww_Smallcase, Zerodha_Smallcase
+APARINDS        | Infra Tracker                                 | Zerodha_Smallcase
+ARE&M           | Electric Mobility Theme                       | Groww_Smallcase
+BAJAJ-AUTO      | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
+BALKRISIND      | Auto Tracker                                  | Groww_Smallcase
+BELRISE         | Auto Tracker                                  | Groww_Smallcase
 BERGEPAINT      | Dividend Aristocrats Model                    | Zerodha_Smallcase
+BLACKBUCK       | Transporting India Theme                      | Groww_Smallcase
 BPCL            | Energy Tracker                                | Zerodha_Smallcase
+CCL             | Safe Haven Model                              | Groww_Smallcase
 CGPOWER         | Infra Tracker                                 | Zerodha_Smallcase
+CIEINDIA        | Auto Tracker                                  | Groww_Smallcase
+COALINDIA       | Energy Tracker                                | Zerodha_Smallcase
 COFORGE         | IT Tracker                                    | Zerodha_Smallcase
+CONCOR          | Transporting India Theme                      | Groww_Smallcase
 CRISIL          | Dividend Aristocrats Model                    | Zerodha_Smallcase
+DELHIVERY       | Transporting India Theme                      | Groww_Smallcase
+EICHERMOT       | Auto Tracker, Transporting India Theme        | Groww_Smallcase
+EMBASSY         | Safe Haven Model                              | Groww_Smallcase
+ENDURANCE       | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
+ENGINERSIN      | Growth & Value Multicap Model                 | Zerodha_Smallcase
+EXIDEIND        | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
 FINCABLES       | Growth & Value Multicap Model                 | Zerodha_Smallcase
 GAIL            | Energy Tracker                                | Zerodha_Smallcase
+GATEWAY         | Transporting India Theme                      | Groww_Smallcase
 GESHIP          | Growth & Value Multicap Model                 | Zerodha_Smallcase
 GLENMARK        | Growth & Value Multicap Model                 | Zerodha_Smallcase
+GPPL            | Growth & Value Multicap Model                 | Zerodha_Smallcase
+HCG             | Safe Haven Model                              | Groww_Smallcase
+HCLTECH         | IT Tracker                                    | Zerodha_Smallcase
+HYUNDAI         | Auto Tracker                                  | Groww_Smallcase
 INDHOTEL        | House of Tata Tracker                         | Zerodha_Smallcase
+INDIGRID        | Infra Tracker                                 | Zerodha_Smallcase
+INFY            | IT Tracker                                    | Zerodha_Smallcase
+IPCALAB         | Safe Haven Model                              | Groww_Smallcase
 ITC             | Dividend Aristocrats Model                    | Zerodha_Smallcase
+JSWENERGY       | Energy Tracker                                | Zerodha_Smallcase
 JSWINFRA        | Transporting India Theme, Infra Tracker       | Groww_Smallcase, Zerodha_Smallcase
+KEI             | Dividend Aristocrats Model, Infra Tracker     | Zerodha_Smallcase
+KIRLPNU         | Dividend Aristocrats Model                    | Zerodha_Smallcase
 KPIL            | Growth & Value Multicap Model                 | Zerodha_Smallcase
+LT              | Infra Tracker                                 | Zerodha_Smallcase
 LTM             | IT Tracker                                    | Zerodha_Smallcase
+M&M             | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
+MARICO          | Safe Haven Model                              | Groww_Smallcase
+MINDSPACE       | Safe Haven Model                              | Groww_Smallcase
 MOTHERSON       | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
 MPHASIS         | IT Tracker                                    | Zerodha_Smallcase
 NATIONALUM      | Growth & Value Multicap Model                 | Zerodha_Smallcase
@@ -30,20 +61,42 @@ NCC             | Infra Tracker                                 | Zerodha_Smallc
 NHPC            | Energy Tracker                                | Zerodha_Smallcase
 NMDC            | Growth & Value Multicap Model                 | Zerodha_Smallcase
 NTPC            | Energy Tracker, Infra Tracker                 | Zerodha_Smallcase
+OFSS            | IT Tracker                                    | Zerodha_Smallcase
 OIL             | Energy Tracker                                | Zerodha_Smallcase
 ONGC            | Energy Tracker                                | Zerodha_Smallcase
+PARADEEP        | Safe Haven Model                              | Groww_Smallcase
 PERSISTENT      | IT Tracker                                    | Zerodha_Smallcase
+POLYCAB         | Infra Tracker                                 | Zerodha_Smallcase
 POWERGRID       | Energy Tracker, Infra Tracker                 | Zerodha_Smallcase
 PRICOLLTD       | Growth & Value Multicap Model                 | Zerodha_Smallcase
+RAINBOW         | Safe Haven Model                              | Groww_Smallcase
 RELIANCE        | Dividend Aristocrats Model, Energy Tracker    | Zerodha_Smallcase
 SCHAEFFLER      | Dividend Aristocrats Model                    | Zerodha_Smallcase
+SHADOWFAX       | Transporting India Theme                      | Groww_Smallcase
+SIEMENS         | Infra Tracker                                 | Zerodha_Smallcase
+SONACOMS        | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
 STAR            | Growth & Value Multicap Model                 | Zerodha_Smallcase
+SUNDARMFIN      | Dividend Aristocrats Model                    | Zerodha_Smallcase
+SUPRAJIT        | Auto Tracker                                  | Groww_Smallcase
+TATACAP         | House of Tata Tracker                         | Zerodha_Smallcase
 TATACONSUM      | House of Tata Tracker                         | Zerodha_Smallcase
 TATAPOWER       | Electric Mobility Theme, Energy Tracker, House of Tata Tracker | Groww_Smallcase, Zerodha_Smallcase
+TATASTEEL       | House of Tata Tracker                         | Zerodha_Smallcase
+TATATECH        | House of Tata Tracker                         | Zerodha_Smallcase
+TCI             | Transporting India Theme                      | Groww_Smallcase
 TCS             | House of Tata Tracker, IT Tracker             | Zerodha_Smallcase
+TECHM           | IT Tracker                                    | Zerodha_Smallcase
 TECHNOE         | Infra Tracker                                 | Zerodha_Smallcase
+TIPSMUSIC       | Safe Haven Model                              | Groww_Smallcase
+TITAGARH        | Transporting India Theme                      | Groww_Smallcase
+TITAN           | House of Tata Tracker                         | Zerodha_Smallcase
+TVSMOTOR        | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
+ULTRACEMCO      | Infra Tracker                                 | Zerodha_Smallcase
+UNOMINDA        | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
+VIJAYA          | Safe Haven Model                              | Groww_Smallcase
+VOLTAS          | House of Tata Tracker                         | Zerodha_Smallcase
 ZFCVINDIA       | Dividend Aristocrats Model                    | Zerodha_Smallcase
 ================================================================================
 
-Remaining Independent Portfolio Symbols (26):
-ACC, APLAPOLLO, CASTROLIND, DIXON, ETERNAL, GOLDBEES, HDFCLIFE, HEROMOTOCO, HINDALCO, HINDZINC, IEX, JKCEMENT, JSL, LUPIN, MAHKTECH, MOIL, MON100, PAGEIND, PIIND, POLICYBZR, PVRINOX, SHYAMMETL, SILVERBEES, SUZLON, TIINDIA, WAAREEENER
+Remaining Independent Portfolio Symbols (126):
+5PAISA, AARTIIND, AAVAS, ABBOTINDIA, ACC, ADITYA BIRLA SUN LIFE PSU EQUITY FUND - DIRECT PLAN, AMRUTANJAN, APTUS, ASIANPAINT, ASTRAL, AWL, BAJAJFINSV, BAJAJHLDNG, BAJFINANCE, BANDHAN SMALL CAP FUND - DIRECT PLAN, BANDHAN SMALL CAP FUND DIRECT PLAN-GROWTH, BANDHANBNK, BANKBEES, BECTORFOOD, BOI AXA SMALL CAP FUND - DIRECT PLAN, BRITANNIA, BSE, CAMPUS, CAMS, CANARA ROBECO SMALL CAP FUND - DIRECT PLAN, CANBK, CASTROLIND, CDSL, CHOLAHLDNG, CLEAN, COLPAL, CPSEETF, CUB, CYIENT, DABUR, DEEPAKNTR, DIXON, EQUITAS, EQUITASBNK, FORTIS, GEOJITFSL, GMMPFAUDLR, GOLDBEES, GREENPANEL, HAPPSTMNDS, HDFCAMC, HDFCBANK, HDFCLIFE, HDFCMOMENT, HDFCSML250, HELIOS FLEXI CAP FUND-DIRECT PLAN-GROWTH, HEROMOTOCO, HINDPETRO, HINDUNILVR, HINDZINC, HMAAGRO, IDFCFIRSTB, IEX, INDIGOPNTS, INVESCO INDIA FLEXI CAP FUND-DIRECT PLAN - GROWTH, INVESCO INDIA SMALL CAP FUND - DIRECT GROWTH, INVESCO INDIA SMALLCAP FUND - DIRECT PLAN, IRCTC, IT, ITBEES, ITI SMALL CAP FUND - DIRECT PLAN, ITI SMALL CAP FUND DIRECT PLAN GROWTH, JIOFIN, JKPAPER, KALYANKJIL, KOTAK MIDCAP FUND - DIRECT PLAN, KOTAK SMALL CAP FUND - DIRECT PLAN, KOTAKBANK, LTI, LTIM, LUPIN, MAHKTECH, MAXHEALTH, MINDTREE, MOM100, MON100, MOTILAL OSWAL MIDCAP FUND - DIRECT PLAN, MOTILALOFS, MUTHOOTFIN, NATCOPHARM, NH, NIFTYBEES, NIPPON INDIA SMALL CAP FUND - DIRECT PLAN, NUVAMA, PAGEIND, PGHH, PIIND, PNB, POLICYBZR, PVRINOX, QUANT BFSI FUND - DIRECT PLAN, QUANT FLEXI CAP FUND - DIRECT PLAN, QUANT INFRASTRUCTURE FUND - DIRECT PLAN, QUANT MID CAP FUND - DIRECT PLAN, QUANT MID CAP FUND DIRECT PLAN - GROWTH, QUANT SMALL CAP FUND - DIRECT PLAN, RAJESHEXPO, RECLTD, RUSHIL, SBICARD, SBILIFE, SFL, SILVERBEES, SONATSOFTW, STARHEALTH, SUZLON, SWIGGY, SWSOLAR, TANLA, TARSONS, TATA SMALL CAP FUND - DIRECT PLAN, TATA SMALL CAP FUND DIRECT PLAN GROWTH, TATAELXSI, TATAMOTORS, TIINDIA, TRENT, VAIBHAVGBL, VBL, VEDL, VGUARD, ZOMATO
