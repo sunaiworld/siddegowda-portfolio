@@ -1,8 +1,11 @@
 name: Portfolio Daily Update
 
+# SCHEDULING ARCHITECTURE:
+# Target: 05:45 PM IST (12:15 UTC), Monday through Friday.
+# Off-peak minute :15 avoids GitHub Actions schedule queue delays.
 on:
   schedule:
-    - cron: "30 12 * * 1-5"
+    - cron: "15 12 * * 1-5"
   workflow_dispatch:
   repository_dispatch:
     types: [sheet_updated]

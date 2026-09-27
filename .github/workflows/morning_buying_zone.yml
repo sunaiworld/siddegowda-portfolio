@@ -8,8 +8,9 @@ name: Morning Buying Zone Update
 # TIMEZONE CONVERSION:
 #   GitHub Actions schedule cron is strictly evaluated in UTC.
 #   IST = UTC + 5:30 (India Standard Time has no Daylight Saving Time).
-#   10:00 AM IST - 05:30 = 04:30 UTC.
-#   Cron expression: '30 4 * * 1-5' (04:30 UTC = 10:00 AM IST).
+#   Target 09:45–10:00 AM IST: 04:15 UTC.
+#   Cron expression: '15 4 * * 1-5' (04:15 UTC = 09:45 AM IST).
+#   Note: Off-peak minute :15 is used to bypass GitHub Actions schedule queue delays (which affect :00 and :30).
 #
 # IDEMPOTENCY:
 #   morning_buying_zone.py tracks today's date in IST (YYYY-MM-DD) in the
@@ -19,8 +20,8 @@ name: Morning Buying Zone Update
 
 on:
   schedule:
-    # 04:30 UTC = 10:00 AM IST, Monday–Friday
-    - cron: '30 4 * * 1-5'
+    # 04:15 UTC = 09:45 AM IST, Monday–Friday (off-peak minute to ensure on-time trigger)
+    - cron: '15 4 * * 1-5'
   workflow_dispatch:
     inputs:
       force:
