@@ -65,7 +65,7 @@ def update_wife_portfolio(dry_run=False):
                 tech_map[sym] = {}
 
     log.info("Building Wife portfolio rows and metrics...")
-    portfolio_dict = build_portfolio(prices, tech_map=tech_map, trades=trades)
+    portfolio_dict = build_portfolio(prices, tech_map=tech_map, trades=trades, exclude_smallcases=False)
     combined_rows = portfolio_dict.get("combined", [])
 
     tot_inv = sum(r["invested"] for r in combined_rows)
