@@ -69,8 +69,10 @@ class TestWifePortfolio(unittest.TestCase):
             self.assertIn("invested", row)
             self.assertIn("value", row)
             self.assertIn("pnl", row)
+            self.assertIn("xirr", row)
             self.assertIn("return_pct", row)
             self.assertIn("wt_pct", row)
+            self.assertIn("buy_20_less", row)
             self.assertIn("buy_more", row)
             self.assertIn("signal", row)
 
@@ -88,13 +90,13 @@ class TestWifePortfolio(unittest.TestCase):
         sample_rows = [
             {
                 "symbol": "DIXON", "investment_source": "SELF", "shares": 10.0, "avg_buy": 10000.0,
-                "cmp": 11000.0, "day_chg_pct": 1.5, "return_1w": 3.0, "return_1m": 5.0,
+                "cmp": 11000.0, "buy_20_less": -8.5, "day_chg_pct": 1.5, "return_1w": 3.0, "return_1m": 5.0,
                 "return_3m": 10.0, "return_6m": 20.0, "invested": 100000.0, "value": 110000.0,
-                "pnl": 10000.0, "return_pct": 10.0, "wt_pct": 100.0, "sl_price": 9300.0,
+                "pnl": 10000.0, "xirr": 14.5, "return_pct": 10.0, "wt_pct": 100.0, "sl_price": 9300.0,
                 "target": 12000.0, "buy_more": 9000.0, "signal": "HOLD", "isins": {"INE935N01020"}
             }
         ]
-        portfolio_dict = {"groww": [], "zerodha": [], "combined": sample_rows}
+        portfolio_dict = {"groww": [], "zerodha": [], "combined": sample_rows, "portfolio_xirr": 14.5}
 
         captured_updates = []
         captured_reqs = []
@@ -114,6 +116,8 @@ class TestWifePortfolio(unittest.TestCase):
         table_data = captured_updates[0]
         # Row 0: PORTFOLIO_COLUMNS
         self.assertEqual(table_data[0], PORTFOLIO_COLUMNS)
+        self.assertEqual(table_data[0].index("Buy 20% Less") + 1, table_data[0].index("Day Chg%"))
+        self.assertEqual(table_data[0].index("XIRR") + 1, table_data[0].index("Return %"))
         # Row 1: Banner title
         self.assertEqual(table_data[1][SYMBOL_COL], "WIFE PORTFOLIO - VIEW ONLY")
         # Row 2: Data row

@@ -203,18 +203,90 @@ def compute_xirr(cashflows, dates):
     return None
 
 
+def _extract_trade_fields(t):
+    """Extract (symbol, date_str, action, qty, price) whether t is dict or list/tuple."""
+    if isinstance(t, dict):
+        s = str(t.get("symbol", "")).strip().upper()
+        d = str(t.get("date", "")).strip()
+        act = str(t.get("action", "")).strip().upper()
+        try:
+            q = float(t.get("quantity", 0) or 0)
+            p = float(t.get("price", 0) or 0)
+        except (ValueError, TypeError):
+            q, p = 0.0, 0.0
+        return s, d, act, q, p
+    elif isinstance(t, (list, tuple)) and len(t) >= 5:
+        s = str(t[0]).strip().upper() if t[0] else ""
+        d = str(t[1]).strip() if t[1] else ""
+        act = str(t[2]).strip().upper() if t[2] else ""
+        try:
+            q = float(t[3] or 0)
+            p = float(t[4] or 0)
+        except (ValueError, TypeError):
+            q, p = 0.0, 0.0
+        return s, d, act, q, p
+    return "", "", "", 0.0, 0.0
+
+
+def compute_portfolio_total_xirr(trades, live_value, valid_symbols=None):
+    """Computes overall portfolio XIRR across all matching trades and terminal portfolio value."""
+    cashflows, dates = [], []
+    valid_set = {s.strip().upper() for s in valid_symbols} if valid_symbols else None
+
+    for t in trades:
+        s, raw_d, act, qty, price = _extract_trade_fields(t)
+        if not s or qty <= 0 or price <= 0:
+            continue
+        if valid_set is not None and s not in valid_set:
+            continue
+
+        dt = None
+        for fmt in ["%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y", "%d-%b-%Y"]:
+            try:
+                dt = datetime.strptime(raw_d, fmt).date()
+                break
+            except (ValueError, TypeError):
+                pass
+        if not dt:
+            continue
+
+        if act == "BUY":
+            cashflows.append(-qty * price)
+            dates.append(dt)
+        elif act == "SELL":
+            cashflows.append(qty * price)
+            dates.append(dt)
+
+    if live_value and live_value > 0:
+        cashflows.append(live_value)
+        dates.append(date.today())
+
+    if len(cashflows) < 2:
+        return None
+    paired = sorted(zip(dates, cashflows))
+    dates_sorted = [d for d, _ in paired]
+    cash_sorted = [c for _, c in paired]
+    r = compute_xirr(cash_sorted, dates_sorted)
+    return round(r * 100, 2) if r else None
+
+
 def get_xirr(sym, trades, current_price):
     cashflows, dates, running_qty = [], [], 0.0
     sym_clean = sym.strip().upper() if sym else ""
     splits = corporate_actions.get_splits_for_symbol(sym_clean)
     applied_splits = set()
 
-    matching = [t for t in trades if t[0] and t[0].strip().upper() == sym_clean]
+    matching = []
+    for t in trades:
+        s, d, act, q, p = _extract_trade_fields(t)
+        if s == sym_clean:
+            matching.append((s, d, act, q, p))
+
     matching.sort(key=lambda t: _parse_trade_date_iso(t[1]) if len(t) > 1 else "")
 
-    for t in matching:
+    for s, raw_d, typ, qty, price in matching:
         try:
-            raw = str(t[1]).strip()
+            raw = str(raw_d).strip()
             dt  = None
             for fmt in ["%d-%m-%Y","%Y-%m-%d","%d/%m/%Y","%d-%b-%Y"]:
                 try: dt = datetime.strptime(raw, fmt).date(); break
@@ -228,9 +300,6 @@ def get_xirr(sym, trades, current_price):
                         running_qty = round(running_qty * ratio, 4)
                         applied_splits.add(s_date)
 
-            typ   = t[2].strip().upper()
-            qty   = float(t[3])
-            price = float(t[4])
             if typ == "BUY":
                 cashflows.append(-qty * price); dates.append(dt)
                 running_qty += qty
@@ -580,6 +649,21 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
         c["return_3m"] = t.get("return_3m", "")
         c["return_6m"] = t.get("return_6m", "")
         
+        # Buy 20% Less (% from 52W high)
+        pct_high = t.get("pct_high", "")
+        if pct_high is None or pct_high == "":
+            h52 = (fund_map.get(sym) or {}).get("high52") or t.get("high52")
+            if h52 and c.get("cmp"):
+                pct_high = round((c["cmp"] - h52) / h52 * 100, 2)
+            else:
+                pct_high = ""
+        c["buy_20_less"] = pct_high
+        c["pct_high"] = pct_high
+
+        # XIRR calculation per symbol
+        xirr_val = get_xirr(sym, trades, c["cmp"])
+        c["xirr"] = xirr_val if xirr_val is not None else ""
+        
         if sym in source_map and source_map[sym]:
             c["investment_source"] = source_map[sym].upper()
         elif fund_map.get(sym, {}).get("sector") == "ETFs" or "BEES" in sym.upper() or sym.upper().endswith("ETF") or sym.upper() in ("ICICIB22", "CPSEETF", "SETFNIF50", "GOLDBEES", "NIFTYBEES"):
@@ -623,8 +707,11 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
             
         combined_rows.append(c)
 
+    valid_syms = {c["symbol"] for c in combined_rows}
+    portfolio_xirr = compute_portfolio_total_xirr(trades, portfolio_live_value_c, valid_symbols=valid_syms)
+
     # We return an empty list for groww and zerodha to avoid breaking unpacking downstream
-    return {"groww": [], "zerodha": [], "combined": combined_rows}
+    return {"groww": [], "zerodha": [], "combined": combined_rows, "portfolio_xirr": portfolio_xirr}
 
 
 def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
@@ -632,9 +719,11 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     col_keys = {
         "Investment Source": "investment_source",
         "Shares": "shares", "Avg Buy": "avg_buy", "CMP": "cmp",
+        "Buy 20% Less": "buy_20_less",
         "Day Chg%": "day_chg_pct", "1W Return %": "return_1w",
         "1M Return %": "return_1m", "3M Return %": "return_3m", "6M Return %": "return_6m",
         "Invested": "invested", "Value": "value", "P&L": "pnl",
+        "XIRR": "xirr",
         "Return %": "return_pct", "Wt %": "wt_pct",
         "Stop Loss": "sl_price", "Target": "target", "Buy More@": "buy_more", "Signal": "signal"
     }
@@ -666,12 +755,14 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     tot_val = sum(r["value"] for r in combined_rows)
     tot_pnl = round(tot_val - tot_inv, 2)
     tot_ret = round((tot_pnl / tot_inv) * 100, 2) if tot_inv else 0
+    tot_xirr = portfolio_dict.get("portfolio_xirr")
     
     subtotal_row = [""] * len(headers)
     subtotal_row[SYMBOL_COL] = "WIFE PORTFOLIO TOTAL" if "wife" in tab_name.lower() else "COMBINED TOTAL"
     if "Invested" in headers: subtotal_row[headers.index("Invested")] = round(tot_inv, 2)
     if "Value" in headers: subtotal_row[headers.index("Value")] = round(tot_val, 2)
     if "P&L" in headers: subtotal_row[headers.index("P&L")] = tot_pnl
+    if "XIRR" in headers and tot_xirr is not None: subtotal_row[headers.index("XIRR")] = tot_xirr
     if "Return %" in headers: subtotal_row[headers.index("Return %")] = tot_ret
     all_data.append(subtotal_row)
 
@@ -689,8 +780,9 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     nc = len(headers)
     width_map = {
         "Symbol": 100, "Investment Source": 120, "Shares": 55, "Avg Buy": 70, "CMP": 65,
+        "Buy 20% Less": 75,
         "Day Chg%": 55, "1W Return %": 65, "1M Return %": 65, "3M Return %": 65, "6M Return %": 65,
-        "Invested": 85, "Value": 85, "P&L": 80, "Return %": 65, "Wt %": 55,
+        "Invested": 85, "Value": 85, "P&L": 80, "XIRR": 65, "Return %": 65, "Wt %": 55,
         "Stop Loss": 70, "Target": 70, "Buy More@": 70, "Signal": 110
     }
     widths = [width_map.get(h, 70) for h in headers]
@@ -704,7 +796,10 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
             col_idx = headers.index(col_name)
             reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, len(all_data), col_idx, col_idx + 1)
 
-    pct_cols = ["Day Chg%", "1W Return %", "1M Return %", "3M Return %", "6M Return %", "Return %", "Wt %"]
+    pct_cols = [
+        "Buy 20% Less", "Day Chg%", "1W Return %", "1M Return %", "3M Return %", "6M Return %",
+        "XIRR", "Return %", "Wt %"
+    ]
     for col_name in pct_cols:
         if col_name in headers:
             col_idx = headers.index(col_name)
@@ -732,6 +827,18 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
                     reqs.append(sheet_formatter.color_cell_req(ws.id, rn, pnl_idx, "d9ead3", "0b8043", bold=True))
                 elif pnl_v < 0:
                     reqs.append(sheet_formatter.color_cell_req(ws.id, rn, pnl_idx, "fde9d9", "c62828", bold=True))
+            except (ValueError, TypeError):
+                pass
+
+        # Color XIRR with canonical green/red
+        if "XIRR" in headers:
+            xirr_idx = headers.index("XIRR")
+            try:
+                xirr_v = float(str(row[xirr_idx]).replace("%", "").replace(",", "").strip())
+                if xirr_v > 0:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, xirr_idx, "d9ead3", "0b8043", bold=True))
+                elif xirr_v < 0:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, xirr_idx, "fde9d9", "c62828", bold=True))
             except (ValueError, TypeError):
                 pass
 
@@ -778,6 +885,19 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
                 except (ValueError, TypeError):
                     pass
 
+        # Color Buy 20% Less (% from 52W high)
+        if "Buy 20% Less" in headers:
+            b20_idx = headers.index("Buy 20% Less")
+            val_raw = row[b20_idx] if b20_idx < len(row) else ""
+            try:
+                val_f = float(str(val_raw).replace("%", "").replace(",", "").strip())
+                if val_f >= -20:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, b20_idx, "d9ead3", "0b8043", bold=False))
+                else:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, b20_idx, "fde9d9", "c62828", bold=False))
+            except (ValueError, TypeError):
+                pass
+
     # Color section header rows as dark blue banners
     for h_idx in header_indices:
         reqs.append({
@@ -804,7 +924,11 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
             
     for s_idx in subtotal_indices:
         for col in range(nc):
-            if col in [headers.index("P&L") if "P&L" in headers else -1, headers.index("Return %") if "Return %" in headers else -1]:
+            if col in [
+                headers.index("P&L") if "P&L" in headers else -1,
+                headers.index("XIRR") if "XIRR" in headers else -1,
+                headers.index("Return %") if "Return %" in headers else -1
+            ]:
                 try:
                     val = float(str(all_data[s_idx][col]).replace("₹", "").replace("%", "").replace(",", "").strip()) if all_data[s_idx][col] else 0.0
                     bg = "d9ead3" if val > 0 else "fde9d9" if val < 0 else "f1f1f1"

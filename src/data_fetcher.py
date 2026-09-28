@@ -158,6 +158,11 @@ def fetch_technicals(sym, retries=3):
                 if p126 > 0:
                     return_6m = round((cmp / p126 - 1) * 100, 2)
 
+            # 52W High & Buy 20% Less (% from 52W high)
+            high = df["High"].squeeze().dropna() if "High" in df else close
+            high52 = round(float(high.max()), 2) if not high.empty else None
+            pct_high = round((cmp - high52) / high52 * 100, 2) if (high52 and high52 > 0) else ""
+
             # Domestic Beta vs NIFTY 50
             nifty_history = get_nifty_history()
             beta_nifty = compute_nifty_beta(close, nifty_history) if nifty_history is not None else None
@@ -167,6 +172,8 @@ def fetch_technicals(sym, retries=3):
                 "sma200": sma200 or "", "ema20": ema20 or "",
                 "vol_spike": vol_spike, "trend": trend,
                 "cross": cross, "cmp_tech": cmp,
+                "high52": high52,
+                "pct_high": pct_high,
                 "day_chg_pct": day_chg_pct,
                 "return_1w": return_1w,
                 "return_1m": return_1m,
