@@ -20,7 +20,9 @@ name: Morning Buying Zone Update
 
 on:
   schedule:
-    # 04:15 UTC = 09:45 AM IST, Monday–Friday (off-peak minute to ensure on-time trigger)
+    # 03:45 UTC = 09:15 AM IST (NSE market opening)
+    - cron: '45 3 * * 1-5'
+    # 04:15 UTC = 09:45 AM IST (Target window)
     - cron: '15 4 * * 1-5'
   workflow_dispatch:
     inputs:
@@ -29,6 +31,8 @@ on:
         required: false
         default: false
         type: boolean
+  repository_dispatch:
+    types: [morning_update]
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

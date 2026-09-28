@@ -237,10 +237,26 @@ def main():
         log.error(f"[Morning] Failed to connect or read GITHUB DATA sheet: {e}")
         sys.exit(1)
 
-    # 2. Daily idempotency check
+    # 2. Daily idempotency & Morning Window check
     ist = timezone(timedelta(hours=5, minutes=30))
-    today_ist_str = datetime.now(ist).strftime("%Y-%m-%d")
+    now_ist = datetime.now(ist)
+    today_ist_str = now_ist.strftime("%Y-%m-%d")
+
+    # Safeguard against heavily delayed GitHub Actions runners:
+    # Morning Buying Zone is strictly designed for the morning market window (09:15 - 12:00 PM IST).
+    # If GitHub Actions scheduler queue delayed the execution past 12:00 PM IST, abort the run
+    # (unless --force is passed) to avoid blasting stale morning alerts in the afternoon or evening.
     if not args.dry_run and not args.force:
+        cutoff_time = now_ist.replace(hour=12, minute=0, second=0, microsecond=0)
+        if now_ist >= cutoff_time:
+            log.warning(
+                f"[Morning] Current time is {now_ist.strftime('%I:%M %p IST')}. "
+                f"Morning window (before 12:00 PM IST) has expired due to schedule queue delay. "
+                f"Aborting run to prevent sending stale morning alert in the afternoon/evening."
+            )
+            log_timing("workflow completed (expired morning window)")
+            return
+
         last_date = get_last_morning_date(sh)
         if last_date == today_ist_str:
             log.info(f"[Morning] Today's morning update ({today_ist_str}) has already been delivered. Skipping duplicate run.")
