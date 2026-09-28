@@ -158,6 +158,13 @@ def fetch_technicals(sym, retries=3):
                 if p126 > 0:
                     return_6m = round((cmp / p126 - 1) * 100, 2)
 
+            # 12 Months Return % (numeric float, approx 252 trading sessions ago, or start of 1y history)
+            return_12m = ""
+            if len(close) >= 200:
+                p_start = float(close.iloc[-252]) if len(close) >= 252 else float(close.iloc[0])
+                if p_start > 0:
+                    return_12m = round((cmp / p_start - 1) * 100, 2)
+
             # 52W High & Buy 20% Less (% from 52W high)
             high = df["High"].squeeze().dropna() if "High" in df else close
             high52 = round(float(high.max()), 2) if not high.empty else None
@@ -179,6 +186,7 @@ def fetch_technicals(sym, retries=3):
                 "return_1m": return_1m,
                 "return_3m": return_3m,
                 "return_6m": return_6m,
+                "return_12m": return_12m,
                 "beta_nifty": beta_nifty,
             }
         except Exception as e:

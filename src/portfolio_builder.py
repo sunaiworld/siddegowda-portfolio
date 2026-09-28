@@ -466,6 +466,8 @@ def load_all_trades(imports_dir="data/imports"):
             "_zerodha_importer", os.path.join(zerodha_dir, "import_zerodha.py")
         )
         for path in sorted(glob.glob(os.path.join(zerodha_dir, "*.csv"))):
+            if "-MF_" in os.path.basename(path) or "_MF" in os.path.basename(path):
+                continue
             try:
                 trades.extend(zerodha_mod.import_zerodha(path))
             except Exception as e:
@@ -476,6 +478,8 @@ def load_all_trades(imports_dir="data/imports"):
             "_groww_importer", os.path.join(groww_dir, "import_groww.py")
         )
         for path in sorted(glob.glob(os.path.join(groww_dir, "*.xlsx"))):
+            if "Mutual_Funds" in os.path.basename(path) or "MF" in os.path.basename(path):
+                continue
             try:
                 trades.extend(groww_mod.import_groww(path))
             except Exception as e:
@@ -648,17 +652,8 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
         c["return_1m"] = t.get("return_1m", "")
         c["return_3m"] = t.get("return_3m", "")
         c["return_6m"] = t.get("return_6m", "")
-        
-        # Buy 20% Less (% from 52W high)
-        pct_high = t.get("pct_high", "")
-        if pct_high is None or pct_high == "":
-            h52 = (fund_map.get(sym) or {}).get("high52") or t.get("high52")
-            if h52 and c.get("cmp"):
-                pct_high = round((c["cmp"] - h52) / h52 * 100, 2)
-            else:
-                pct_high = ""
-        c["buy_20_less"] = pct_high
-        c["pct_high"] = pct_high
+        c["return_12m"] = t.get("return_12m", "")
+        c["12_months"] = c["return_12m"]
 
         # XIRR calculation per symbol
         xirr_val = get_xirr(sym, trades, c["cmp"])
@@ -719,9 +714,9 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     col_keys = {
         "Investment Source": "investment_source",
         "Shares": "shares", "Avg Buy": "avg_buy", "CMP": "cmp",
-        "Buy 20% Less": "buy_20_less",
         "Day Chg%": "day_chg_pct", "1W Return %": "return_1w",
         "1M Return %": "return_1m", "3M Return %": "return_3m", "6M Return %": "return_6m",
+        "12 Months": "return_12m",
         "Invested": "invested", "Value": "value", "P&L": "pnl",
         "XIRR": "xirr",
         "Return %": "return_pct", "Wt %": "wt_pct",
@@ -780,8 +775,8 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     nc = len(headers)
     width_map = {
         "Symbol": 100, "Investment Source": 120, "Shares": 55, "Avg Buy": 70, "CMP": 65,
-        "Buy 20% Less": 75,
         "Day Chg%": 55, "1W Return %": 65, "1M Return %": 65, "3M Return %": 65, "6M Return %": 65,
+        "12 Months": 65,
         "Invested": 85, "Value": 85, "P&L": 80, "XIRR": 65, "Return %": 65, "Wt %": 55,
         "Stop Loss": 70, "Target": 70, "Buy More@": 70, "Signal": 110
     }
@@ -797,7 +792,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
             reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, len(all_data), col_idx, col_idx + 1)
 
     pct_cols = [
-        "Buy 20% Less", "Day Chg%", "1W Return %", "1M Return %", "3M Return %", "6M Return %",
+        "Day Chg%", "1W Return %", "1M Return %", "3M Return %", "6M Return %", "12 Months",
         "XIRR", "Return %", "Wt %"
     ]
     for col_name in pct_cols:
@@ -885,16 +880,18 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
                 except (ValueError, TypeError):
                     pass
 
-        # Color Buy 20% Less (% from 52W high)
-        if "Buy 20% Less" in headers:
-            b20_idx = headers.index("Buy 20% Less")
-            val_raw = row[b20_idx] if b20_idx < len(row) else ""
+        # Color 12 Months with canonical return palette and BOLD text
+        if "12 Months" in headers:
+            m12_idx = headers.index("12 Months")
+            val_raw = row[m12_idx] if m12_idx < len(row) else ""
             try:
                 val_f = float(str(val_raw).replace("%", "").replace(",", "").strip())
-                if val_f >= -20:
-                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, b20_idx, "d9ead3", "0b8043", bold=False))
+                if val_f > 0:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, m12_idx, "d9ead3", "0b8043", bold=True))
+                elif val_f < 0:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, m12_idx, "fde9d9", "c62828", bold=True))
                 else:
-                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, b20_idx, "fde9d9", "c62828", bold=False))
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, m12_idx, "f1f1f1", "666666", bold=True))
             except (ValueError, TypeError):
                 pass
 
