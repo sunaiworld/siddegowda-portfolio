@@ -410,8 +410,7 @@ def main():
     log_timing("Telegram send start")
     success = send_telegram_morning_update(records, nifty_val, nifty_pct)
     if not success:
-        log.error("[Morning] Telegram update delivery failed! Exiting with status code 1.")
-        sys.exit(1)
+        log.warning("[Morning] Telegram update delivery failed! Continuing to update Google Sheet anyway.")
     log_timing("Telegram send completed")
 
     # Mark today's update as delivered to prevent duplicate alerts from subsequent cron schedules

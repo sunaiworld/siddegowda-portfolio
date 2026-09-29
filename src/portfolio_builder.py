@@ -637,7 +637,12 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
 
     combined_rows = []
     portfolio_live_value_c = sum(c["value"] for c in combined_dict.values())
-    
+
+    # Convert trades to legacy row format for XIRR calculation
+    # (get_xirr/compute_xirr expect [symbol, date, type, qty, price] list rows,
+    # but trades from load_all_trades() are master-schema dicts)
+    legacy_trades = trades_to_legacy_rows(trades)
+
     for sym, c in combined_dict.items():
         if c["shares"] <= 0: continue
         c["avg_buy"] = round(c["invested"] / c["shares"], 2)
@@ -655,9 +660,12 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
         c["return_12m"] = t.get("return_12m", "")
         c["12_months"] = c["return_12m"]
 
-        # XIRR calculation per symbol
-        xirr_val = get_xirr(sym, trades, c["cmp"])
-        c["xirr"] = xirr_val if xirr_val is not None else ""
+        # XIRR calculation per symbol (using legacy row format for get_xirr compatibility)
+        try:
+            xirr_val = get_xirr(sym, legacy_trades, c["cmp"])
+            c["xirr"] = xirr_val if xirr_val is not None else ""
+        except Exception:
+            c["xirr"] = ""
         
         if sym in source_map and source_map[sym]:
             c["investment_source"] = source_map[sym].upper()

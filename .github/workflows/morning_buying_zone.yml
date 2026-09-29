@@ -24,6 +24,10 @@ on:
     - cron: '45 3 * * 1-5'
     # 04:15 UTC = 09:45 AM IST (Target window)
     - cron: '15 4 * * 1-5'
+    # 05:30 UTC = 11:00 AM IST (Retry-1: safety net for GH Actions delays)
+    - cron: '30 5 * * 1-5'
+    # 06:45 UTC = 12:15 PM IST (Retry-2: last resort for extreme delays)
+    - cron: '45 6 * * 1-5'
   workflow_dispatch:
     inputs:
       force:
