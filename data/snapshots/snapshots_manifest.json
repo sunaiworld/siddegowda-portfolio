@@ -6,5 +6,13 @@
     "future_buy_rows": 111,
     "github_data_csv": "snapshots/2026-08/github_data_snapshot.csv",
     "future_buy_csv": "snapshots/2026-08/future_buy_snapshot.csv"
+  },
+  "2026-09": {
+    "snapshot_date": "2026-09-30",
+    "recorded_at": "2026-09-30T18:13:56.384812",
+    "github_data_rows": 95,
+    "future_buy_rows": 136,
+    "github_data_csv": "snapshots/2026-09/github_data_snapshot.csv",
+    "future_buy_csv": "snapshots/2026-09/future_buy_snapshot.csv"
   }
 }
