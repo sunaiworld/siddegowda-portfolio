@@ -243,19 +243,22 @@ def main():
     today_ist_str = now_ist.strftime("%Y-%m-%d")
 
     # Safeguard against heavily delayed GitHub Actions runners:
-    # Morning Buying Zone is strictly designed for the morning market window (09:15 - 12:00 PM IST).
-    # If GitHub Actions scheduler queue delayed the execution past 12:00 PM IST, abort the run
-    # (unless --force is passed) to avoid blasting stale morning alerts in the afternoon or evening.
+    # Morning Buying Zone is designed for the morning market window (09:15 - 13:00 IST).
+    # Cutoff is 13:00 IST (07:30 UTC) — well after the last backup cron (06:00 UTC = 11:30 AM IST).
+    # If execution is delayed past 13:00 IST, fail loudly so the problem is visible in the
+    # GitHub Actions UI rather than silently returning success.
+    # (--force bypasses this check for manual reruns.)
     if not args.dry_run and not args.force:
-        cutoff_time = now_ist.replace(hour=12, minute=0, second=0, microsecond=0)
+        cutoff_time = now_ist.replace(hour=13, minute=0, second=0, microsecond=0)
         if now_ist >= cutoff_time:
-            log.warning(
+            log.error(
                 f"[Morning] Current time is {now_ist.strftime('%I:%M %p IST')}. "
-                f"Morning window (before 12:00 PM IST) has expired due to schedule queue delay. "
-                f"Aborting run to prevent sending stale morning alert in the afternoon/evening."
+                f"Morning window (before 13:00 IST) has expired due to schedule queue delay. "
+                f"Aborting run to prevent sending stale morning alert in the afternoon/evening. "
+                f"Use --force to override."
             )
-            log_timing("workflow completed (expired morning window)")
-            return
+            log_timing("workflow FAILED (expired morning window)")
+            sys.exit(1)  # Fail loudly so GitHub Actions marks this run as failed
 
         last_date = get_last_morning_date(sh)
         if last_date == today_ist_str:

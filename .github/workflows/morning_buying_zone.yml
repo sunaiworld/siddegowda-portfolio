@@ -8,26 +8,34 @@ name: Morning Buying Zone Update
 # TIMEZONE CONVERSION:
 #   GitHub Actions schedule cron is strictly evaluated in UTC.
 #   IST = UTC + 5:30 (India Standard Time has no Daylight Saving Time).
-#   Target 09:45–10:00 AM IST: 04:15 UTC.
-#   Cron expression: '15 4 * * 1-5' (04:15 UTC = 09:45 AM IST).
-#   Note: Off-peak minute :15 is used to bypass GitHub Actions schedule queue delays (which affect :00 and :30).
+#   10:00 AM IST = 04:30 UTC.
+#   Off-peak minutes (:30, :15, :00) are used to avoid GitHub Actions queue bursts.
+#
+# SCHEDULE:
+#   PRIMARY  : 04:30 UTC = 10:00 AM IST
+#   BACKUP-1 : 05:15 UTC = 10:45 AM IST  (safety net for GH Actions scheduler delays)
+#   BACKUP-2 : 06:00 UTC = 11:30 AM IST  (last resort; still before 13:00 IST cutoff)
+#
+# NOTE: All three triggers are comfortably before the 13:00 IST cutoff in the Python
+# script. The old 06:45 UTC (12:15 PM IST) backup was structurally broken — it triggered
+# AFTER the 12:00 PM IST cutoff that was hardcoded in morning_buying_zone.py, so it
+# was always silently aborted. That bug is now fixed (cutoff moved to 13:00 IST).
 #
 # IDEMPOTENCY:
 #   morning_buying_zone.py tracks today's date in IST (YYYY-MM-DD) in the
 #   Google Sheet 'Bot State' tab (cell B1).
 #   Ensures exactly ONE Telegram update and sheet write per trading day.
+#   Duplicate triggers (backup crons) safely skip if already delivered today.
 # ─────────────────────────────────────────────────────────────────────────────
 
 on:
   schedule:
-    # 03:45 UTC = 09:15 AM IST (NSE market opening)
-    - cron: '45 3 * * 1-5'
-    # 04:15 UTC = 09:45 AM IST (Target window)
-    - cron: '15 4 * * 1-5'
-    # 05:30 UTC = 11:00 AM IST (Retry-1: safety net for GH Actions delays)
-    - cron: '30 5 * * 1-5'
-    # 06:45 UTC = 12:15 PM IST (Retry-2: last resort for extreme delays)
-    - cron: '45 6 * * 1-5'
+    # 04:30 UTC = 10:00 AM IST  ← PRIMARY target trigger
+    - cron: '30 4 * * 1-5'
+    # 05:15 UTC = 10:45 AM IST  ← BACKUP-1: covers GH Actions scheduler delays up to 45 min
+    - cron: '15 5 * * 1-5'
+    # 06:00 UTC = 11:30 AM IST  ← BACKUP-2: last resort (still 90 min before 13:00 IST cutoff)
+    - cron: '0 6 * * 1-5'
   workflow_dispatch:
     inputs:
       force:
@@ -50,26 +58,35 @@ jobs:
     steps:
     - name: Log Trigger Timing
       run: |
-        echo "========================================"
+        echo "========================================================"
         echo "  MORNING BUYING ZONE — TIMING AUDIT"
-        echo "========================================"
+        echo "========================================================"
         echo "Trigger event  : ${{ github.event_name }}"
         echo "Workflow run # : ${{ github.run_number }}"
         echo "Runner UTC     : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
         echo "Runner IST     : $(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S IST')"
         echo ""
-        echo "Expected trigger: 04:30 UTC = 10:00 AM IST"
+        echo "Scheduled triggers:"
+        echo "  PRIMARY  : 04:30 UTC = 10:00 AM IST"
+        echo "  BACKUP-1 : 05:15 UTC = 10:45 AM IST"
+        echo "  BACKUP-2 : 06:00 UTC = 11:30 AM IST"
+        echo "  Cutoff   : 13:00 IST  (07:30 UTC)"
+        echo ""
         echo "Actual UTC time : $(date -u '+%H:%M:%S UTC')"
         echo "Actual IST time : $(TZ='Asia/Kolkata' date '+%H:%M:%S IST')"
         python3 -c "
         from datetime import datetime, timezone, timedelta
+        IST = timezone(timedelta(hours=5, minutes=30))
         now_utc = datetime.now(timezone.utc)
-        target_today_utc = now_utc.replace(hour=4, minute=30, second=0, microsecond=0)
-        diff_sec = (now_utc - target_today_utc).total_seconds()
-        diff_min = round(diff_sec / 60, 1)
-        print(f'Timing Offset   : {diff_min:+0.1f} minutes from scheduled 04:30 UTC (10:00 AM IST)')
+        now_ist = now_utc.astimezone(IST)
+        target_utc = now_utc.replace(hour=4, minute=30, second=0, microsecond=0)
+        diff_min = round((now_utc - target_utc).total_seconds() / 60, 1)
+        print(f'Timing Offset   : {diff_min:+0.1f} min from primary trigger 04:30 UTC (10:00 AM IST)')
+        cutoff_ist = now_ist.replace(hour=13, minute=0, second=0, microsecond=0)
+        remaining = round((cutoff_ist - now_ist).total_seconds() / 60, 0)
+        print(f'Window remaining: {remaining:.0f} min until 13:00 IST cutoff')
         " || true
-        echo "========================================"
+        echo "========================================================"
 
     - name: Checkout Repository
       uses: actions/checkout@v4.2.2
@@ -101,7 +118,7 @@ jobs:
     - name: Log Completion Timing
       if: always()
       run: |
-        echo "========================================"
+        echo "========================================================"
         echo "Completed UTC : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
         echo "Completed IST : $(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S IST')"
-        echo "========================================"
+        echo "========================================================"
