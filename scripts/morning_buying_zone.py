@@ -13,6 +13,7 @@ Runs at 10:00 AM IST via GitHub Actions.
 
 import sys
 import os
+import time
 import argparse
 import logging
 import html
@@ -194,15 +195,26 @@ def get_last_morning_date(sh):
         log.warning(f"[Morning] Could not read Bot State B1: {e}")
         return ""
 
-def set_last_morning_date(sh, date_str):
-    try:
+def set_last_morning_date(sh, date_str, retries=3):
+    """
+    Records today's completion date in 'Bot State' tab (cell B1).
+    Returns True on success, False if all retries fail.
+    """
+    for attempt in range(retries):
         try:
-            ws = sh.worksheet("Bot State")
-        except Exception:
-            ws = sh.add_worksheet("Bot State", rows=2, cols=4)
-        ws.update_acell("B1", date_str)
-    except Exception as e:
-        log.warning(f"[Morning] Could not update Bot State B1: {e}")
+            try:
+                ws = sh.worksheet("Bot State")
+            except Exception:
+                ws = sh.add_worksheet("Bot State", rows=2, cols=4)
+            ws.update_acell("B1", date_str)
+            log.info(f"[Morning] Bot State B1 marked as completed for date {date_str}")
+            return True
+        except Exception as e:
+            wait = (attempt + 1) * 5
+            log.warning(f"[Morning] Attempt {attempt + 1}/{retries} to update Bot State B1 failed: {e}. Retrying in {wait}s...")
+            time.sleep(wait)
+    log.error(f"[Morning] Failed to update Bot State B1 after {retries} attempts.")
+    return False
 
 def main():
     parser = argparse.ArgumentParser(description="Morning Buying Zone Update")
@@ -402,24 +414,8 @@ def main():
         log_timing("workflow completed (dry-run)")
         return
 
-    # Build records array directly from updated_rows in memory
-    log.info("[Morning] Preparing Morning Buying Zone summary from computed memory rows")
-    records = []
-    headers = [GITHUB_DATA_HEADER_NAMES.get(k, k) for k in GITHUB_DATA_COLS.keys()]
-    for r in updated_rows:
-        records.append({headers[i]: r[i] for i in range(min(len(r), len(headers)))})
-
-    # Send Telegram message FIRST so user is never blocked by sheet formatting failures
-    log_timing("Telegram send start")
-    success = send_telegram_morning_update(records, nifty_val, nifty_pct)
-    if not success:
-        log.warning("[Morning] Telegram update delivery failed! Continuing to update Google Sheet anyway.")
-    log_timing("Telegram send completed")
-
-    # Mark today's update as delivered to prevent duplicate alerts from subsequent cron schedules
-    set_last_morning_date(sh, today_ist_str)
-
-    # Write updated values back to Google Sheet with retries
+    # 1. Write updated values back to Google Sheet FIRST with retries
+    # A run is considered "completed" ONLY after GITHUB DATA is successfully updated in Google Sheets.
     log_timing("Google Sheets write start")
     log.info("[Morning] Updating GITHUB DATA in Google Sheets")
     sheet_write_success = False
@@ -432,13 +428,32 @@ def main():
         except Exception as e:
             wait = (attempt + 1) * 15
             log.warning(f"[Morning] Google Sheet update attempt {attempt + 1}/3 failed: {e}. Retrying in {wait}s...")
-            import time
             time.sleep(wait)
 
     if not sheet_write_success:
         log.error("[Morning] Failed to update Google Sheets after 3 attempts. Exiting with error.")
+        # Note: B1 is NOT set, so backup cron schedules can safely retry the update.
         sys.exit(1)
     log_timing("Google Sheets write completed")
+
+    # 2. Build records array directly from updated_rows in memory and send Telegram alert
+    log.info("[Morning] Preparing Morning Buying Zone summary from computed memory rows")
+    records = []
+    headers = [GITHUB_DATA_HEADER_NAMES.get(k, k) for k in GITHUB_DATA_COLS.keys()]
+    for r in updated_rows:
+        records.append({headers[i]: r[i] for i in range(min(len(r), len(headers)))})
+
+    log_timing("Telegram send start")
+    telegram_success = send_telegram_morning_update(records, nifty_val, nifty_pct)
+    if not telegram_success:
+        log.warning("[Morning] Telegram update delivery failed! Continuing because Google Sheet was already updated.")
+    log_timing("Telegram send completed")
+
+    # 3. Mark today's update as delivered in Bot State (cell B1) ONLY AFTER Sheet update succeeded
+    state_saved = set_last_morning_date(sh, today_ist_str)
+    if not state_saved:
+        log.error("[Morning] Critical: Failed to record completion state in Bot State B1. Exiting with error so backup can retry.")
+        sys.exit(1)
 
     log_timing("workflow completed")
     log.info("[Morning] Completed successfully")
