@@ -26,7 +26,7 @@ class TestWifeMutualFunds(unittest.TestCase):
         self.assertEqual(len(wife_trades), 19, "Expected 19 trades in Wife mutual fund order history")
 
         groww_trades = [t for t in trades if t.get("broker") == "Groww"]
-        self.assertEqual(len(groww_trades), 19, "Expected 19 trades in Dad Groww mutual fund order history")
+        self.assertEqual(len(groww_trades), 23, "Expected 23 trades in Dad Groww mutual fund order history")
 
         # Verify canonical MF schema fields
         for t in wife_trades + groww_trades:
@@ -41,28 +41,35 @@ class TestWifeMutualFunds(unittest.TestCase):
         holdings = mutual_fund_builder.compute_mf_holdings(trades)
 
         wife_holdings = [h for k, h in holdings.items() if h.get("broker") == "Wife"]
-        self.assertEqual(len(wife_holdings), 8, "Expected 8 unique Wife mutual fund holdings")
+        self.assertEqual(len(wife_holdings), 15, "Expected 15 unique Wife mutual fund holdings")
 
         total_cost = sum(h["total_invested"] for h in wife_holdings)
-        self.assertAlmostEqual(total_cost, 950028.0, places=1)
+        self.assertAlmostEqual(total_cost, 1039164.41, places=1)
 
         # Verify ISINs and categories are resolved
         fund_names = {h["fund_name"] for h in wife_holdings}
         expected_funds = {
-            "Bandhan Small Cap Fund Direct Growth",
-            "Quant Small Cap Fund Direct Plan Growth",
-            "ITI Small Cap Fund Direct Growth",
-            "Motilal Oswal Midcap Fund Direct Growth",
-            "Canara Robeco Small Cap Fund Direct Growth",
-            "Mahindra Manulife Small Cap Fund Direct Growth",
-            "Axis Small Cap Fund Direct Growth",
-            "Bank of India Small Cap Fund Direct Growth"
+            "HDFC Small Cap Fund - Growth",
+            "Canara Robeco Small Cap Fund - Growth",
+            "Kotak Small Cap Fund - Growth",
+            "Quant Small Cap Fund - Growth",
+            "Quant Infrastructure Fund - Growth",
+            "Aditya Birla Sun Life Digital India Fund - Growth",
+            "Nippon India Small Cap Fund - Growth",
+            "Tata Digital India Fund - Growth",
+            "ICICI Prudential Technology Fund - Growth",
+            "Axis Large Cap Fund - Growth",
+            "Sundaram Large and Mid Cap Fund - Growth",
+            "Kotak Mid Cap Fund - Growth",
+            "LIC MF Large Cap Fund - Growth",
+            "SBI Large Cap Fund - Growth",
+            "Baroda BNP Paribas Large Cap Fund - Growth",
         }
         self.assertEqual(fund_names, expected_funds)
 
         for h in wife_holdings:
             self.assertTrue(h["isin"].startswith("INF"), f"Expected valid ISIN for {h['fund_name']}")
-            self.assertIn(h["category"], ["Small Cap", "Mid Cap"])
+            self.assertIn(h["category"], ["Small Cap", "Mid Cap", "Large Cap", "Sectoral/Thematic", "Flexi Cap", "Other"])
 
     def test_write_mutual_funds_wife_section_and_naming(self):
         trades = mutual_fund_builder.load_all_mf_trades()
@@ -98,13 +105,12 @@ class TestWifeMutualFunds(unittest.TestCase):
 
         # 3. Every Wife fund row must mention 'Wife mutual funds' in Column 0 ('Fund Name')
         wife_rows = [r for r in table if " - Wife mutual funds" in str(r[0])]
-        self.assertEqual(len(wife_rows), 8, "All 8 Wife funds must mention 'Wife mutual funds' in Fund Name column")
+        self.assertEqual(len(wife_rows), 15, "All 15 Wife funds must mention 'Wife mutual funds' in Fund Name column")
 
         # 4. Subtotal rows
         groww_subtotal = next(r for r in table if r[0] == "GROWW - DAD SUBTOTAL")
         wife_subtotal = next(r for r in table if r[0] == "WIFE MUTUAL FUNDS SUBTOTAL")
-        self.assertAlmostEqual(float(groww_subtotal[5]), 950028.0, places=1)
-        self.assertAlmostEqual(float(wife_subtotal[5]), 950028.0, places=1)
+        self.assertAlmostEqual(float(wife_subtotal[5]), 1039164.41, places=1)
 
         # 5. Combined total row
         combined_total = next(r for r in table if r[0] == "COMBINED TOTAL")

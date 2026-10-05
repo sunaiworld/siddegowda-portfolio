@@ -1104,5 +1104,82 @@
         "isin": ""
       }
     ]
+  },
+  "INF760K01JC6": {
+    "fund_name": "Canara Robeco Small Cap Fund - Direct Plan",
+    "yf_symbol": "0P0001FKEE.BO",
+    "updated_at": "2026-10-05T11:59:31.436866",
+    "holdings": [
+      {
+        "raw_symbol": "MCX.NS",
+        "clean_symbol": "MCX",
+        "name": "Multi Commodity Exchange of India Ltd",
+        "weight": 0.026847899,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "TBOTEK.NS",
+        "clean_symbol": "TBOTEK",
+        "name": "TBO Tek Ltd",
+        "weight": 0.0251879,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "RBLBANK.NS",
+        "clean_symbol": "RBLBANK",
+        "name": "RBL Bank Ltd",
+        "weight": 0.0239795,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "GLAND.NS",
+        "clean_symbol": "GLAND",
+        "name": "Gland Pharma Ltd",
+        "weight": 0.0239145,
+        "isin": "INE068V01023"
+      },
+      {
+        "raw_symbol": "ETERNAL.BO",
+        "clean_symbol": "ETERNAL",
+        "name": "Eternal Ltd",
+        "weight": 0.0238693,
+        "isin": "INE758T01015"
+      },
+      {
+        "raw_symbol": "PNBHOUSING.NS",
+        "clean_symbol": "PNBHOUSING",
+        "name": "PNB Housing Finance Ltd",
+        "weight": 0.023085,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "AMBER.NS",
+        "clean_symbol": "AMBER",
+        "name": "Amber Enterprises India Ltd Ordinary Shares",
+        "weight": 0.0224925,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "590003",
+        "clean_symbol": "590003",
+        "name": "Karur Vysya Bank Ltd",
+        "weight": 0.0222264,
+        "isin": ""
+      },
+      {
+        "raw_symbol": "CUB.NS",
+        "clean_symbol": "CUB",
+        "name": "City Union Bank Ltd",
+        "weight": 0.0206919,
+        "isin": "INE491A01021"
+      },
+      {
+        "raw_symbol": "AFFLE.BO",
+        "clean_symbol": "AFFLE",
+        "name": "Affle 3i Ltd",
+        "weight": 0.0196101,
+        "isin": "INE00WC01027"
+      }
+    ]
   }
 }
