@@ -73,6 +73,7 @@ class TestWifePortfolio(unittest.TestCase):
             self.assertIn("xirr", row)
             self.assertIn("return_pct", row)
             self.assertIn("wt_pct", row)
+            self.assertIn("not_gt_5pct", row)
             self.assertIn("return_12m", row)
             self.assertIn("buy_more", row)
             self.assertIn("signal", row)
@@ -118,6 +119,7 @@ class TestWifePortfolio(unittest.TestCase):
         # Row 0: PORTFOLIO_COLUMNS
         self.assertEqual(table_data[0], PORTFOLIO_COLUMNS)
         self.assertEqual(table_data[0].index("6M Return %") + 1, table_data[0].index("12 Months"))
+        self.assertEqual(table_data[0].index("Not > 5%") + 1, table_data[0].index("XIRR"))
         self.assertEqual(table_data[0].index("XIRR") + 1, table_data[0].index("Return %"))
         # Row 1: Banner title
         self.assertEqual(table_data[1][SYMBOL_COL], "WIFE PORTFOLIO - VIEW ONLY")

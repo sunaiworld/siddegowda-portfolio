@@ -649,6 +649,7 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
         c["pnl"] = round(c["value"] - c["invested"], 2)
         c["return_pct"] = round((c["pnl"] / c["invested"]) * 100, 2) if c["invested"] else 0
         c["wt_pct"] = round((c["value"] / portfolio_live_value_c) * 100, 2) if portfolio_live_value_c else 0
+        c["not_gt_5pct"] = "Purchase" if c["wt_pct"] <= 5.0 else ""
         
         # Momentum returns
         t = tech_map.get(sym) or {}
@@ -726,6 +727,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
         "1M Return %": "return_1m", "3M Return %": "return_3m", "6M Return %": "return_6m",
         "12 Months": "return_12m",
         "Invested": "invested", "Value": "value", "P&L": "pnl",
+        "Not > 5%": "not_gt_5pct",
         "XIRR": "xirr",
         "Return %": "return_pct", "Wt %": "wt_pct",
         "Stop Loss": "sl_price", "Target": "target", "Buy More@": "buy_more", "Signal": "signal"
@@ -765,6 +767,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     if "Invested" in headers: subtotal_row[headers.index("Invested")] = round(tot_inv, 2)
     if "Value" in headers: subtotal_row[headers.index("Value")] = round(tot_val, 2)
     if "P&L" in headers: subtotal_row[headers.index("P&L")] = tot_pnl
+    if "Not > 5%" in headers: subtotal_row[headers.index("Not > 5%")] = ""
     if "XIRR" in headers and tot_xirr is not None: subtotal_row[headers.index("XIRR")] = tot_xirr
     if "Return %" in headers: subtotal_row[headers.index("Return %")] = tot_ret
     all_data.append(subtotal_row)
@@ -785,7 +788,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
         "Symbol": 100, "Investment Source": 120, "Shares": 55, "Avg Buy": 70, "CMP": 65,
         "Day Chg%": 55, "1W Return %": 65, "1M Return %": 65, "3M Return %": 65, "6M Return %": 65,
         "12 Months": 65,
-        "Invested": 85, "Value": 85, "P&L": 80, "XIRR": 65, "Return %": 65, "Wt %": 55,
+        "Invested": 85, "Value": 85, "P&L": 80, "Not > 5%": 75, "XIRR": 65, "Return %": 65, "Wt %": 55,
         "Stop Loss": 70, "Target": 70, "Buy More@": 70, "Signal": 110
     }
     widths = [width_map.get(h, 70) for h in headers]
@@ -832,6 +835,12 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
                     reqs.append(sheet_formatter.color_cell_req(ws.id, rn, pnl_idx, "fde9d9", "c62828", bold=True))
             except (ValueError, TypeError):
                 pass
+
+        # Color Not > 5% badge
+        if "Not > 5%" in headers:
+            n5_idx = headers.index("Not > 5%")
+            if str(row[n5_idx]).strip() == "Purchase":
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, n5_idx, "c6efce", "276221", bold=True))
 
         # Color XIRR with canonical green/red
         if "XIRR" in headers:
