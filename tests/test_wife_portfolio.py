@@ -74,6 +74,7 @@ class TestWifePortfolio(unittest.TestCase):
             self.assertIn("return_pct", row)
             self.assertIn("wt_pct", row)
             self.assertIn("not_gt_5pct", row)
+            self.assertEqual(row["not_gt_5pct"], row["wt_pct"])
             self.assertIn("return_12m", row)
             self.assertIn("buy_more", row)
             self.assertIn("signal", row)

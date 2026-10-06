@@ -649,7 +649,7 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
         c["pnl"] = round(c["value"] - c["invested"], 2)
         c["return_pct"] = round((c["pnl"] / c["invested"]) * 100, 2) if c["invested"] else 0
         c["wt_pct"] = round((c["value"] / portfolio_live_value_c) * 100, 2) if portfolio_live_value_c else 0
-        c["not_gt_5pct"] = "Purchase" if c["wt_pct"] <= 5.0 else ""
+        c["not_gt_5pct"] = c["wt_pct"]
         
         # Momentum returns
         t = tech_map.get(sym) or {}
@@ -767,7 +767,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     if "Invested" in headers: subtotal_row[headers.index("Invested")] = round(tot_inv, 2)
     if "Value" in headers: subtotal_row[headers.index("Value")] = round(tot_val, 2)
     if "P&L" in headers: subtotal_row[headers.index("P&L")] = tot_pnl
-    if "Not > 5%" in headers: subtotal_row[headers.index("Not > 5%")] = ""
+    if "Not > 5%" in headers: subtotal_row[headers.index("Not > 5%")] = 100.0
     if "XIRR" in headers and tot_xirr is not None: subtotal_row[headers.index("XIRR")] = tot_xirr
     if "Return %" in headers: subtotal_row[headers.index("Return %")] = tot_ret
     all_data.append(subtotal_row)
@@ -804,7 +804,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
 
     pct_cols = [
         "Day Chg%", "1W Return %", "1M Return %", "3M Return %", "6M Return %", "12 Months",
-        "XIRR", "Return %", "Wt %"
+        "Not > 5%", "XIRR", "Return %", "Wt %"
     ]
     for col_name in pct_cols:
         if col_name in headers:
@@ -836,11 +836,15 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
             except (ValueError, TypeError):
                 pass
 
-        # Color Not > 5% badge
+        # Color Not > 5% warning (red if weight > 5%)
         if "Not > 5%" in headers:
             n5_idx = headers.index("Not > 5%")
-            if str(row[n5_idx]).strip() == "Purchase":
-                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, n5_idx, "c6efce", "276221", bold=True))
+            try:
+                n5_val = float(str(row[n5_idx]).replace("%", "").replace(",", "").strip())
+                if n5_val > 5.0:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, n5_idx, "fde9d9", "c62828", bold=True))
+            except (ValueError, TypeError):
+                pass
 
         # Color XIRR with canonical green/red
         if "XIRR" in headers:
