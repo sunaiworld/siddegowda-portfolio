@@ -408,6 +408,223 @@ def get_weight_gradient_rule(ws_id, start_row, end_row, col_idx):
     }
 
 
+def col_letter(col_idx):
+    """Converts 0-based column index to letter (0 -> 'A', 25 -> 'Z', 26 -> 'AA', etc.)"""
+    result = ""
+    col_idx += 1
+    while col_idx > 0:
+        col_idx, remainder = divmod(col_idx - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
+def get_continuous_green_to_red_rgb(val, min_val=0.1, max_val=5.0):
+    """
+    Interpolates smoothly from Green (at min_val=0.1) through Yellow (at midpoint 2.55)
+    to Red (at max_val=5.0).
+    0% or None/empty is treated sensibly as neutral (returns None, None).
+    Values > max_val return solid Red.
+    """
+    if val is None or val <= 0:
+        return None, None
+    if val > max_val:
+        return "fde9d9", "c62828"
+    
+    # Clamp between min_val and max_val
+    t = max(0.0, min(1.0, (val - min_val) / (max_val - min_val)))
+    # Green: #d9ead3 (217, 234, 211), Yellow: #fff2cc (255, 242, 204), Red: #fde9d9 (253, 233, 217)
+    if t < 0.5:
+        sub_t = t / 0.5
+        r = int(217 + (255 - 217) * sub_t)
+        g = int(234 + (242 - 234) * sub_t)
+        b = int(211 + (204 - 211) * sub_t)
+        fg = "0b8043" if t < 0.25 else "7f4f00"
+    else:
+        sub_t = (t - 0.5) / 0.5
+        r = int(255 + (253 - 255) * sub_t)
+        g = int(242 + (233 - 242) * sub_t)
+        b = int(204 + (217 - 204) * sub_t)
+        fg = "7f4f00" if t < 0.75 else "c62828"
+        
+    bg_hex = f"{r:02x}{g:02x}{b:02x}"
+    return bg_hex, fg
+
+
+def get_invested_value_cf_rules(ws_id, start_row, end_row, invested_col_idx, value_col_idx):
+    """
+    Returns Google Sheets addConditionalFormatRule requests for Invested and Value columns.
+    Compares Invested vs Value:
+    - If Value > Invested: Value = Green, Invested = Red
+    - If Invested > Value: Invested = Green, Value = Red
+    - If Equal: neutral
+    """
+    i_letter = col_letter(invested_col_idx)
+    v_letter = col_letter(value_col_idx)
+    first_row_num = start_row + 1
+    
+    green_bg = hex_rgb("d9ead3")
+    green_fg = hex_rgb("0b8043")
+    red_bg = hex_rgb("fde9d9")
+    red_fg = hex_rgb("c62828")
+    
+    return [
+        # Value column: Green when Value > Invested
+        {
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": [{"sheetId": ws_id, "startRowIndex": start_row, "endRowIndex": end_row, "startColumnIndex": value_col_idx, "endColumnIndex": value_col_idx + 1}],
+                    "booleanRule": {
+                        "condition": {
+                            "type": "CUSTOM_FORMULA",
+                            "values": [{"userEnteredValue": f"=AND(ISNUMBER({v_letter}{first_row_num}), ISNUMBER({i_letter}{first_row_num}), {v_letter}{first_row_num}>{i_letter}{first_row_num})"}]
+                        },
+                        "format": {"backgroundColor": green_bg, "textFormat": {"foregroundColor": green_fg}}
+                    }
+                },
+                "index": 0
+            }
+        },
+        # Value column: Red when Value < Invested
+        {
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": [{"sheetId": ws_id, "startRowIndex": start_row, "endRowIndex": end_row, "startColumnIndex": value_col_idx, "endColumnIndex": value_col_idx + 1}],
+                    "booleanRule": {
+                        "condition": {
+                            "type": "CUSTOM_FORMULA",
+                            "values": [{"userEnteredValue": f"=AND(ISNUMBER({v_letter}{first_row_num}), ISNUMBER({i_letter}{first_row_num}), {v_letter}{first_row_num}<{i_letter}{first_row_num})"}]
+                        },
+                        "format": {"backgroundColor": red_bg, "textFormat": {"foregroundColor": red_fg}}
+                    }
+                },
+                "index": 1
+            }
+        },
+        # Invested column: Green when Invested > Value
+        {
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": [{"sheetId": ws_id, "startRowIndex": start_row, "endRowIndex": end_row, "startColumnIndex": invested_col_idx, "endColumnIndex": invested_col_idx + 1}],
+                    "booleanRule": {
+                        "condition": {
+                            "type": "CUSTOM_FORMULA",
+                            "values": [{"userEnteredValue": f"=AND(ISNUMBER({i_letter}{first_row_num}), ISNUMBER({v_letter}{first_row_num}), {i_letter}{first_row_num}>{v_letter}{first_row_num})"}]
+                        },
+                        "format": {"backgroundColor": green_bg, "textFormat": {"foregroundColor": green_fg}}
+                    }
+                },
+                "index": 2
+            }
+        },
+        # Invested column: Red when Invested < Value
+        {
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": [{"sheetId": ws_id, "startRowIndex": start_row, "endRowIndex": end_row, "startColumnIndex": invested_col_idx, "endColumnIndex": invested_col_idx + 1}],
+                    "booleanRule": {
+                        "condition": {
+                            "type": "CUSTOM_FORMULA",
+                            "values": [{"userEnteredValue": f"=AND(ISNUMBER({i_letter}{first_row_num}), ISNUMBER({v_letter}{first_row_num}), {i_letter}{first_row_num}<{v_letter}{first_row_num})"}]
+                        },
+                        "format": {"backgroundColor": red_bg, "textFormat": {"foregroundColor": red_fg}}
+                    }
+                },
+                "index": 3
+            }
+        }
+    ]
+
+
+def get_not_gt_5pct_gradient_rules(ws_id, start_row, end_row, col_idx):
+    """
+    Returns Google Sheets conditional format rules for Not > 5%:
+    - Blank or <= 0: Neutral / default (not green)
+    - > 5.0%: Bold Red clearly indicating >5%
+    - 0.1% to 5.0%: Continuous colour scale from Green (0.1%) to Red (5.0%)
+    """
+    rng = [{"sheetId": ws_id, "startRowIndex": start_row, "endRowIndex": end_row, "startColumnIndex": col_idx, "endColumnIndex": col_idx + 1}]
+    white_bg = {"red": 1.0, "green": 1.0, "blue": 1.0}
+    red_bg = hex_rgb("fde9d9")
+    red_fg = hex_rgb("c62828")
+    
+    return [
+        # 1. Blank cells neutral
+        {
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": rng,
+                    "booleanRule": {
+                        "condition": {"type": "BLANK"},
+                        "format": {"backgroundColor": white_bg}
+                    }
+                },
+                "index": 0
+            }
+        },
+        # 2. Cells <= 0 neutral (not green)
+        {
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": rng,
+                    "booleanRule": {
+                        "condition": {
+                            "type": "NUMBER_LESS_THAN_EQ",
+                            "values": [{"userEnteredValue": "0"}]
+                        },
+                        "format": {"backgroundColor": white_bg}
+                    }
+                },
+                "index": 1
+            }
+        },
+        # 3. Cells > 5 clearly indicate >5% in red
+        {
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": rng,
+                    "booleanRule": {
+                        "condition": {
+                            "type": "NUMBER_GREATER",
+                            "values": [{"userEnteredValue": "5"}]
+                        },
+                        "format": {
+                            "backgroundColor": red_bg,
+                            "textFormat": {"bold": True, "foregroundColor": red_fg}
+                        }
+                    }
+                },
+                "index": 2
+            }
+        },
+        # 4. Continuous colour scale from 0.1% (Green) to 5.0% (Red)
+        {
+            "addConditionalFormatRule": {
+                "rule": {
+                    "ranges": rng,
+                    "gradientRule": {
+                        "minpoint": {
+                            "color": {"red": 0.34, "green": 0.73, "blue": 0.54},
+                            "type": "NUMBER",
+                            "value": "0.1"
+                        },
+                        "midpoint": {
+                            "color": {"red": 1.0, "green": 0.88, "blue": 0.51},
+                            "type": "NUMBER",
+                            "value": "2.55"
+                        },
+                        "maxpoint": {
+                            "color": {"red": 0.90, "green": 0.49, "blue": 0.45},
+                            "type": "NUMBER",
+                            "value": "5"
+                        }
+                    }
+                },
+                "index": 3
+            }
+        }
+    ]
+
+
 def get_mcap_category(mcap_val):
     """
     Classifies a company's market cap into 'Large Cap', 'Mid Cap', or 'Small Cap'.

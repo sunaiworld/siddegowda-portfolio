@@ -6,7 +6,7 @@ from data/imports/ (Zerodha and Groww imports via load_all_trades), excluding sm
 
 Applies the canonical table structure, column layout, number formatting,
 and visual styling:
-- Symbol, Investment Source, Shares, Avg Buy, CMP, Day Chg%, 1W/1M/3M/6M Return %,
+- Symbol, Shares, Avg Buy, CMP, Day Chg%, 1W/1M/3M/6M Return %,
   12 Months, Invested, Value, P&L, XIRR, Return %, Wt %, Stop Loss, Target, Buy More@, Signal.
 - Currency and percentage number formatting.
 - Canonical cell colorings: Stop Loss, Target, Buy More@, P&L, Return %, Signals, 12 Months.
@@ -85,16 +85,16 @@ def update_portfolio(dry_run=False):
 
     if dry_run:
         print("\n=== DRY RUN: PORTFOLIO ROWS ===")
-        header = f"{'Symbol':<14} {'Source':<10} {'Shares':>8} {'Avg Buy':>10} {'CMP':>10} {'12 Months':>11} {'Invested':>12} {'Value':>12} {'P&L':>10} {'XIRR':>9} {'Return %':>9} {'Signal':<12}"
+        header = f"{'Symbol':<14} {'Shares':>8} {'Avg Buy':>10} {'CMP':>10} {'12 Months':>11} {'Invested':>12} {'Value':>12} {'P&L':>10} {'XIRR':>9} {'Return %':>9} {'Signal':<12}"
         print(header)
         print("-" * len(header))
         for r in combined_rows:
             m12_str = f"{r.get('return_12m', '')}%" if r.get('return_12m', '') != "" else ""
             xirr_str = f"{r.get('xirr', '')}%" if r.get('xirr', '') != "" else ""
-            print(f"{r['symbol']:<14} {r.get('investment_source',''):<10} {r['shares']:>8.1f} {r['avg_buy']:>10.2f} {r['cmp']:>10.2f} {m12_str:>11} {r['invested']:>12.2f} {r['value']:>12.2f} {r['pnl']:>10.2f} {xirr_str:>9} {r['return_pct']:>8.2f}% {r.get('signal',''):<12}")
+            print(f"{r['symbol']:<14} {r['shares']:>8.1f} {r['avg_buy']:>10.2f} {r['cmp']:>10.2f} {m12_str:>11} {r['invested']:>12.2f} {r['value']:>12.2f} {r['pnl']:>10.2f} {xirr_str:>9} {r['return_pct']:>8.2f}% {r.get('signal',''):<12}")
         print("-" * len(header))
         tot_xirr_str = f"{portfolio_dict.get('portfolio_xirr', '')}%" if portfolio_dict.get('portfolio_xirr') is not None else ""
-        print(f"{'TOTAL':<14} {'':<10} {'':>8} {'':>10} {'':>10} {'':>11} {tot_inv:>12.2f} {tot_val:>12.2f} {tot_pnl:>10.2f} {tot_xirr_str:>9} {tot_ret:>8.2f}%\n")
+        print(f"{'TOTAL':<14} {'':>8} {'':>10} {'':>10} {'':>11} {tot_inv:>12.2f} {tot_val:>12.2f} {tot_pnl:>10.2f} {tot_xirr_str:>9} {tot_ret:>8.2f}%\n")
         log.info("Dry-run complete. No Google Sheets updates made.")
         return True
 

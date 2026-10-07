@@ -650,6 +650,7 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
         c["return_pct"] = round((c["pnl"] / c["invested"]) * 100, 2) if c["invested"] else 0
         c["wt_pct"] = round((c["value"] / portfolio_live_value_c) * 100, 2) if portfolio_live_value_c else 0
         c["not_gt_5pct"] = c["wt_pct"]
+        c["mcap_cr"] = (fund_map or {}).get(sym, {}).get("mcap_cr")
         
         # Momentum returns
         t = tech_map.get(sym) or {}
@@ -721,7 +722,6 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
 def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     headers = PORTFOLIO_COLUMNS
     col_keys = {
-        "Investment Source": "investment_source",
         "Shares": "shares", "Avg Buy": "avg_buy", "CMP": "cmp",
         "Day Chg%": "day_chg_pct", "1W Return %": "return_1w",
         "1M Return %": "return_1m", "3M Return %": "return_3m", "6M Return %": "return_6m",
@@ -777,6 +777,18 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     except Exception:
         ws = sh.add_worksheet(tab_name, rows=len(all_data) + 20, cols=len(headers))
 
+    # Clear any native conditional formatting rules before updating
+    try:
+        rules = sh.fetch_sheet_metadata({"includeGridData": False})
+        sheet_meta = next((s for s in rules.get('sheets', []) if s.get('properties', {}).get('sheetId') == ws.id), None)
+        if sheet_meta:
+            cond_formats = sheet_meta.get("conditionalFormats", [])
+            if cond_formats:
+                clear_cf_reqs = [{"deleteConditionalFormatRule": {"sheetId": ws.id, "index": 0}} for _ in cond_formats]
+                sheet_writer.batch_update_safe(sh, clear_cf_reqs)
+    except Exception as e:
+        log.warning(f"Could not clear conditional formats on {tab_name}: {e}")
+
     sheet_writer.clear_sheet_safe(ws)
 
     sheet_writer.update_sheet_safe(ws, "A1", all_data, value_input_option="RAW")
@@ -785,7 +797,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
 
     nc = len(headers)
     width_map = {
-        "Symbol": 100, "Investment Source": 120, "Shares": 55, "Avg Buy": 70, "CMP": 65,
+        "Symbol": 100, "Shares": 55, "Avg Buy": 70, "CMP": 65,
         "Day Chg%": 55, "1W Return %": 65, "1M Return %": 65, "3M Return %": 65, "6M Return %": 65,
         "12 Months": 65,
         "Invested": 85, "Value": 85, "P&L": 80, "Not > 5%": 75, "XIRR": 65, "Return %": 65, "Wt %": 55,
@@ -795,6 +807,41 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     
     reqs = sheet_formatter.clear_all_formatting_reqs(ws.id) + sheet_formatter.get_structural_format_reqs(
         ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=1)
+
+    # Read market cap from GITHUB DATA tab (and Fundamentals Cache) for canonical symbol colour coding
+    github_mcap_map = {}
+    try:
+        gd_ws = sh.worksheet("GITHUB DATA")
+        gd_rows = gd_ws.get_all_values()
+        if len(gd_rows) > 2:
+            hdr = gd_rows[1]
+            s_idx = hdr.index("Symbol") if "Symbol" in hdr else 0
+            m_idx = hdr.index("Mkt Cap Cr") if "Mkt Cap Cr" in hdr else 6
+            for g_row in gd_rows[2:]:
+                if len(g_row) > max(s_idx, m_idx):
+                    s_name = g_row[s_idx].strip().upper()
+                    m_val = g_row[m_idx].strip()
+                    if s_name and m_val:
+                        github_mcap_map[s_name] = m_val
+    except Exception as e:
+        log.warning(f"Could not read GITHUB DATA tab for symbol formatting: {e}")
+
+    # Fallback to Fundamentals Cache if any symbols missing (read-only, never creates worksheet)
+    if any(r.get("symbol") and r["symbol"].upper() not in github_mcap_map for r in combined_rows):
+        try:
+            cache_ws = sh.worksheet("Fundamentals Cache")
+            c_rows = cache_ws.get_all_values()[1:]
+            for row in c_rows:
+                if not row or not row[0]: continue
+                s_name = row[0].strip().upper()
+                try:
+                    c_data = json.loads(row[2])
+                    if s_name not in github_mcap_map and c_data.get("mcap_cr"):
+                        github_mcap_map[s_name] = c_data.get("mcap_cr")
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     currency_cols = ["Avg Buy", "CMP", "Invested", "Value", "P&L", "Stop Loss", "Target", "Buy More@"]
     for col_name in currency_cols:
@@ -817,12 +864,45 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
         if i == 0 or len(row) <= SYMBOL_COL or row[SYMBOL_COL] == "" or "SUBTOTAL" in row[SYMBOL_COL] or "TOTAL" in row[SYMBOL_COL] or "GROWW" in row[SYMBOL_COL] or "ZERODHA" in row[SYMBOL_COL] or "COMBINED" in row[SYMBOL_COL]:
             continue
 
+        # Color Symbol with exact same logic and colours used in GITHUB DATA (Market Cap Tier)
+        sym = str(row[SYMBOL_COL]).strip().upper()
+        matched_h = next((h for h in combined_rows if h.get("symbol", "").upper() == sym), None)
+        mcap_val = (matched_h.get("mcap_cr") if matched_h else None) or github_mcap_map.get(sym)
+        if mcap_val is not None:
+            try:
+                v_str = str(mcap_val).replace("%", "").replace(",", "").replace("₹", "").replace(" Cr", "").strip()
+                v_mcap = float(v_str)
+                if v_mcap >= 25000:     cb, cf = "d9ead3", "0b8043"   # Large Cap
+                elif v_mcap >= 5000:    cb, cf = "d9eaf7", "1565c0"   # Mid Cap
+                elif v_mcap > 0:        cb, cf = "fde9d9", "c62828"   # Small Cap
+                else:                   cb, cf = None, None
+                if cb and cf:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, SYMBOL_COL, cb, cf))
+            except (ValueError, TypeError):
+                pass
+
         if "Stop Loss" in headers:
             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Stop Loss"), "fde9d9", "c62828", bold=False))
         if "Target" in headers:
             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Target"), "d9ead3", "0b8043", bold=False))
         if "Buy More@" in headers:
             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, headers.index("Buy More@"), "e8f0fe", "1967d2", bold=False))
+
+        # Invested vs Value colour coding
+        if "Invested" in headers and "Value" in headers:
+            inv_idx = headers.index("Invested")
+            val_idx = headers.index("Value")
+            try:
+                inv_v = float(str(row[inv_idx]).replace("₹", "").replace(",", "").strip())
+                val_v = float(str(row[val_idx]).replace("₹", "").replace(",", "").strip())
+                if val_v > inv_v:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, val_idx, "d9ead3", "0b8043", bold=False))
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, inv_idx, "fde9d9", "c62828", bold=False))
+                elif val_v < inv_v:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, val_idx, "fde9d9", "c62828", bold=False))
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, inv_idx, "d9ead3", "0b8043", bold=False))
+            except (ValueError, TypeError):
+                pass
 
         # Color P&L with canonical green/red
         if "P&L" in headers:
@@ -836,13 +916,16 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
             except (ValueError, TypeError):
                 pass
 
-        # Color Not > 5% warning (red if weight > 5%)
+        # Color Not > 5% with continuous colour scale from Green (0.1%) to Red (5.0%)
         if "Not > 5%" in headers:
             n5_idx = headers.index("Not > 5%")
             try:
-                n5_val = float(str(row[n5_idx]).replace("%", "").replace(",", "").strip())
-                if n5_val > 5.0:
-                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, n5_idx, "fde9d9", "c62828", bold=True))
+                n5_raw = str(row[n5_idx]).replace("%", "").replace(",", "").strip()
+                n5_val = float(n5_raw) if n5_raw else None
+                if n5_val is not None:
+                    bg, fg = sheet_formatter.get_continuous_green_to_red_rgb(n5_val, min_val=0.1, max_val=5.0)
+                    if bg and fg:
+                        reqs.append(sheet_formatter.color_cell_req(ws.id, rn, n5_idx, bg, fg, bold=(n5_val > 5.0)))
             except (ValueError, TypeError):
                 pass
 
@@ -970,6 +1053,18 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
             }
         }
     })
+
+    # Native Google Sheets conditional formatting rules for data rows (excluding banner and subtotal)
+    data_start_row = 2
+    data_end_row = subtotal_indices[0] if subtotal_indices else len(all_data) - 1
+    if data_end_row > data_start_row:
+        if "Invested" in headers and "Value" in headers:
+            inv_idx = headers.index("Invested")
+            val_idx = headers.index("Value")
+            reqs += sheet_formatter.get_invested_value_cf_rules(ws.id, data_start_row, data_end_row, inv_idx, val_idx)
+        if "Not > 5%" in headers:
+            n5_idx = headers.index("Not > 5%")
+            reqs += sheet_formatter.get_not_gt_5pct_gradient_rules(ws.id, data_start_row, data_end_row, n5_idx)
 
     if reqs:
         sheet_writer.batch_update_safe(sh, reqs)
