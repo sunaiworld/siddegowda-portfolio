@@ -192,40 +192,44 @@ class TestMutualFundOverlap(unittest.TestCase):
 
         # 1. Header checks
         headers = table[0]
-        self.assertEqual(len(headers), 30, "Expected 30 columns in Mutual Funds tab")
-        self.assertEqual(headers[28], "Overlap")
-        self.assertEqual(headers[29], "Overlap With")
+        self.assertEqual(len(headers), 26, "Expected 26 columns in Mutual Funds tab")
+        self.assertNotIn("Day Gain Rs", headers)
+        self.assertNotIn("Day Gain%", headers)
+        self.assertNotIn("Harvestable Units", headers)
+        self.assertNotIn("Trend", headers)
+        self.assertEqual(headers[24], "Overlap")
+        self.assertEqual(headers[25], "Overlap With")
 
         # 2. Row counts: exactly total active holdings rows
-        total_data_rows = [r for r in table[1:] if r[28] in ("YES", "NO")]
+        total_data_rows = [r for r in table[1:] if r[24] in ("YES", "NO")]
         self.assertEqual(len(total_data_rows), len(holdings), "No duplicate rows should be created")
 
         # 3. Check overlapping and non-overlapping fund rows
-        overlap_yes_rows = [r for r in total_data_rows if r[28] == "YES"]
+        overlap_yes_rows = [r for r in total_data_rows if r[24] == "YES"]
         self.assertGreater(len(overlap_yes_rows), 0, "Expected at least one overlapping fund in active data")
         for r in overlap_yes_rows:
-            self.assertNotEqual(r[29], "", "Overlap With must not be empty when Overlap is YES")
+            self.assertNotEqual(r[25], "", "Overlap With must not be empty when Overlap is YES")
 
-        overlap_no_rows = [r for r in total_data_rows if r[28] == "NO"]
+        overlap_no_rows = [r for r in total_data_rows if r[24] == "NO"]
         self.assertGreater(len(overlap_no_rows), 0, "Expected at least one non-overlapping fund in active data")
         for r in overlap_no_rows:
-            self.assertEqual(r[29], "", "Overlap With must be empty when Overlap is NO")
+            self.assertEqual(r[25], "", "Overlap With must be empty when Overlap is NO")
 
         # 4. Tax calculations check: combined total invested untouched
         combined_total = next(r for r in table if r[0] == "COMBINED TOTAL")
         self.assertGreater(float(combined_total[5]), 0)
         # Overlap columns in subtotal/total rows must be blank
-        self.assertEqual(combined_total[28], "")
-        self.assertEqual(combined_total[29], "")
+        self.assertEqual(combined_total[24], "")
+        self.assertEqual(combined_total[25], "")
 
-        # 5. Format requests: basic filter spans all 30 columns
+        # 5. Format requests: basic filter spans all 26 columns
         filter_req = next((r["setBasicFilter"]["filter"]["range"] for r in captured_reqs if "setBasicFilter" in r), None)
         self.assertIsNotNone(filter_req)
-        self.assertEqual(filter_req["endColumnIndex"], 30)
+        self.assertEqual(filter_req["endColumnIndex"], 26)
 
         # 6. Overlap cell color formatting applied
         has_overlap_yes_color = any(
-            r.get("repeatCell", {}).get("range", {}).get("startColumnIndex") == 28 and
+            r.get("repeatCell", {}).get("range", {}).get("startColumnIndex") == 24 and
             r.get("repeatCell", {}).get("cell", {}).get("userEnteredFormat", {}).get("backgroundColor") == sheet_formatter.hex_rgb("fff2cc")
             for r in captured_reqs
         )

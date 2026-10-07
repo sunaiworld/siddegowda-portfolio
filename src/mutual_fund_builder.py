@@ -504,21 +504,22 @@ def compute_mf_overlap(holdings):
 _EXISTING_HEADERS = [
     "Fund Name", "Category", "Avg Buy NAV", "Current NAV",
     "Units", "Invested", "Current Value", "P&L", "Return%",
-    "Day Gain Rs", "Day Gain%", "Weight%", "Signal",
+    "Weight%", "Signal",
 ]
 _NEW_HEADERS = [
     "Holding Days", "Tax Type", "Unrealised Gain",
-    "Harvestable", "LTCG Units", "Harvestable Units",
+    "Harvestable", "LTCG Units",
     "Tax Harvesting", "Reason",
 ]
 _DECISION_HEADERS = [
     "1Y Ret%", "3Y Ret%", "5Y Ret%",
-    "MF Score", "Trend", "AI Decision", "Decision Reason",
+    "MF Score", "AI Decision", "Decision Reason",
 ]
 _OVERLAP_HEADERS = [
     "Overlap", "Overlap With",
 ]
 _ALL_HEADERS = _EXISTING_HEADERS + _NEW_HEADERS + _DECISION_HEADERS + _OVERLAP_HEADERS
+
 
 
 def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_data=None, tab_name="Mutual Funds"):
@@ -533,10 +534,9 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
         log.warning(f"'{tab_name}' sheet not found — creating")
         ws = sh.add_worksheet(title=tab_name, rows=200, cols=25)
 
-    # Preserve user-entered Current NAV and Day Gain values from existing sheet
+    # Preserve user-entered Current NAV values from existing sheet
     existing = ws.get_all_values()
-    existing_nav  = {}
-    existing_gain = {}
+    existing_nav = {}
     if len(existing) > 1:
         try:
             def _clean_fn(name):
@@ -547,8 +547,6 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
             hdr = [str(c).strip() for c in existing[0]]
             fn_col  = 0
             nav_col = next((i for i, h in enumerate(hdr) if "Current NAV" in h), 3)
-            dg_col  = next((i for i, h in enumerate(hdr) if "Day Gain" in h and "%" not in h), 9)
-            dgp_col = next((i for i, h in enumerate(hdr) if "Day Gain" in h and "%" in h), 10)
             for row in existing[1:]:
                 fn = str(row[fn_col]).strip() if len(row) > fn_col else ""
                 if not fn or fn == "TOTAL":
@@ -560,13 +558,6 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
                     existing_nav[clean_name] = v
                 except Exception:
                     pass
-                try:
-                    dg  = float(str(row[dg_col]).replace(",", ""))  if len(row) > dg_col  else 0
-                    dgp = float(str(row[dgp_col]).replace(",", "")) if len(row) > dgp_col else 0
-                    existing_gain[fn] = [dg, dgp]
-                    existing_gain[clean_name] = [dg, dgp]
-                except Exception:
-                    existing_gain[fn] = [0, 0]
         except Exception as e:
             log.warning(f"Could not read existing MF values: {e}")
 
@@ -602,7 +593,6 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
         curr_val  = round(units * curr_nav, 2)
         pnl       = round(curr_val - invested, 2)
         ret_pct   = round((pnl / invested) * 100, 2) if invested else 0
-        dg, dgp   = existing_gain.get(display_fn, existing_gain.get(fn, [0, 0]))
 
         if   ret_pct >= 100: signal = "STAR"
         elif ret_pct >= 50:  signal = "MULTI"
@@ -621,11 +611,10 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
             ret_3y = f"{analysis['ret_3y']*100:.2f}%" if analysis['ret_3y'] is not None else ""
             ret_5y = f"{analysis['ret_5y']*100:.2f}%" if analysis['ret_5y'] is not None else ""
             mf_score = round(analysis['overall_score']) if analysis['overall_score'] is not None else ""
-            trend = analysis['trend']
             ai_decision = analysis['decision']
             ai_reason = analysis['reason']
         else:
-            ret_1y = ret_3y = ret_5y = mf_score = trend = ai_decision = ai_reason = ""
+            ret_1y = ret_3y = ret_5y = mf_score = ai_decision = ai_reason = ""
 
         ol_info = overlap_data.get(key, {})
         overlap_val = ol_info.get("overlap", "NO")
@@ -634,18 +623,17 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
         row_dict = {
             "fn": display_fn, "cat": cat, "avg_nav": avg_nav, "curr_nav": curr_nav,
             "units": round(units, 3), "invested": invested, "curr_val": curr_val,
-            "pnl": pnl, "ret_pct": ret_pct, "dg": dg, "dgp": dgp, "wt": wt,
+            "pnl": pnl, "ret_pct": ret_pct, "wt": wt,
             "signal": signal,
             "holding_days": tx.get("holding_days", ""),
             "tax_type":     tx.get("tax_type", ""),
             "unrealised":   tx.get("unrealised_gain", ""),
             "harvestable":  tx.get("harvestable", ""),
             "ltcg_units":   tx.get("ltcg_units", ""),
-            "harvest_units": tx.get("harvest_units", ""),
             "rec":          tx.get("recommendation", ""),
             "reason":       tx.get("reason", ""),
             "ret_1y": ret_1y, "ret_3y": ret_3y, "ret_5y": ret_5y,
-            "mf_score": mf_score, "trend": trend, "ai_decision": ai_decision, "ai_reason": ai_reason,
+            "mf_score": mf_score, "ai_decision": ai_decision, "ai_reason": ai_reason,
             "overlap": overlap_val, "overlap_with": overlap_with_val
         }
 
@@ -683,12 +671,12 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
             all_data.append([
                 r["fn"], r["cat"], r["avg_nav"], r["curr_nav"],
                 r["units"], r["invested"], r["curr_val"], r["pnl"], r["ret_pct"],
-                r["dg"], r["dgp"], r["wt"], r["signal"],
+                r["wt"], r["signal"],
                 r["holding_days"], r["tax_type"], r["unrealised"], r["harvestable"],
-                r["ltcg_units"], r["harvest_units"],
+                r["ltcg_units"],
                 r["rec"], r["reason"],
                 r["ret_1y"], r["ret_3y"], r["ret_5y"],
-                r["mf_score"], r["trend"], r["ai_decision"], r["ai_reason"],
+                r["mf_score"], r["ai_decision"], r["ai_reason"],
                 r["overlap"], r["overlap_with"],
             ])
             
@@ -698,9 +686,9 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
         all_data.append([
             f"{title} SUBTOTAL", "", "", "", "",
             round(tot_inv, 2), round(tot_val, 2), tpnl, tret,
-            "", "", 100.0, "",
-            "", "", tpnl, "", "", "", "", "",
-            "", "", "", "", "", "", "",
+            100.0, "",
+            "", "", tpnl, "", "", "", "",
+            "", "", "", "", "", "",
             "", ""
         ])
         all_data.append([""] * len(_ALL_HEADERS))
@@ -724,9 +712,9 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
     all_data.append([
         "COMBINED TOTAL", "", "", "", "",
         round(total_invested, 2), round(total_value, 2), tot_pnl, tot_ret,
-        "", "", 100.0, "",
-        "", "", tot_pnl, "", "", "", "", "",
-        "", "", "", "", "", "", "",
+        100.0, "",
+        "", "", tot_pnl, "", "", "", "",
+        "", "", "", "", "", "",
         "", ""
     ])
 
@@ -750,34 +738,34 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
     nc = len(_ALL_HEADERS)
     # Compact column widths — GITHUB DATA compact philosophy
     widths = [
-        260, 80, 65, 65, 60, 85, 85, 80, 65, 75, 65, 55, 75,
-        70, 60, 85, 85, 65, 70, 65, 170,
-        60, 60, 60, 65, 80, 90, 170,
+        260, 80, 65, 65, 60, 85, 85, 80, 65, 55, 75,
+        70, 60, 85, 85, 65, 65, 170,
+        60, 60, 60, 65, 90, 170,
         65, 140,
     ]
     reqs = sheet_formatter.get_structural_format_reqs(
         ws.id, len(all_data), nc, widths=widths, freeze_rows=1, freeze_cols=1)
 
-    # Currency cols (0-indexed): AvgNAV(2), CurrNAV(3), Invested(5), CurrVal(6), PnL(7), DayGainRs(9), Unrealised(15), Harvestable(16)
-    for col in [2, 3, 5, 6, 7, 9, 15, 16]:
+    # Currency cols (0-indexed): AvgNAV(2), CurrNAV(3), Invested(5), CurrVal(6), PnL(7), Unrealised(13), Harvestable(14)
+    for col in [2, 3, 5, 6, 7, 13, 14]:
         reqs += sheet_formatter.get_currency_format_reqs(ws.id, 1, scheme_rows_end_idx, col, col + 1)
-    # Percent cols (0-indexed): Return%(8), DayGain%(10), Weight%(11)
-    for col in [8, 10, 11]:
+    # Percent cols (0-indexed): Return%(8), Weight%(9)
+    for col in [8, 9]:
         reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, scheme_rows_end_idx, col, col + 1)
-    # 3 decimal precision for Units (4), LTCG Units (17), Harvest Units (18)
-    for col in [4, 17, 18]:
+    # 3 decimal precision for Units (4), LTCG Units (15)
+    for col in [4, 15]:
         reqs += [{"repeatCell": {
             "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": scheme_rows_end_idx, "startColumnIndex": col, "endColumnIndex": col + 1},
             "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0.000"}}},
             "fields": "userEnteredFormat.numberFormat"
         }}]
-    # Percent cols for 1Y Ret%(21), 3Y Ret%(22), 5Y Ret%(23)
-    for col in [21, 22, 23]:
+    # Percent cols for 1Y Ret%(18), 3Y Ret%(19), 5Y Ret%(20)
+    for col in [18, 19, 20]:
         reqs += sheet_formatter.get_percentage_format_reqs(ws.id, 1, scheme_rows_end_idx, col, col + 1)
-    # Center alignment for Overlap (col 28)
+    # Center alignment for Overlap (col 24)
     reqs.append({
         "repeatCell": {
-            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": scheme_rows_end_idx, "startColumnIndex": 28, "endColumnIndex": 29},
+            "range": {"sheetId": ws.id, "startRowIndex": 1, "endRowIndex": scheme_rows_end_idx, "startColumnIndex": 24, "endColumnIndex": 25},
             "cell": {"userEnteredFormat": {"horizontalAlignment": "CENTER"}},
             "fields": "userEnteredFormat.horizontalAlignment"
         }
@@ -800,53 +788,53 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
             if req: reqs.append(req)
         except: pass
 
-        # Signal column colour (col 12) — same colour_cell_req approach as GITHUB DATA
-        sig = str(row[12])
-        if   sig == "STAR":   reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "00c853", "ffffff"))
-        elif sig == "MULTI":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "0b8043", "ffffff"))
-        elif sig == "PROFIT": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "d9ead3", "0b8043"))
-        elif sig == "HOLD":   reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "fff2cc", "7f4f00"))
-        elif sig == "REVIEW": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "fce8b2", "7f4f00"))
-        elif sig == "EXIT":   reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "cc0000", "ffffff"))
+        # Signal column colour (col 10) — same colour_cell_req approach as GITHUB DATA
+        sig = str(row[10])
+        if   sig == "STAR":   reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "00c853", "ffffff"))
+        elif sig == "MULTI":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "0b8043", "ffffff"))
+        elif sig == "PROFIT": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "d9ead3", "0b8043"))
+        elif sig == "HOLD":   reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "fff2cc", "7f4f00"))
+        elif sig == "REVIEW": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "fce8b2", "7f4f00"))
+        elif sig == "EXIT":   reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 10, "cc0000", "ffffff"))
 
-        rec = str(row[19])
-        if   rec == "YES":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "0f9d58", "ffffff"))
-        elif rec == "REVIEW": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "fce8b2", "7f4f00"))
-        elif rec == "NO":     reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 19, "e8eaf6", "3949ab"))
+        rec = str(row[16])
+        if   rec == "YES":    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 16, "0f9d58", "ffffff"))
+        elif rec == "REVIEW": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 16, "fce8b2", "7f4f00"))
+        elif rec == "NO":     reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 16, "e8eaf6", "3949ab"))
         
-        tt = str(row[14])
-        if   tt == "LTCG":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "d9ead3", "0b8043", bold=False))
-        elif tt == "STCG":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "fde9d9", "c62828", bold=False))
-        elif tt == "Mixed": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 14, "fff2cc", "7f4f00", bold=False))
+        tt = str(row[12])
+        if   tt == "LTCG":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "d9ead3", "0b8043", bold=False))
+        elif tt == "STCG":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "fde9d9", "c62828", bold=False))
+        elif tt == "Mixed": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 12, "fff2cc", "7f4f00", bold=False))
 
-        ai_dec = str(row[26]) if len(row) > 26 else ""
-        if   ai_dec == "BUY / ADD":       reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 26, "d9ead3", "0b8043", bold=True))
-        elif ai_dec == "HOLD":            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 26, "e8eaf6", "3949ab", bold=True))
-        elif ai_dec == "WATCH":           reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 26, "fff2cc", "f57f17", bold=True))
-        elif ai_dec == "REVIEW / REDUCE": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 26, "fce8b2", "d32f2f", bold=True))
+        ai_dec = str(row[22]) if len(row) > 22 else ""
+        if   ai_dec == "BUY / ADD":       reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 22, "d9ead3", "0b8043", bold=True))
+        elif ai_dec == "HOLD":            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 22, "e8eaf6", "3949ab", bold=True))
+        elif ai_dec == "WATCH":           reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 22, "fff2cc", "f57f17", bold=True))
+        elif ai_dec == "REVIEW / REDUCE": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 22, "fce8b2", "d32f2f", bold=True))
 
-        # 1Y / 3Y / 5Y Ret% (cols 21, 22, 23) — color_positive_negative (same as GITHUB DATA)
-        for ret_col in [21, 22, 23]:
+        # 1Y / 3Y / 5Y Ret% (cols 18, 19, 20) — color_positive_negative (same as GITHUB DATA)
+        for ret_col in [18, 19, 20]:
             try:
                 ret_v = float(str(row[ret_col]).replace("%", "").replace(",", "").strip()) if len(row) > ret_col and row[ret_col] else 0.0
                 req_r = sheet_formatter.color_positive_negative(ws.id, rn, ret_col, ret_v)
                 if req_r: reqs.append(req_r)
             except: pass
 
-        # MF Score (col 24) — same thresholds as GITHUB DATA Total Score
+        # MF Score (col 21) — same thresholds as GITHUB DATA Total Score
         try:
-            mf_sc = float(row[24]) if len(row) > 24 and row[24] else None
+            mf_sc = float(row[21]) if len(row) > 21 and row[21] else None
             if mf_sc is not None:
-                if   mf_sc >= 65: reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "00c853", "ffffff"))
-                elif mf_sc >= 50: reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "d9ead3", "0b8043"))
-                elif mf_sc >= 35: reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "fff2cc", "7f4f00"))
-                else:             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "fde9d9", "c62828"))
+                if   mf_sc >= 65: reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 21, "00c853", "ffffff"))
+                elif mf_sc >= 50: reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 21, "d9ead3", "0b8043"))
+                elif mf_sc >= 35: reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 21, "fff2cc", "7f4f00"))
+                else:             reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 21, "fde9d9", "c62828"))
         except: pass
 
-        # Overlap column colour (col 28)
-        ol_cell = str(row[28]) if len(row) > 28 else ""
-        if   ol_cell == "YES": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 28, "fff2cc", "7f4f00", bold=True))
-        elif ol_cell == "NO":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 28, "e8eaf6", "3949ab", bold=False))
+        # Overlap column colour (col 24)
+        ol_cell = str(row[24]) if len(row) > 24 else ""
+        if   ol_cell == "YES": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "fff2cc", "7f4f00", bold=True))
+        elif ol_cell == "NO":  reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 24, "e8eaf6", "3949ab", bold=False))
 
     # Style section headers as dark blue banners
     for h_idx in header_indices:
