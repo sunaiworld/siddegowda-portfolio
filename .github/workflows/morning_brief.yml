@@ -1,0 +1,85 @@
+name: Morning Brief
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TARGET TIME: 08:00 AM IST, every day (all 7 days).
+# GitHub cron is UTC. IST = UTC + 5:30 (no DST), so 08:00 IST = 02:30 UTC.
+#
+#   PRIMARY  : 02:30 UTC = 08:00 AM IST
+#   BACKUP-1 : 03:15 UTC = 08:45 AM IST  (covers GitHub scheduler delays)
+#   BACKUP-2 : 04:00 UTC = 09:30 AM IST  (last resort)
+#
+# GitHub may start a scheduled run late. 08:00 is a target, not a guarantee.
+#
+# IDEMPOTENCY: scripts/morning_brief.py records today's IST date in
+# Bot State!B2 after a successful Telegram send. Backup runs skip if it is
+# already today's date. Bot State!B1 belongs to morning_buying_zone.yml.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  schedule:
+    - cron: '30 2 * * *'
+    - cron: '15 3 * * *'
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Send even if already sent today (bypasses marker and cutoff)'
+        required: false
+        default: false
+        type: boolean
+      dry_run:
+        description: 'Build and print the brief in the log only (no Telegram, no sheet write)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  PYTHONPATH: src
+
+concurrency:
+  group: morning-brief
+  cancel-in-progress: false
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+    - name: Log trigger timing
+      run: |
+        echo "Trigger event : ${{ github.event_name }}"
+        echo "Runner UTC    : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "Runner IST    : $(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S IST')"
+
+    - name: Checkout Repository
+      uses: actions/checkout@v4.2.2
+
+    - name: Set up Python
+      uses: actions/setup-python@v5.6.0
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Send Morning Brief
+      env:
+        SHEET_ID: ${{ secrets.SHEET_ID }}
+        GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        ARGS=""
+        if [ "${{ github.event.inputs.force }}" = "true" ]; then ARGS="$ARGS --force"; fi
+        if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then ARGS="$ARGS --dry-run"; fi
+        python scripts/morning_brief.py $ARGS
+
+    - name: Log completion timing
+      if: always()
+      run: |
+        echo "Completed IST : $(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S IST')"
