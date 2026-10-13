@@ -1,11 +1,25 @@
 name: Portfolio Daily Update
 
 # SCHEDULING ARCHITECTURE:
-# Target: 05:45 PM IST (12:15 UTC), Monday through Friday.
-# Off-peak minute :15 avoids GitHub Actions schedule queue delays.
+# Target: Evening Portfolio Update (after NSE market close at 15:30 IST / 10:00 UTC).
+#
+# TIMEZONE & TIMING:
+#   Market close: 15:30 IST (10:00 UTC).
+#   Scheduled cron: 10:45 UTC = 16:15 IST (4:15 PM IST), Monday through Friday.
+#   Why 10:45 UTC instead of 12:15 UTC?
+#     The previous 12:15 UTC (5:45 PM IST) cron landed directly in GitHub Actions' peak
+#     global congestion window (12:00-14:00 UTC), causing ~6-hour queue delays that
+#     consistently pushed execution to 18:18-18:54 UTC (23:48-00:24 IST / midnight).
+#     Scheduling at 10:45 UTC (45 minutes after market close) avoids the 12:00 UTC traffic spike
+#     and absorbs typical GitHub queue delays (30-90 min), landing the run squarely in the
+#     intended evening window (17:00-18:30 IST / 5:00-6:30 PM IST), without duplicate runs.
+#
+# IDEMPOTENCY:
+#   The portfolio update is safe to re-run (it rewrites Google Sheets data).
+#   repository_dispatch [sheet_updated] provides near-real-time triggering.
 on:
   schedule:
-    - cron: "15 12 * * 1-5"
+    - cron: "45 10 * * 1-5"
   workflow_dispatch:
   repository_dispatch:
     types: [sheet_updated]
@@ -16,15 +30,29 @@ env:
 permissions:
   contents: write
 
+concurrency:
+  group: portfolio-daily-update
+  cancel-in-progress: false
+
 jobs:
   update-portfolio:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
     steps:
-      - name: Show trigger source
+      - name: Log trigger timing
         run: |
-          echo "Triggered by: ${{ github.event_name }}"
+          echo "========================================================"
+          echo "  PORTFOLIO DAILY UPDATE — TIMING AUDIT"
+          echo "========================================================"
+          echo "Trigger event  : ${{ github.event_name }}"
+          echo "Workflow run # : ${{ github.run_number }}"
+          echo "Runner UTC     : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Runner IST     : $(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S IST')"
+          echo "Scheduled cron : 10:45 UTC = 04:15 PM IST (target)"
+          echo "Actual UTC time: $(date -u '+%H:%M:%S UTC')"
+          echo "Actual IST time: $(TZ='Asia/Kolkata' date '+%H:%M:%S IST')"
+          echo "========================================================"
 
       - name: Checkout repo
         uses: actions/checkout@v4.2.2
@@ -64,3 +92,11 @@ jobs:
           else
             echo "No new monthly snapshot files to commit."
           fi
+
+      - name: Log completion timing
+        if: always()
+        run: |
+          echo "========================================================"
+          echo "Completed UTC : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "Completed IST : $(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S IST')"
+          echo "========================================================"

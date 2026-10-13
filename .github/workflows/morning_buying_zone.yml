@@ -50,6 +50,10 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   PYTHONPATH: src
 
+concurrency:
+  group: morning-buying-zone
+  cancel-in-progress: false
+
 jobs:
   update:
     runs-on: ubuntu-latest
@@ -101,6 +105,9 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+
+    - name: Import Latest Trades
+      run: python scripts/import_trades.py
 
     - name: Send Morning Buying Zone Update
       env:

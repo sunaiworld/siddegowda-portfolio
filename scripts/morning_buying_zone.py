@@ -256,21 +256,25 @@ def main():
 
     # Safeguard against heavily delayed GitHub Actions runners:
     # Morning Buying Zone is designed for the morning market window (09:15 - 13:00 IST).
-    # Cutoff is 13:00 IST (07:30 UTC) — well after the last backup cron (06:00 UTC = 11:30 AM IST).
-    # If execution is delayed past 13:00 IST, fail loudly so the problem is visible in the
-    # GitHub Actions UI rather than silently returning success.
-    # (--force bypasses this check for manual reruns.)
+    # Cutoff is 13:00 IST (07:30 UTC). If execution is delayed past 13:00 IST (which can
+    # happen with GitHub Actions free-tier scheduler delays of up to 14+ hours on busy days),
+    # the run exits cleanly with code 0 (success/skip) rather than 1 (error), because
+    # the delay is caused by the external scheduler environment — not a code or data problem.
+    # This prevents false-positive red failures in the GitHub Actions UI for runs that are
+    # structurally impossible to complete on time due to the environment.
+    # Use --force to override for manual reruns.
     if not args.dry_run and not args.force:
         cutoff_time = now_ist.replace(hour=13, minute=0, second=0, microsecond=0)
         if now_ist >= cutoff_time:
-            log.error(
+            log.warning(
                 f"[Morning] Current time is {now_ist.strftime('%I:%M %p IST')}. "
-                f"Morning window (before 13:00 IST) has expired due to schedule queue delay. "
-                f"Aborting run to prevent sending stale morning alert in the afternoon/evening. "
-                f"Use --force to override."
+                f"Morning window (before 13:00 IST) has expired — GitHub Actions scheduler "
+                f"queued this run {round((now_ist - cutoff_time).total_seconds() / 3600, 1)}h "
+                f"after the cutoff. Skipping gracefully (exit 0). "
+                f"Use --force to send outside the morning window."
             )
-            log_timing("workflow FAILED (expired morning window)")
-            sys.exit(1)  # Fail loudly so GitHub Actions marks this run as failed
+            log_timing("workflow skipped (expired morning window — scheduler delay)")
+            sys.exit(0)  # Graceful skip: environment delay is not a code error
 
         last_date = get_last_morning_date(sh)
         if last_date == today_ist_str:
@@ -295,6 +299,28 @@ def main():
 
     total_symbols = len(symbols)
     log.info(f"[Morning] Found {total_symbols} stock(s) in GITHUB DATA")
+
+    # Sync latest portfolio holdings and symbols so new stocks are never missed
+    try:
+        from portfolio_builder import read_symbols as read_port_symbols, compute_holdings, load_all_trades
+        port_symbols = read_port_symbols(sh)
+        for s in port_symbols:
+            s_clean = s.strip().upper()
+            if s_clean and s_clean not in symbols:
+                symbols.append(s_clean)
+                log.info(f"[Morning] Synced portfolio stock: {s_clean}")
+
+        # Also include any open positions from broker trades
+        raw_held = compute_holdings(load_all_trades())
+        for h in raw_held.values():
+            s_clean = h.get("symbol", "").strip().upper()
+            if s_clean and s_clean not in symbols:
+                symbols.append(s_clean)
+                log.info(f"[Morning] Synced holding stock from tradebook: {s_clean}")
+        log.info(f"[Morning] Total symbols after syncing Portfolio & holdings: {len(symbols)}")
+    except Exception as e:
+        log.warning(f"[Morning] Could not sync latest portfolio holdings symbols: {e}")
+
     log_timing("data-fetch start")
     log.info("[Morning] Fetching market data")
 
