@@ -30,12 +30,14 @@ name: Morning Buying Zone Update
 
 on:
   schedule:
-    # 04:30 UTC = 10:00 AM IST  ← PRIMARY target trigger
+    # 23:30 UTC (Sun-Thu) = 05:00 AM IST (Mon-Fri) — with typical 5h GH delay, lands ~10:00 AM IST
+    - cron: '30 23 * * 0-4'
+    # 00:30 UTC (Mon-Fri) = 06:00 AM IST (Mon-Fri) — with typical 4.5h GH delay, lands ~10:30 AM IST
+    - cron: '30 0 * * 1-5'
+    # 01:30 UTC (Mon-Fri) = 07:00 AM IST (Mon-Fri) — with typical 4.5h GH delay, lands ~11:30 AM IST
+    - cron: '30 1 * * 1-5'
+    # 04:30 UTC (Mon-Fri) = 10:00 AM IST (Mon-Fri) — on-time fallback (if GH delay clears to ~0h)
     - cron: '30 4 * * 1-5'
-    # 05:15 UTC = 10:45 AM IST  ← BACKUP-1: covers GH Actions scheduler delays up to 45 min
-    - cron: '15 5 * * 1-5'
-    # 06:00 UTC = 11:30 AM IST  ← BACKUP-2: last resort (still 90 min before 13:00 IST cutoff)
-    - cron: '0 6 * * 1-5'
   workflow_dispatch:
     inputs:
       force:
@@ -70,11 +72,12 @@ jobs:
         echo "Runner UTC     : $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
         echo "Runner IST     : $(TZ='Asia/Kolkata' date '+%Y-%m-%d %H:%M:%S IST')"
         echo ""
-        echo "Scheduled triggers:"
-        echo "  PRIMARY  : 04:30 UTC = 10:00 AM IST"
-        echo "  BACKUP-1 : 05:15 UTC = 10:45 AM IST"
-        echo "  BACKUP-2 : 06:00 UTC = 11:30 AM IST"
-        echo "  Cutoff   : 13:00 IST  (07:30 UTC)"
+        echo "Scheduled triggers (Backlog-Compensated Ladder):"
+        echo "  COMPENSATED-1 : 23:30 UTC Sun-Thu (05:00 IST) -> lands ~10:00 AM IST with 5h delay"
+        echo "  COMPENSATED-2 : 00:30 UTC Mon-Fri (06:00 IST) -> lands ~10:30 AM IST with 4.5h delay"
+        echo "  COMPENSATED-3 : 01:30 UTC Mon-Fri (07:00 IST) -> lands ~11:30 AM IST with 4.5h delay"
+        echo "  FALLBACK      : 04:30 UTC Mon-Fri (10:00 IST) -> on-time fallback"
+        echo "  Window        : 09:30 AM - 13:00 PM IST (Enforced in Python)"
         echo ""
         echo "Actual UTC time : $(date -u '+%H:%M:%S UTC')"
         echo "Actual IST time : $(TZ='Asia/Kolkata' date '+%H:%M:%S IST')"

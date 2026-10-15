@@ -264,6 +264,16 @@ def main():
     # structurally impossible to complete on time due to the environment.
     # Use --force to override for manual reruns.
     if not args.dry_run and not args.force:
+        earliest_time = now_ist.replace(hour=9, minute=30, second=0, microsecond=0)
+        if now_ist < earliest_time:
+            log.warning(
+                f"[Morning] Current time is {now_ist.strftime('%I:%M %p IST')}. "
+                f"NSE trading has not opened / morning trades not established (window starts 09:30 IST). "
+                f"Skipping gracefully so later cron or backup can execute during market hours."
+            )
+            log_timing("workflow skipped (pre-market window)")
+            sys.exit(0)
+
         cutoff_time = now_ist.replace(hour=13, minute=0, second=0, microsecond=0)
         if now_ist >= cutoff_time:
             log.warning(
