@@ -97,33 +97,43 @@ def _infer_category(name):
 
 def load_all_mf_trades(imports_dir="data/imports"):
     root      = _resolve_imports_root(imports_dir)
-    mf_dir    = os.path.join(root, "mutual_funds")
-    groww_dir = os.path.join(root, "groww")
-    wife_dir  = os.path.join(root, "Wife")
     trades    = []
     seen_trade_sigs = set()
 
-    # 1. Zerodha MF tradebooks (Self)
-    if os.path.isdir(mf_dir):
-        importer_path = os.path.join(mf_dir, "import_mf_zerodha.py")
-        if os.path.isfile(importer_path):
-            z_mod = _load_importer("_import_mf_zerodha", importer_path)
-            # Zerodha MF tradebooks live in data/imports/zerodha/tradebook-*-MF_*.csv
-            zerodha_dir = os.path.join(root, "zerodha")
-            for path in sorted(glob.glob(os.path.join(zerodha_dir, "tradebook-*-MF_*.csv"))):
-                try:
-                    rows = z_mod.import_mf_zerodha(path)
-                    trades.extend(rows)
-                    log.info(f"  MF Zerodha {os.path.basename(path)}: {len(rows)} rows")
-                except Exception as e:
-                    log.warning(f"  MF Zerodha import failed for {os.path.basename(path)}: {e}")
-        else:
-            log.warning("import_mf_zerodha.py not found in mutual_funds/")
+    # 1. Zerodha MF tradebooks (Self / Sunai)
+    zerodha_dir = os.path.join(root, "Sunai", "zerodha")
+    if not os.path.isdir(zerodha_dir):
+        zerodha_dir = os.path.join(root, "zerodha")
+
+    importer_candidates = [
+        os.path.join(root, "Sunai", "import_mf_zerodha.py"),
+        os.path.join(zerodha_dir, "import_mf_zerodha.py"),
+        os.path.join(root, "mutual_funds", "import_mf_zerodha.py"),
+    ]
+    importer_path = next((p for p in importer_candidates if os.path.isfile(p)), None)
+
+    if importer_path and os.path.isdir(zerodha_dir):
+        z_mod = _load_importer("_import_mf_zerodha", importer_path)
+        for path in sorted(glob.glob(os.path.join(zerodha_dir, "tradebook-*-MF_*.csv"))):
+            try:
+                rows = z_mod.import_mf_zerodha(path)
+                trades.extend(rows)
+                log.info(f"  MF Zerodha {os.path.basename(path)}: {len(rows)} rows")
+            except Exception as e:
+                log.warning(f"  MF Zerodha import failed for {os.path.basename(path)}: {e}")
+    else:
+        if not importer_path:
+            log.warning("import_mf_zerodha.py not found in Sunai/ or mutual_funds/")
 
     # 2. Wife MF Order History & Holdings (data/imports/Wife/)
-    if os.path.isdir(wife_dir) and os.path.isdir(mf_dir):
-        w_importer = os.path.join(mf_dir, "import_mf_wife.py")
-        if os.path.isfile(w_importer):
+    wife_dir = os.path.join(root, "Wife")
+    if os.path.isdir(wife_dir):
+        w_importer_candidates = [
+            os.path.join(wife_dir, "import_mf_wife.py"),
+            os.path.join(root, "mutual_funds", "import_mf_wife.py"),
+        ]
+        w_importer = next((p for p in w_importer_candidates if os.path.isfile(p)), None)
+        if w_importer:
             w_mod = _load_importer("_import_mf_wife", w_importer)
             try:
                 rows = w_mod.import_mf_wife(wife_dir)
@@ -135,8 +145,13 @@ def load_all_mf_trades(imports_dir="data/imports"):
             except Exception as e:
                 log.warning(f"  MF Wife import failed from {wife_dir}: {e}")
         else:
-            g_importer = os.path.join(mf_dir, "import_mf_groww.py")
-            if os.path.isfile(g_importer):
+            g_importer_candidates = [
+                os.path.join(root, "Father", "import_mf_groww.py"),
+                os.path.join(root, "mutual_funds", "import_mf_groww.py"),
+                os.path.join(wife_dir, "import_mf_groww.py"),
+            ]
+            g_importer = next((p for p in g_importer_candidates if os.path.isfile(p)), None)
+            if g_importer:
                 g_mod = _load_importer("_import_mf_groww_wife", g_importer)
                 wife_files = sorted(glob.glob(os.path.join(wife_dir, "*Mutual_Funds*.xlsx")))
                 if not wife_files:
@@ -152,10 +167,19 @@ def load_all_mf_trades(imports_dir="data/imports"):
                     except Exception as e:
                         log.warning(f"  MF Wife import failed for {os.path.basename(path)}: {e}")
 
-    # 3. Groww MF Order History (Dad)
+    # 3. Groww MF Order History (Dad / Father)
+    groww_dir = os.path.join(root, "Father", "groww")
+    if not os.path.isdir(groww_dir):
+        groww_dir = os.path.join(root, "groww")
+
     if os.path.isdir(groww_dir):
-        g_importer = os.path.join(mf_dir, "import_mf_groww.py") if os.path.isdir(mf_dir) else ""
-        if g_importer and os.path.isfile(g_importer):
+        g_importer_candidates = [
+            os.path.join(root, "Father", "import_mf_groww.py"),
+            os.path.join(groww_dir, "import_mf_groww.py"),
+            os.path.join(root, "mutual_funds", "import_mf_groww.py"),
+        ]
+        g_importer = next((p for p in g_importer_candidates if os.path.isfile(p)), None)
+        if g_importer:
             g_mod = _load_importer("_import_mf_groww", g_importer)
             for path in sorted(glob.glob(os.path.join(groww_dir, "Mutual_Funds_*.xlsx"))):
                 try:
@@ -167,7 +191,7 @@ def load_all_mf_trades(imports_dir="data/imports"):
                 except Exception as e:
                     log.warning(f"  MF Groww import failed for {os.path.basename(path)}: {e}")
         else:
-            log.warning("import_mf_groww.py not found")
+            log.warning("import_mf_groww.py not found in Father/ or mutual_funds/")
 
     trades.sort(key=lambda t: str(t.get("date", "")))
     log.info(f"Loaded {len(trades)} total MF transactions")

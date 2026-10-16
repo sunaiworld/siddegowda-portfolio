@@ -92,14 +92,21 @@ def load_all_smallcases(imports_dir: str = "data/imports") -> Tuple[Dict[str, Li
     # Find all smallcase directories (case-insensitive search for 'smallcase')
     target_dirs = []
     if os.path.isdir(root_imports):
-        for entry in os.listdir(root_imports):
-            full_path = os.path.join(root_imports, entry)
-            if os.path.isdir(full_path) and "smallcase" in entry.lower():
-                target_dirs.append(full_path)
+        for root, dirs, _ in os.walk(root_imports):
+            for d in dirs:
+                if "smallcase" in d.lower():
+                    full_path = os.path.join(root, d)
+                    if full_path not in target_dirs:
+                        target_dirs.append(full_path)
                 
     if not target_dirs:
         # Fallback to standard directory names if not matched
-        for standard in ["Zerodha_Smallcase", "Groww_Smallcase"]:
+        for standard in [
+            os.path.join("Sunai", "Zerodha_Smallcase"),
+            os.path.join("Father", "Groww_Smallcase"),
+            "Zerodha_Smallcase",
+            "Groww_Smallcase",
+        ]:
             cand = os.path.join(root_imports, standard)
             if os.path.isdir(cand) and cand not in target_dirs:
                 target_dirs.append(cand)

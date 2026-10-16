@@ -73,10 +73,12 @@ def import_mf_wife(target_path: str) -> List[Dict]:
     xlsx_files = glob.glob(os.path.join(wife_dir, "*.xlsx"))
     if xlsx_files:
         try:
-            from data.imports.mutual_funds.import_mf_groww import import_mf_groww
+            from data.imports.Father.import_mf_groww import import_mf_groww
         except ImportError:
             here = os.path.dirname(os.path.abspath(__file__))
-            g_path = os.path.join(here, "import_mf_groww.py")
+            g_path = os.path.join(os.path.dirname(here), "Father", "import_mf_groww.py")
+            if not os.path.isfile(g_path):
+                g_path = os.path.join(here, "import_mf_groww.py")
             import importlib.util
             spec = importlib.util.spec_from_file_location("_import_mf_groww", g_path)
             mod = importlib.util.module_from_spec(spec)
@@ -98,10 +100,12 @@ def import_mf_wife(target_path: str) -> List[Dict]:
     tb_files = glob.glob(os.path.join(wife_dir, "tradebook-*-MF_*.csv"))
     if tb_files:
         try:
-            from data.imports.mutual_funds.import_mf_zerodha import import_mf_zerodha
+            from data.imports.Sunai.import_mf_zerodha import import_mf_zerodha
         except ImportError:
             here = os.path.dirname(os.path.abspath(__file__))
-            z_path = os.path.join(here, "import_mf_zerodha.py")
+            z_path = os.path.join(os.path.dirname(here), "Sunai", "import_mf_zerodha.py")
+            if not os.path.isfile(z_path):
+                z_path = os.path.join(here, "import_mf_zerodha.py")
             import importlib.util
             spec = importlib.util.spec_from_file_location("_import_mf_zerodha", z_path)
             mod = importlib.util.module_from_spec(spec)

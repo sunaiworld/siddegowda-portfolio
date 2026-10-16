@@ -66,7 +66,9 @@ def process_dividends(fund_map):
     internally to compute the yearly sums — it is not written to the sheet.
     """
     PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    div_dir = os.path.join(PROJECT_ROOT, "data", "imports", "Dividend_Zerodha")
+    div_dir = os.path.join(PROJECT_ROOT, "data", "imports", "Sunai", "Dividend_Zerodha")
+    if not os.path.isdir(div_dir):
+        div_dir = os.path.join(PROJECT_ROOT, "data", "imports", "Dividend_Zerodha")
     csv_files = glob.glob(os.path.join(div_dir, "*.csv"))
 
     if not csv_files:

@@ -456,8 +456,13 @@ def load_all_trades(imports_dir="data/imports"):
     via the existing broker-specific importers and returns the combined list
     of master-schema trade dicts (symbol/action/quantity/price/...)."""
     imports_root = _resolve_imports_root(imports_dir)
-    zerodha_dir = os.path.join(imports_root, "zerodha")
-    groww_dir   = os.path.join(imports_root, "groww")
+    zerodha_dir = os.path.join(imports_root, "Sunai", "zerodha")
+    if not os.path.isdir(zerodha_dir):
+        zerodha_dir = os.path.join(imports_root, "zerodha")
+
+    groww_dir = os.path.join(imports_root, "Father", "groww")
+    if not os.path.isdir(groww_dir):
+        groww_dir = os.path.join(imports_root, "groww")
 
     trades = []
 
@@ -497,13 +502,19 @@ def load_wife_trades(imports_dir="data/imports"):
     trades = []
 
     if os.path.isdir(wife_dir):
-        zerodha_importer_path = os.path.join(imports_root, "zerodha", "import_zerodha.py")
-        zerodha_mod = _load_broker_importer("_zerodha_importer_wife", zerodha_importer_path)
-        for path in sorted(glob.glob(os.path.join(wife_dir, "*.csv"))):
-            try:
-                trades.extend(zerodha_mod.import_zerodha(path))
-            except Exception as e:
-                log.warning(f"  Wife import failed for {os.path.basename(path)}: {e}")
+        importer_candidates = [
+            os.path.join(imports_root, "Sunai", "zerodha", "import_zerodha.py"),
+            os.path.join(imports_root, "zerodha", "import_zerodha.py"),
+            os.path.join(wife_dir, "import_zerodha.py"),
+        ]
+        zerodha_importer_path = next((p for p in importer_candidates if os.path.isfile(p)), None)
+        if zerodha_importer_path:
+            zerodha_mod = _load_broker_importer("_zerodha_importer_wife", zerodha_importer_path)
+            for path in sorted(glob.glob(os.path.join(wife_dir, "*.csv"))):
+                try:
+                    trades.extend(zerodha_mod.import_zerodha(path))
+                except Exception as e:
+                    log.warning(f"  Wife import failed for {os.path.basename(path)}: {e}")
 
     log.info(f"Loaded {len(trades)} raw trade rows from data/imports/Wife")
     trades.sort(key=lambda t: str(t.get("date", "")))

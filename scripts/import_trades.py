@@ -21,8 +21,13 @@ MASTER_LOG_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(_
 
 # Import folders
 IMPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "imports")
-ZERODHA_DIR = os.path.join(IMPORTS_DIR, "zerodha")
-GROWW_DIR = os.path.join(IMPORTS_DIR, "groww")
+ZERODHA_DIR = os.path.join(IMPORTS_DIR, "Sunai", "zerodha")
+if not os.path.isdir(ZERODHA_DIR):
+    ZERODHA_DIR = os.path.join(IMPORTS_DIR, "zerodha")
+
+GROWW_DIR = os.path.join(IMPORTS_DIR, "Father", "groww")
+if not os.path.isdir(GROWW_DIR):
+    GROWW_DIR = os.path.join(IMPORTS_DIR, "groww")
 
 # Schema column order
 SCHEMA_HEADERS = [
