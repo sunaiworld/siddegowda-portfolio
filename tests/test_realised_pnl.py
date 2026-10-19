@@ -254,6 +254,52 @@ for fy_lbl, fy_tot in repo_res.get("fy_totals", {}).items():
     check(f"Test13 FY reconciliation {fy_lbl}", abs(fy_tot - round(m_sum, 2)) < 0.02,
           f"FY={fy_tot}, monthly_sum={m_sum}")
 
+# ── Test 14: Zerodha horizontal matrix structure and reconciliation ─────────
+h_res = _rpnl.compute_horizontal_realised_pnl()
+z_mat = h_res["Zerodha"]
+check("Test14 Zerodha FYs present", len(z_mat["fy_labels"]) >= 5,
+      f"got {z_mat['fy_labels']}")
+check("Test14 Zerodha all-time total > 0", z_mat["all_time_total"] > 0,
+      f"got {z_mat['all_time_total']}")
+check("Test14 Zerodha Stocks > 0", z_mat["stock_tot"] > 0,
+      f"got {z_mat['stock_tot']}")
+check("Test14 Zerodha MFs > 0", z_mat["mf_tot"] > 0,
+      f"got {z_mat['mf_tot']}")
+
+for fy in z_mat["fy_labels"]:
+    d = z_mat["grid"][fy]
+    check(f"Test14 {fy} has 12 months", len(d["months"]) == 12, f"got {len(d['months'])}")
+    m_sum = round(sum(d["months"]), 2)
+    check(f"Test14 {fy} reconciliation", abs(d["fy_total"] - m_sum) < 0.02,
+          f"fy_total={d['fy_total']}, m_sum={m_sum}")
+
+# ── Test 15: Groww horizontal matrix structure and reconciliation ───────────
+g_mat = h_res["Groww"]
+check("Test15 Groww FYs present", len(g_mat["fy_labels"]) >= 3,
+      f"got {g_mat['fy_labels']}")
+check("Test15 Groww all-time total > 0", g_mat["all_time_total"] > 0,
+      f"got {g_mat['all_time_total']}")
+
+for fy in g_mat["fy_labels"]:
+    d = g_mat["grid"][fy]
+    check(f"Test15 {fy} has 12 months", len(d["months"]) == 12, f"got {len(d['months'])}")
+    m_sum = round(sum(d["months"]), 2)
+    check(f"Test15 {fy} reconciliation", abs(d["fy_total"] - m_sum) < 0.02,
+          f"fy_total={d['fy_total']}, m_sum={m_sum}")
+
+# Check loss details in Groww FY 26-27 mentions loss scrips
+g_fy26_loss = g_mat["grid"]["FY 26-27"]["loss_details"]
+check("Test15 Groww FY26-27 mentions ANGELONE", "ANGELONE" in g_fy26_loss, f"got {g_fy26_loss}")
+check("Test15 Groww FY26-27 mentions BAJFINANCE", "BAJFINANCE" in g_fy26_loss, f"got {g_fy26_loss}")
+
+# ── Test 16: Strict separation of Zerodha and Groww matrices ────────────────
+z_fys_set = set(z_mat["fy_labels"])
+g_fys_set = set(g_mat["fy_labels"])
+check("Test16 Zerodha has FY 21-22 and FY 22-23", "FY 21-22" in z_fys_set and "FY 22-23" in z_fys_set,
+      f"got {z_fys_set}")
+check("Test16 Groww does NOT have FY 21-22", "FY 21-22" not in g_fys_set,
+      f"got {g_fys_set}")
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 print()
 print(f"Results: {len(PASS)} PASSED, {len(FAIL)} FAILED")

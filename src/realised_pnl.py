@@ -471,6 +471,128 @@ def compute_monthly_realised_pnl(
     }
 
 
+MONTHS_FY = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"]
+
+
+def compute_broker_monthly_matrix(
+    broker: str,
+    trades: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Computes a horizontal financial-year monthly matrix for a specific broker (Zerodha or Groww).
+    Matches trades via FIFO strictly within that broker's trades.
+    Includes stock & mutual fund breakdown and lists loss-making stocks/funds for any month with losses.
+    """
+    if trades is None:
+        trades, _ = load_all_pnl_trades()
+
+    b_trades = [t for t in trades if t.get("broker") == broker]
+    if not b_trades:
+        return {
+            "broker": broker,
+            "stock_tot": 0.0,
+            "mf_tot": 0.0,
+            "all_time_total": 0.0,
+            "grid": {},
+            "all_time_months": [0.0] * 12,
+            "fy_labels": [],
+            "loss_trades": [],
+        }
+
+    matched = match_trades_fifo(b_trades)
+    realised = matched["realised"]
+
+    stock_tot = sum(r["pnl"] for r in realised if r.get("asset") == "Stock")
+    mf_tot = sum(r["pnl"] for r in realised if r.get("asset") == "Mutual Fund")
+
+    # Identify all unique financial years in the tradebook
+    fys = set()
+    for r in realised:
+        d = r["sell_date"]
+        yr, mo = int(d[:4]), int(d[5:7])
+        fy_s = yr if mo >= 4 else yr - 1
+        fys.add(fy_s)
+
+    grid = {}
+    fy_labels = []
+    for fy_s in sorted(fys, reverse=True):
+        fy_lbl = f"FY {str(fy_s)[-2:]}-{str(fy_s+1)[-2:]}"
+        fy_labels.append(fy_lbl)
+        grid[fy_lbl] = {
+            "fy_start": fy_s,
+            "months": [0.0] * 12,
+            "fy_total": 0.0,
+            "loss_scrip_map": {},  # m_idx -> { (sym, asset): loss }
+        }
+
+    for r in realised:
+        d = r["sell_date"]
+        yr, mo = int(d[:4]), int(d[5:7])
+        fy_s = yr if mo >= 4 else yr - 1
+        fy_lbl = f"FY {str(fy_s)[-2:]}-{str(fy_s+1)[-2:]}"
+        m_idx = mo - 4 if mo >= 4 else mo + 8
+        grid[fy_lbl]["months"][m_idx] += r["pnl"]
+
+        if r["pnl"] < -0.01:
+            if m_idx not in grid[fy_lbl]["loss_scrip_map"]:
+                grid[fy_lbl]["loss_scrip_map"][m_idx] = {}
+            k = (r["symbol"], r.get("asset", "Stock"))
+            grid[fy_lbl]["loss_scrip_map"][m_idx][k] = grid[fy_lbl]["loss_scrip_map"][m_idx].get(k, 0.0) + r["pnl"]
+
+    all_time_months = [0.0] * 12
+    for fy_lbl, data in grid.items():
+        data["months"] = [round(v, 2) for v in data["months"]]
+        data["fy_total"] = round(sum(data["months"]), 2)
+        for i, v in enumerate(data["months"]):
+            all_time_months[i] += v
+
+        loss_parts = []
+        for m_idx in range(12):
+            m_val = data["months"][m_idx]
+            if m_idx in data["loss_scrip_map"]:
+                m_name = MONTHS_FY[m_idx]
+                items = sorted(data["loss_scrip_map"][m_idx].items(), key=lambda x: x[1])
+                top_str = ", ".join([f"{s[0]} (-₹{-v:,.0f})" for s, v in items[:3]])
+                if len(items) > 3:
+                    top_str += f" (+{len(items)-3} more)"
+                if m_val < -0.01:
+                    loss_parts.append(f"{m_name} (Loss Mo: ₹{m_val:,.0f}): {top_str}")
+                else:
+                    loss_parts.append(f"{m_name}: {top_str}")
+        data["loss_details"] = " | ".join(loss_parts) if loss_parts else "None (All Profitable)"
+
+    all_time_months = [round(v, 2) for v in all_time_months]
+    all_time_total = round(sum(all_time_months), 2)
+
+    return {
+        "broker": broker,
+        "stock_tot": round(stock_tot, 2),
+        "mf_tot": round(mf_tot, 2),
+        "all_time_total": all_time_total,
+        "fy_labels": fy_labels,
+        "grid": grid,
+        "all_time_months": all_time_months,
+        "loss_trades": [r for r in realised if r["pnl"] < -0.01],
+    }
+
+
+def compute_horizontal_realised_pnl(
+    zerodha_dir: Optional[str] = None,
+    groww_dir: Optional[str] = None,
+    father_dir: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Computes horizontal monthly realised P&L matrices separately for Zerodha and Groww.
+    Never combines them into a single table.
+    """
+    trades, warnings = load_all_pnl_trades(zerodha_dir, groww_dir, father_dir)
+    return {
+        "Zerodha": compute_broker_monthly_matrix("Zerodha", trades),
+        "Groww": compute_broker_monthly_matrix("Groww", trades),
+        "warnings": warnings,
+    }
+
+
 if __name__ == "__main__":
     res = compute_monthly_realised_pnl()
     print("=" * 60)
