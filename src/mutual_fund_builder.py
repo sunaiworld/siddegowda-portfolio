@@ -101,7 +101,9 @@ def load_all_mf_trades(imports_dir="data/imports"):
     seen_trade_sigs = set()
 
     # 1. Zerodha MF tradebooks (Self / Sunai)
-    zerodha_dir = os.path.join(root, "Sunai", "zerodha")
+    zerodha_dir = os.path.join(root, "Sunai", "Zerodha_Stocks")
+    if not os.path.isdir(zerodha_dir):
+        zerodha_dir = os.path.join(root, "Sunai", "zerodha")
     if not os.path.isdir(zerodha_dir):
         zerodha_dir = os.path.join(root, "zerodha")
 
@@ -168,7 +170,9 @@ def load_all_mf_trades(imports_dir="data/imports"):
                         log.warning(f"  MF Wife import failed for {os.path.basename(path)}: {e}")
 
     # 3. Groww MF Order History (Dad / Father)
-    groww_dir = os.path.join(root, "Father", "groww")
+    groww_dir = os.path.join(root, "Father", "Groww_Stocks")
+    if not os.path.isdir(groww_dir):
+        groww_dir = os.path.join(root, "Father", "groww")
     if not os.path.isdir(groww_dir):
         groww_dir = os.path.join(root, "groww")
 

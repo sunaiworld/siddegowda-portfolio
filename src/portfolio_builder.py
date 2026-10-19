@@ -446,21 +446,31 @@ def _resolve_imports_root(imports_dir):
         os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), imports_dir),
     ]
     for c in candidates:
-        if os.path.isdir(os.path.join(c, "zerodha")) or os.path.isdir(os.path.join(c, "groww")) or os.path.isdir(os.path.join(c, "Wife")):
+        if (os.path.isdir(os.path.join(c, "Sunai", "Zerodha_Stocks")) or
+            os.path.isdir(os.path.join(c, "Sunai", "zerodha")) or
+            os.path.isdir(os.path.join(c, "zerodha")) or
+            os.path.isdir(os.path.join(c, "Father", "Groww_Stocks")) or
+            os.path.isdir(os.path.join(c, "Father", "groww")) or
+            os.path.isdir(os.path.join(c, "groww")) or
+            os.path.isdir(os.path.join(c, "Wife"))):
             return c
     return imports_dir
 
 
 def load_all_trades(imports_dir="data/imports"):
-    """Loads every Zerodha CSV and Groww XLSX under data/imports/{zerodha,groww}
+    """Loads every Zerodha CSV and Groww XLSX under data/imports
     via the existing broker-specific importers and returns the combined list
     of master-schema trade dicts (symbol/action/quantity/price/...)."""
     imports_root = _resolve_imports_root(imports_dir)
-    zerodha_dir = os.path.join(imports_root, "Sunai", "zerodha")
+    zerodha_dir = os.path.join(imports_root, "Sunai", "Zerodha_Stocks")
+    if not os.path.isdir(zerodha_dir):
+        zerodha_dir = os.path.join(imports_root, "Sunai", "zerodha")
     if not os.path.isdir(zerodha_dir):
         zerodha_dir = os.path.join(imports_root, "zerodha")
 
-    groww_dir = os.path.join(imports_root, "Father", "groww")
+    groww_dir = os.path.join(imports_root, "Father", "Groww_Stocks")
+    if not os.path.isdir(groww_dir):
+        groww_dir = os.path.join(imports_root, "Father", "groww")
     if not os.path.isdir(groww_dir):
         groww_dir = os.path.join(imports_root, "groww")
 
@@ -503,6 +513,7 @@ def load_wife_trades(imports_dir="data/imports"):
 
     if os.path.isdir(wife_dir):
         importer_candidates = [
+            os.path.join(imports_root, "Sunai", "Zerodha_Stocks", "import_zerodha.py"),
             os.path.join(imports_root, "Sunai", "zerodha", "import_zerodha.py"),
             os.path.join(imports_root, "zerodha", "import_zerodha.py"),
             os.path.join(wife_dir, "import_zerodha.py"),
@@ -783,6 +794,133 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
     if "Return %" in headers: subtotal_row[headers.index("Return %")] = tot_ret
     all_data.append(subtotal_row)
 
+    portfolio_table_end = len(all_data)
+
+    # ── Monthly Realised Profit & Loss (Portfolio Tab) ────────────────────────
+    # Positioned below the Portfolio table.
+    # Combines Zerodha + Groww (Stocks and Mutual Funds).
+    pnl_header_indices = []
+    pnl_subheader_indices = []
+    pnl_pos_neg_cells = []
+    pnl_currency_cells = []
+
+    if tab_name == "Portfolio":
+        try:
+            import realised_pnl as _rpnl
+            rp_res = _rpnl.compute_monthly_realised_pnl()
+            m_rows = rp_res.get("monthly", [])
+            fy_tots = rp_res.get("fy_totals", {})
+            b_tots = rp_res.get("broker_totals", {})
+            a_tots = rp_res.get("asset_totals", {})
+            all_time = rp_res.get("all_time_total", 0.0)
+        except Exception as e:
+            log.warning(f"Could not compute realised P&L for Portfolio tab: {e}")
+            m_rows, fy_tots, b_tots, a_tots, all_time = [], {}, {}, {}, 0.0
+
+        def pad_pnl(row_data):
+            return row_data + [""] * max(0, len(headers) - len(row_data))
+
+        # Blank spacing row
+        all_data.append(pad_pnl([]))
+
+        # Section Header Banner
+        pnl_header_indices.append(len(all_data))
+        all_data.append(pad_pnl(["MONTHLY REALISED PROFIT & LOSS"]))
+
+        # Explanatory subtitle
+        all_data.append(pad_pnl(["Source: Zerodha + Groww (Stocks & Mutual Funds) | FIFO Methodology | Gross Realised P&L"]))
+        all_data.append(pad_pnl([]))
+
+        if m_rows:
+            # 1. Current FY Headline Card
+            from datetime import datetime as _dt
+            _now = _dt.now()
+            _cur_fy_start = _now.year if _now.month >= 4 else _now.year - 1
+            cur_fy_lbl = f"FY {str(_cur_fy_start)[2:]}-{str(_cur_fy_start + 1)[2:]}"
+            cur_fy_tot = fy_tots.get(cur_fy_lbl, 0.0)
+
+            c_idx = len(all_data)
+            pnl_subheader_indices.append(c_idx)
+            all_data.append(pad_pnl([
+                f"Current Financial Year ({cur_fy_lbl}) Realised P&L",
+                round(cur_fy_tot, 2),
+                "PROFIT" if cur_fy_tot > 0 else ("LOSS" if cur_fy_tot < 0 else "NIL"),
+            ]))
+            pnl_pos_neg_cells.append((c_idx, 1, cur_fy_tot))
+            pnl_pos_neg_cells.append((c_idx, 2, cur_fy_tot))
+            pnl_currency_cells.append((c_idx, 1))
+            all_data.append(pad_pnl([]))
+
+            # 2. Source Breakdown (Broker & Asset Class)
+            s_idx = len(all_data)
+            pnl_subheader_indices.append(s_idx)
+            all_data.append(pad_pnl(["Source Breakdown", "Realised P&L", "Outcome"]))
+            for b_name, b_val in b_tots.items():
+                r_i = len(all_data)
+                all_data.append(pad_pnl([f"Broker: {b_name}", round(b_val, 2), "PROFIT" if b_val > 0 else "LOSS"]))
+                pnl_pos_neg_cells.append((r_i, 1, b_val))
+                pnl_pos_neg_cells.append((r_i, 2, b_val))
+                pnl_currency_cells.append((r_i, 1))
+
+            for a_name, a_val in a_tots.items():
+                r_i = len(all_data)
+                all_data.append(pad_pnl([f"Asset Class: {a_name}", round(a_val, 2), "PROFIT" if a_val > 0 else "LOSS"]))
+                pnl_pos_neg_cells.append((r_i, 1, a_val))
+                pnl_pos_neg_cells.append((r_i, 2, a_val))
+                pnl_currency_cells.append((r_i, 1))
+            all_data.append(pad_pnl([]))
+
+            # 3. Financial Year Summary Table
+            fy_idx = len(all_data)
+            pnl_subheader_indices.append(fy_idx)
+            all_data.append(pad_pnl(["Financial Year Summary", "Realised P&L", "Outcome"]))
+            for f_lbl, f_tot in fy_tots.items():
+                r_i = len(all_data)
+                is_c = " (Current)" if f_lbl == cur_fy_lbl else ""
+                all_data.append(pad_pnl([f"{f_lbl}{is_c}", round(f_tot, 2), "PROFIT" if f_tot > 0 else "LOSS"]))
+                pnl_pos_neg_cells.append((r_i, 1, f_tot))
+                pnl_pos_neg_cells.append((r_i, 2, f_tot))
+                pnl_currency_cells.append((r_i, 1))
+
+            r_all = len(all_data)
+            all_data.append(pad_pnl(["All-Time Total", round(all_time, 2), "PROFIT" if all_time > 0 else "LOSS"]))
+            pnl_pos_neg_cells.append((r_all, 1, all_time))
+            pnl_pos_neg_cells.append((r_all, 2, all_time))
+            pnl_currency_cells.append((r_all, 1))
+            all_data.append(pad_pnl([]))
+
+            # 4. Monthly Breakdown by Financial Year
+            mb_hdr_idx = len(all_data)
+            pnl_header_indices.append(mb_hdr_idx)
+            all_data.append(pad_pnl(["Monthly Breakdown by Financial Year"]))
+            cur_grp_fy = None
+            for mrow in m_rows:
+                f_lbl = mrow["fy"]
+                if f_lbl != cur_grp_fy:
+                    cur_grp_fy = f_lbl
+                    f_tot = fy_tots.get(f_lbl, 0.0)
+                    all_data.append(pad_pnl([]))
+                    fy_h = len(all_data)
+                    pnl_subheader_indices.append(fy_h)
+                    all_data.append(pad_pnl([f"{f_lbl} Total", round(f_tot, 2), "PROFIT" if f_tot > 0 else "LOSS"]))
+                    pnl_pos_neg_cells.append((fy_h, 1, f_tot))
+                    pnl_pos_neg_cells.append((fy_h, 2, f_tot))
+                    pnl_currency_cells.append((fy_h, 1))
+
+                    sub_h = len(all_data)
+                    pnl_subheader_indices.append(sub_h)
+                    all_data.append(pad_pnl(["Month", "Gross Realised P&L", "Outcome"]))
+
+                pnl_v = mrow["gross_pnl"]
+                r_i = len(all_data)
+                all_data.append(pad_pnl([mrow["label"], round(pnl_v, 2), "PROFIT" if pnl_v > 0 else ("LOSS" if pnl_v < 0 else "NIL")]))
+                pnl_pos_neg_cells.append((r_i, 1, pnl_v))
+                pnl_pos_neg_cells.append((r_i, 2, pnl_v))
+                pnl_currency_cells.append((r_i, 1))
+        else:
+            all_data.append(pad_pnl(["No realised P&L data available."]))
+
+
     try:
         ws = sh.worksheet(tab_name)
     except Exception:
@@ -1050,14 +1188,14 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
                 except: pass
             reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff", font_size=8))
 
-    # Filter over the full table
+    # Filter over the stock portfolio table (excluding the Realised P&L section below it)
     reqs.append({
         "setBasicFilter": {
             "filter": {
                 "range": {
                     "sheetId": ws.id,
                     "startRowIndex": 0,
-                    "endRowIndex": len(all_data),
+                    "endRowIndex": portfolio_table_end,
                     "startColumnIndex": 0,
                     "endColumnIndex": nc,
                 }
@@ -1076,6 +1214,38 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
         if "Not > 5%" in headers:
             n5_idx = headers.index("Not > 5%")
             reqs += sheet_formatter.get_not_gt_5pct_gradient_rules(ws.id, data_start_row, data_end_row, n5_idx)
+
+    # Format Monthly Realised Profit & Loss section on Portfolio tab
+    for h_idx in pnl_header_indices:
+        reqs.append({
+            "repeatCell": {
+                "range": {"sheetId": ws.id, "startRowIndex": h_idx, "endRowIndex": h_idx + 1, "startColumnIndex": 0, "endColumnIndex": nc},
+                "cell": {"userEnteredFormat": {
+                    "backgroundColor": sheet_formatter.hex_rgb("1f4e78"),
+                    "textFormat": {"foregroundColor": sheet_formatter.hex_rgb("ffffff"), "bold": True, "fontSize": 9},
+                    "horizontalAlignment": "LEFT", "verticalAlignment": "MIDDLE"
+                }},
+                "fields": "userEnteredFormat"
+            }
+        })
+        reqs.append({
+            "updateDimensionProperties": {
+                "range": {"sheetId": ws.id, "dimension": "ROWS", "startIndex": h_idx, "endIndex": h_idx + 1},
+                "properties": {"pixelSize": 30}, "fields": "pixelSize"
+            }
+        })
+
+    for s_idx in pnl_subheader_indices:
+        for col in range(min(nc, 3)):
+            reqs.append(sheet_formatter.color_cell_req(ws.id, s_idx, col, "1c3144", "ffffff", font_size=8))
+
+    for r_idx, c_idx, val in pnl_pos_neg_cells:
+        req = sheet_formatter.color_positive_negative(ws.id, r_idx, c_idx, val)
+        if req:
+            reqs.append(req)
+
+    for r_idx, c_idx in pnl_currency_cells:
+        reqs += sheet_formatter.get_currency_format_reqs(ws.id, r_idx, r_idx + 1, c_idx, c_idx + 1)
 
     if reqs:
         sheet_writer.batch_update_safe(sh, reqs)

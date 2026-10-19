@@ -213,6 +213,47 @@ check("Test10 second exit loss", abs(months.get("Aug 2025", 0) - (-1000.0)) < 0.
       f"got {months}")
 shutil.rmtree(tmpdir)
 
+# ── Test 11: Broker separation in FIFO matching ──────────────────────────────
+trades_test11 = [
+    {"broker": "Zerodha", "asset": "Stock", "symbol": "SEPARATE", "type": "buy",  "qty": 50, "price": 100.0, "date": "2024-04-01", "trade_id": "T1"},
+    {"broker": "Groww",   "asset": "Stock", "symbol": "SEPARATE", "type": "sell", "qty": 50, "price": 150.0, "date": "2024-05-01", "trade_id": "T2"},
+]
+res11 = _rpnl.match_trades_fifo(trades_test11)
+check("Test11 broker separation no match", len(res11["realised"]) == 0,
+      f"expected 0 matches, got {len(res11['realised'])}")
+check("Test11 orphan sell recorded", len(res11["orphan_sells"]) == 1,
+      f"expected 1 orphan sell, got {len(res11['orphan_sells'])}")
+check("Test11 open holding retained", len(res11["open_holdings"]) == 1,
+      f"expected 1 open holding, got {len(res11['open_holdings'])}")
+
+# ── Test 12: Asset class separation in FIFO matching ─────────────────────────
+trades_test12 = [
+    {"broker": "Zerodha", "asset": "Stock",       "symbol": "SAME_SYM", "type": "buy",  "qty": 100, "price": 50.0, "date": "2024-04-01", "trade_id": "T3"},
+    {"broker": "Zerodha", "asset": "Mutual Fund", "symbol": "SAME_SYM", "type": "sell", "qty": 100, "price": 60.0, "date": "2024-06-01", "trade_id": "T4"},
+]
+res12 = _rpnl.match_trades_fifo(trades_test12)
+check("Test12 asset class separation no match", len(res12["realised"]) == 0,
+      f"expected 0 matches, got {len(res12['realised'])}")
+check("Test12 orphan MF sell recorded", len(res12["orphan_sells"]) == 1,
+      f"expected 1 orphan sell, got {len(res12['orphan_sells'])}")
+
+# ── Test 13: Full repository data validation (Zerodha + Groww, Stocks + MFs) ───
+repo_res = _rpnl.compute_monthly_realised_pnl()
+b_totals = repo_res.get("broker_totals", {})
+a_totals = repo_res.get("asset_totals", {})
+check("Test13 Zerodha trades present", b_totals.get("Zerodha", 0) > 0,
+      f"Zerodha total: {b_totals.get('Zerodha')}")
+check("Test13 Groww trades present", b_totals.get("Groww", 0) > 0,
+      f"Groww total: {b_totals.get('Groww')}")
+check("Test13 Stock realised P&L present", a_totals.get("Stock", 0) > 0,
+      f"Stock total: {a_totals.get('Stock')}")
+check("Test13 Mutual Fund realised P&L present", a_totals.get("Mutual Fund", 0) > 0,
+      f"Mutual Fund total: {a_totals.get('Mutual Fund')}")
+for fy_lbl, fy_tot in repo_res.get("fy_totals", {}).items():
+    m_sum = sum(m["gross_pnl"] for m in repo_res["monthly"] if m["fy"] == fy_lbl)
+    check(f"Test13 FY reconciliation {fy_lbl}", abs(fy_tot - round(m_sum, 2)) < 0.02,
+          f"FY={fy_tot}, monthly_sum={m_sum}")
+
 # ── Summary ──────────────────────────────────────────────────────────────────
 print()
 print(f"Results: {len(PASS)} PASSED, {len(FAIL)} FAILED")
