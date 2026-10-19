@@ -853,6 +853,90 @@ def write_dashboard_tab(sh, dash, changes=None, health=None, health_trend=None, 
     elif changes is not None:
         add_row(["Today's Changes", "No prior trading day in History yet - check back tomorrow"], is_header=True)
 
+    # ── 10. Monthly Realised Profit & Loss ──────────────────────────────────
+    # Computed from Zerodha tradebook CSVs using FIFO matching.
+    # Gross P&L only (no brokerage/STT/charges — not in raw tradebook).
+    # Orphan sells (shares bought before earliest available tradebook) are
+    # excluded from totals and documented in the data-quality note row.
+    try:
+        import realised_pnl as _rpnl
+        rpnl_result = _rpnl.compute_monthly_realised_pnl()
+        monthly_rows_data = rpnl_result.get("monthly", [])
+        fy_totals = rpnl_result.get("fy_totals", {})
+        rpnl_note = rpnl_result.get("note", "")
+    except Exception as _rpnl_exc:
+        log.warning(f"Could not compute realised P&L: {_rpnl_exc}")
+        monthly_rows_data = []
+        fy_totals = {}
+        rpnl_note = f"Realised P&L unavailable: {_rpnl_exc}"
+
+    add_row([])
+    add_row(["Monthly Realised Profit & Loss"], is_header=True)
+    add_row(["Source: Zerodha Equity Tradebooks (FIFO Methodology) | Charges: Not available in raw tradebook (Gross P&L)"])
+    add_row([])
+
+    if monthly_rows_data:
+        # 10.1 Current Financial Year Headline (Groww style)
+        today_dt = datetime.now()
+        cur_fy_start = today_dt.year if today_dt.month >= 4 else today_dt.year - 1
+        cur_fy_label = f"FY {str(cur_fy_start)[2:]}-{str(cur_fy_start + 1)[2:]}"
+        cur_fy_total = fy_totals.get(cur_fy_label, 0.0)
+
+        cur_fy_card_idx = add_row([
+            f"Current Financial Year ({cur_fy_label}) Realised P&L",
+            round(cur_fy_total, 2),
+            "PROFIT" if cur_fy_total > 0 else ("LOSS" if cur_fy_total < 0 else "NIL"),
+        ], is_subheader=True)
+        pos_neg_cells.append((cur_fy_card_idx, 1, cur_fy_total))
+        pos_neg_cells.append((cur_fy_card_idx, 2, cur_fy_total))
+        currency_cells.append((cur_fy_card_idx, 1))
+
+        # 10.2 Financial Year Summary Table (All Historical FYs)
+        add_row([])
+        add_row(["Financial Year Summary", "Realised P&L", "Outcome"], is_subheader=True)
+        for f_lbl, f_tot in fy_totals.items():
+            is_cur = " (Current)" if f_lbl == cur_fy_label else ""
+            out_lbl = "PROFIT" if f_tot > 0 else ("LOSS" if f_tot < 0 else "NIL")
+            r_f = add_row([f"{f_lbl}{is_cur}", round(f_tot, 2), out_lbl])
+            pos_neg_cells.append((r_f, 1, f_tot))
+            pos_neg_cells.append((r_f, 2, f_tot))
+            currency_cells.append((r_f, 1))
+
+        all_time_total = round(sum(fy_totals.values()), 2)
+        r_all = add_row(["All-Time Total", all_time_total, "PROFIT" if all_time_total > 0 else "LOSS"])
+        pos_neg_cells.append((r_all, 1, all_time_total))
+        pos_neg_cells.append((r_all, 2, all_time_total))
+        currency_cells.append((r_all, 1))
+        add_row([])
+
+        # 10.3 Chronological Monthly Breakdown Grouped by FY
+        add_row(["Monthly Breakdown by Financial Year"], is_header=True)
+        current_fy_label = None
+        for mrow in monthly_rows_data:
+            fy_label = mrow["fy"]
+            if fy_label != current_fy_label:
+                current_fy_label = fy_label
+                fy_total = fy_totals.get(fy_label, 0.0)
+                add_row([])
+                fy_subhdr_idx = add_row(
+                    [f"{fy_label} Total", round(fy_total, 2), "PROFIT" if fy_total > 0 else "LOSS"],
+                    is_subheader=True,
+                )
+                pos_neg_cells.append((fy_subhdr_idx, 1, fy_total))
+                pos_neg_cells.append((fy_subhdr_idx, 2, fy_total))
+                currency_cells.append((fy_subhdr_idx, 1))
+                add_row(["Month", "Gross Realised P&L", "Outcome"], is_subheader=True)
+
+            pnl_val = mrow["gross_pnl"]
+            pl_label = "PROFIT" if pnl_val > 0 else ("LOSS" if pnl_val < 0 else "NIL")
+            data_row_idx = add_row([mrow["label"], round(pnl_val, 2), pl_label])
+            pos_neg_cells.append((data_row_idx, 1, pnl_val))
+            pos_neg_cells.append((data_row_idx, 2, pnl_val))
+            currency_cells.append((data_row_idx, 1))
+    else:
+        add_row(["No realised P&L data available. Check that Tradebook_*.csv files are present in data/imports/Sunai/zerodha/."])
+
+
     ws.update("A1", rows, value_input_option="RAW")
 
     widths = [220, 110, 100, 130, 130, 120, 100, 100, 120]
