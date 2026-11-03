@@ -608,7 +608,7 @@ import math
 def is_valid_price(p):
     return p is not None and isinstance(p, (int, float)) and not math.isnan(p) and p > 0
 
-def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_map=None, tech_map=None, trades=None, exclude_smallcases=True):
+def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_map=None, tech_map=None, trades=None, exclude_smallcases=False):
     if fund_map is None: fund_map = {}
     if source_map is None: source_map = {}
     if tech_map is None: tech_map = {}

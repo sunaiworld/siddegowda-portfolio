@@ -39,7 +39,7 @@ logging.basicConfig(
 log = logging.getLogger("update_portfolio")
 
 
-def update_portfolio(dry_run=False):
+def update_portfolio(dry_run=False, exclude_smallcases=False):
     log.info("Loading main portfolio trades from data/imports/...")
     trades = load_all_trades()
     if not trades:
@@ -49,13 +49,17 @@ def update_portfolio(dry_run=False):
     holdings = compute_holdings(trades)
     log.info(f"Computed {len(holdings)} active holdings across {len(trades)} raw trade rows.")
 
-    sc_map, sc_symbols = smallcase_loader.load_all_smallcases()
-    symbols = [
-        h["symbol"] for h in holdings.values()
-        if h.get("symbol") and smallcase_loader.normalize_symbol(h["symbol"]) not in sc_symbols
-    ]
+    if exclude_smallcases:
+        sc_map, sc_symbols = smallcase_loader.load_all_smallcases()
+        symbols = [
+            h["symbol"] for h in holdings.values()
+            if h.get("symbol") and h.get("qty", 0) > 0 and smallcase_loader.normalize_symbol(h["symbol"]) not in sc_symbols
+        ]
+        log.info(f"Identified {len(symbols)} non-smallcase symbols for portfolio.")
+    else:
+        symbols = [h["symbol"] for h in holdings.values() if h.get("symbol") and h.get("qty", 0) > 0]
+        log.info(f"Identified {len(symbols)} total active symbols for portfolio.")
     symbols = sorted(list(set(symbols)))
-    log.info(f"Identified {len(symbols)} non-smallcase symbols for portfolio.")
 
     log.info(f"Fetching current market prices for {len(symbols)} symbols...")
     prices = fetch_prices_batch(symbols)
@@ -73,7 +77,7 @@ def update_portfolio(dry_run=False):
                 tech_map[sym] = {}
 
     log.info("Building Portfolio rows and metrics...")
-    portfolio_dict = build_portfolio(prices, tech_map=tech_map, trades=trades, exclude_smallcases=True)
+    portfolio_dict = build_portfolio(prices, tech_map=tech_map, trades=trades, exclude_smallcases=exclude_smallcases)
     combined_rows = portfolio_dict.get("combined", [])
 
     tot_inv = sum(r["invested"] for r in combined_rows)
@@ -111,7 +115,8 @@ def update_portfolio(dry_run=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Update Portfolio tab in Google Sheets")
     parser.add_argument("--dry-run", action="store_true", help="Print calculated rows without writing to Google Sheets")
+    parser.add_argument("--exclude-smallcases", action="store_true", help="Exclude smallcase stocks from Portfolio tab")
     args = parser.parse_args()
 
-    success = update_portfolio(dry_run=args.dry_run)
+    success = update_portfolio(dry_run=args.dry_run, exclude_smallcases=args.exclude_smallcases)
     sys.exit(0 if success else 1)

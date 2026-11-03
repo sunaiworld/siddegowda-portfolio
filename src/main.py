@@ -347,7 +347,7 @@ def run_portfolio_update(sh):
     log.info(f"[CHECKPOINT] About to write GITHUB DATA — {len(results)} rows built")
 
     try:
-        portfolio_rows = build_portfolio(prices, fund_map=fund_map, source_map=source_map, tech_map=tech_map, exclude_smallcases=True)
+        portfolio_rows = build_portfolio(prices, fund_map=fund_map, source_map=source_map, tech_map=tech_map, exclude_smallcases=False)
         with profiler.stage("[09] Portfolio sheet write", category="Google Sheets"):
             write_portfolio(sh, portfolio_rows)
     except Exception as e:

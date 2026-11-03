@@ -304,9 +304,14 @@ def fetch_prices_batch(symbols):
                 )
                 for sym, ns in zip(batch_orig, batch):
                     try:
-                        close = df[ns]["Close"].dropna().iloc[-1] if len(batch) > 1 else df["Close"].dropna().iloc[-1]
-                        prices[sym] = round(float(close), 2)
-                    except:
+                        if ns in df:
+                            close = df[ns]["Close"].dropna().iloc[-1]
+                        elif "Close" in df:
+                            close = df["Close"].dropna().iloc[-1]
+                        else:
+                            close = None
+                        prices[sym] = round(float(close), 2) if close is not None else None
+                    except Exception:
                         prices[sym] = None
                 log.info(f"Batch {i // BATCH_SIZE + 1}: {len(batch)} prices fetched")
                 break
