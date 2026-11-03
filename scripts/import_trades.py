@@ -43,11 +43,13 @@ SCHEMA_HEADERS = [
 # Field header aliases for mapping broker files to schema columns (case/symbol agnostic)
 ALIASES = {
     "symbol": ["symbol", "tradingsymbol", "trading_symbol", "instrument", "instrumentname", "stock", "company", "companyname", "scrip"],
-    "date": ["date", "tradedate", "trade_date", "time", "executiontime", "execution_time", "transactiondate", "transaction_date", "orderdate", "order_date"],
+    "date": ["date", "tradedate", "trade_date", "time", "executiontime", "execution_time", "transactiondate", "transaction_date", "orderdate", "order_date", "executiondateandtime", "execution_date_and_time", "executiondate", "execution_date"],
     "action": ["action", "type", "tradetype", "trade_type", "transaction", "transactiontype", "transaction_type", "buy/sell", "buysell"],
     "quantity": ["quantity", "qty", "vol", "volume", "shares", "nos", "qtyexecuted", "qty_executed"],
     "price": ["price", "tradeprice", "trade_price", "rate", "avgprice", "avg_price", "averageprice", "average_price", "executionprice", "execution_price"],
-    "broker_order_id": ["orderid", "order_id", "orderno", "order_no", "order_number", "ordernumber", "transactionid", "transaction_id", "brokerorderid", "broker_order_id"],
+    "value": ["value", "grossvalue", "gross_value", "totalvalue", "total_value", "amount", "tradevalue", "trade_value"],
+    "status": ["status", "orderstatus", "order_status"],
+    "broker_order_id": ["orderid", "order_id", "orderno", "order_no", "order_number", "ordernumber", "transactionid", "transaction_id", "brokerorderid", "broker_order_id", "exchangeorderid", "exchange_order_id"],
     "exchange": ["exchange", "exch"],
     "segment": ["segment", "seg"],
 }
@@ -250,6 +252,8 @@ def process_broker_directory(dir_path, broker_name, existing_sigs):
         f_path = os.path.join(dir_path, f_name)
         if os.path.isdir(f_path):
             continue
+        if "mutual_fund" in f_name.lower() or "-mf_" in f_name.lower() or "_mf" in f_name.lower():
+            continue
         
         log.info(f"Processing {broker_name} file: {f_name}")
         rows = load_file_rows(f_path)
@@ -269,6 +273,23 @@ def process_broker_directory(dir_path, broker_name, existing_sigs):
                 exch_raw = get_column_by_aliases(row, ALIASES["exchange"]) or "NSE"
                 seg_raw = get_column_by_aliases(row, ALIASES["segment"]) or "EQ"
                 
+                # Check status if present (e.g. Groww)
+                stat_raw = get_column_by_aliases(row, ALIASES.get("status", []))
+                if stat_raw and str(stat_raw).strip().lower() != "executed":
+                    continue
+
+                # If price is missing but value & quantity exist, derive price
+                if prc_raw is None:
+                    val_raw = get_column_by_aliases(row, ALIASES.get("value", []))
+                    if val_raw is not None and qty_raw is not None:
+                        try:
+                            _q = abs(float(str(qty_raw).strip().replace(",", "")))
+                            _v = abs(float(str(val_raw).strip().replace(",", "")))
+                            if _q > 0:
+                                prc_raw = str(round(_v / _q, 4))
+                        except Exception:
+                            pass
+
                 # Check for mandatory fields
                 if sym_raw is None or date_raw is None or act_raw is None or qty_raw is None or prc_raw is None:
                     missing = [k for k, v in {"symbol": sym_raw, "date": date_raw, "action": act_raw, "quantity": qty_raw, "price": prc_raw}.items() if v is None]

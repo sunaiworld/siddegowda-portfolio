@@ -18,7 +18,9 @@ CONCOR,Transporting India Theme,Groww_Smallcase,Transporting_India_Theme_20_9_20
 CRISIL,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv
 DELHIVERY,Transporting India Theme,Groww_Smallcase,Transporting_India_Theme_20_9_2026.csv
 EICHERMOT,Auto Tracker; Transporting India Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Transporting_India_Theme_20_9_2026.csv
+ELGIEQUIP,Growth Income Model,Groww_Smallcase,Growth_Income_Model_21_9_2026.csv
 EMBASSY,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
+EMCURE,Growth Income Model,Groww_Smallcase,Growth_Income_Model_21_9_2026.csv
 ENDURANCE,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
 ENGINERSIN,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
 EXIDEIND,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
@@ -39,10 +41,12 @@ ITC,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9
 JSWENERGY,Energy Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv
 JSWINFRA,Transporting India Theme; Infra Tracker,Groww_Smallcase; Zerodha_Smallcase,Transporting_India_Theme_20_9_2026.csv; Infra_Tracker_20_9_2026.csv
 KEI,Dividend Aristocrats Model; Infra Tracker,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv; Infra_Tracker_20_9_2026.csv
+KIRLOSENG,Growth Income Model,Groww_Smallcase,Growth_Income_Model_21_9_2026.csv
 KIRLPNU,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv
 KPIL,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
 LT,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
 LTM,IT Tracker,Zerodha_Smallcase,IT_Tracker_20_9_2026.csv
+LUMAXTECH,Growth Income Model,Groww_Smallcase,Growth_Income_Model_21_9_2026.csv
 M&M,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
 MARICO,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
 MINDSPACE,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
@@ -59,6 +63,7 @@ OIL,Energy Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv
 ONGC,Energy Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv
 PARADEEP,Safe Haven Model,Groww_Smallcase,Safe_Haven_Model_20_9_2026.csv
 PERSISTENT,IT Tracker,Zerodha_Smallcase,IT_Tracker_20_9_2026.csv
+PIDILITIND,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv
 POLYCAB,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
 POWERGRID,Energy Tracker; Infra Tracker,Zerodha_Smallcase,Energy_Tracker_20_9_2026.csv; Infra_Tracker_20_9_2026.csv
 PRICOLLTD,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv
@@ -66,6 +71,7 @@ RAINBOW,Growth Income Model; Safe Haven Model,Groww_Smallcase,Growth_Income_Mode
 RELIANCE,Dividend Aristocrats Model; Energy Tracker,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv; Energy_Tracker_20_9_2026.csv
 SCHAEFFLER,Dividend Aristocrats Model,Zerodha_Smallcase,Dividend_Aristocrats_Model_20_9_2026.csv
 SHADOWFAX,Transporting India Theme,Groww_Smallcase,Transporting_India_Theme_20_9_2026.csv
+SHRIPISTON,Growth Income Model,Groww_Smallcase,Growth_Income_Model_21_9_2026.csv
 SIEMENS,Infra Tracker,Zerodha_Smallcase,Infra_Tracker_20_9_2026.csv
 SONACOMS,Auto Tracker; Electric Mobility Theme,Groww_Smallcase,Auto_Tracker_20_9_2026.csv; Electric_Mobility_Theme_20_9_2026.csv
 STAR,Growth & Value Multicap Model,Zerodha_Smallcase,Growth_Value_Multicap_Model_20_9_2026.csv

@@ -1,10 +1,10 @@
 ================================================================================
 SIDDEGOWDA PORTFOLIO — SMALLCASE EXCLUSION AUDIT REPORT
 ================================================================================
-Total Broker Holdings Symbols : 191
+Total Broker Holdings Symbols : 195
 Total Unique Smallcase Symbols: 98
-Number of Excluded Symbols    : 90
-Remaining Portfolio Symbols   : 101
+Number of Excluded Symbols    : 96
+Remaining Portfolio Symbols   : 99
 --------------------------------------------------------------------------------
 Symbol          | Smallcase(s)                                  | Source
 --------------------------------------------------------------------------------
@@ -27,7 +27,9 @@ CONCOR          | Transporting India Theme                      | Groww_Smallcas
 CRISIL          | Dividend Aristocrats Model                    | Zerodha_Smallcase
 DELHIVERY       | Transporting India Theme                      | Groww_Smallcase
 EICHERMOT       | Auto Tracker, Transporting India Theme        | Groww_Smallcase
+ELGIEQUIP       | Growth Income Model                           | Groww_Smallcase
 EMBASSY         | Safe Haven Model                              | Groww_Smallcase
+EMCURE          | Growth Income Model                           | Groww_Smallcase
 ENDURANCE       | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
 ENGINERSIN      | Growth & Value Multicap Model                 | Zerodha_Smallcase
 EXIDEIND        | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
@@ -48,10 +50,12 @@ ITC             | Dividend Aristocrats Model                    | Zerodha_Smallc
 JSWENERGY       | Energy Tracker                                | Zerodha_Smallcase
 JSWINFRA        | Transporting India Theme, Infra Tracker       | Groww_Smallcase, Zerodha_Smallcase
 KEI             | Dividend Aristocrats Model, Infra Tracker     | Zerodha_Smallcase
+KIRLOSENG       | Growth Income Model                           | Groww_Smallcase
 KIRLPNU         | Dividend Aristocrats Model                    | Zerodha_Smallcase
 KPIL            | Growth & Value Multicap Model                 | Zerodha_Smallcase
 LT              | Infra Tracker                                 | Zerodha_Smallcase
 LTM             | IT Tracker                                    | Zerodha_Smallcase
+LUMAXTECH       | Growth Income Model                           | Groww_Smallcase
 M&M             | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
 MARICO          | Safe Haven Model                              | Groww_Smallcase
 MINDSPACE       | Safe Haven Model                              | Groww_Smallcase
@@ -68,6 +72,7 @@ OIL             | Energy Tracker                                | Zerodha_Smallc
 ONGC            | Energy Tracker                                | Zerodha_Smallcase
 PARADEEP        | Safe Haven Model                              | Groww_Smallcase
 PERSISTENT      | IT Tracker                                    | Zerodha_Smallcase
+PIDILITIND      | Dividend Aristocrats Model                    | Zerodha_Smallcase
 POLYCAB         | Infra Tracker                                 | Zerodha_Smallcase
 POWERGRID       | Energy Tracker, Infra Tracker                 | Zerodha_Smallcase
 PRICOLLTD       | Growth & Value Multicap Model                 | Zerodha_Smallcase
@@ -75,6 +80,7 @@ RAINBOW         | Growth Income Model, Safe Haven Model         | Groww_Smallcas
 RELIANCE        | Dividend Aristocrats Model, Energy Tracker    | Zerodha_Smallcase
 SCHAEFFLER      | Dividend Aristocrats Model                    | Zerodha_Smallcase
 SHADOWFAX       | Transporting India Theme                      | Groww_Smallcase
+SHRIPISTON      | Growth Income Model                           | Groww_Smallcase
 SIEMENS         | Infra Tracker                                 | Zerodha_Smallcase
 SONACOMS        | Auto Tracker, Electric Mobility Theme         | Groww_Smallcase
 STAR            | Growth & Value Multicap Model                 | Zerodha_Smallcase
@@ -100,5 +106,5 @@ VOLTAS          | House of Tata Tracker                         | Zerodha_Smallc
 ZFCVINDIA       | Dividend Aristocrats Model                    | Zerodha_Smallcase
 ================================================================================
 
-Remaining Independent Portfolio Symbols (101):
-5PAISA, AARTIIND, AAVAS, ABBOTINDIA, ACC, AMRUTANJAN, APTUS, ASIANPAINT, ASTRAL, AWL, BAJAJFINSV, BAJAJHLDNG, BAJFINANCE, BANDHANBNK, BANKBEES, BECTORFOOD, BRITANNIA, BSE, CAMPUS, CAMS, CANBK, CDSL, CHOLAHLDNG, CLEAN, COLPAL, CPSEETF, CUB, CYIENT, DABUR, DEEPAKNTR, DIXON, EQUITAS, EQUITASBNK, FORTIS, GEOJITFSL, GMMPFAUDLR, GOLDBEES, GREENPANEL, HAPPSTMNDS, HDFCAMC, HDFCBANK, HDFCLIFE, HDFCMOMENT, HDFCSML250, HEROMOTOCO, HINDPETRO, HINDUNILVR, HINDZINC, HMAAGRO, IDFCFIRSTB, IEX, INDIGOPNTS, IRCTC, IT, ITBEES, JIOFIN, JKPAPER, KALYANKJIL, KOTAKBANK, LTI, LTIM, LUPIN, MAHKTECH, MAXHEALTH, MINDTREE, MOM100, MON100, MOTILALOFS, MUTHOOTFIN, NATCOPHARM, NIFTYBEES, NUVAMA, PAGEIND, PGHH, PIIND, PNB, POLICYBZR, PVRINOX, RAJESHEXPO, RECLTD, RUSHIL, SBICARD, SBILIFE, SFL, SILVERBEES, SONATSOFTW, STARHEALTH, SUZLON, SWIGGY, SWSOLAR, TANLA, TARSONS, TATAELXSI, TATAMOTORS, TIINDIA, TRENT, VAIBHAVGBL, VBL, VEDL, VGUARD, ZOMATO
+Remaining Independent Portfolio Symbols (99):
+5PAISA, AARTIIND, AAVAS, ABBOTINDIA, ACC, AMRUTANJAN, APTUS, ASIANPAINT, ASTRAL, AWL, BAJAJFINSV, BAJAJHLDNG, BAJFINANCE, BANDHANBNK, BANKBEES, BECTORFOOD, BRITANNIA, BSE, CAMPUS, CAMS, CANBK, CDSL, CHOLAHLDNG, CLEAN, COLPAL, CPSEETF, CUB, DABUR, DEEPAKNTR, DIXON, EQUITAS, EQUITASBNK, FORTIS, GEOJITFSL, GMMPFAUDLR, GOLDBEES, GREENPANEL, HAPPSTMNDS, HDFCAMC, HDFCBANK, HDFCLIFE, HDFCMOMENT, HDFCSML250, HEROMOTOCO, HINDPETRO, HINDUNILVR, HINDZINC, HMAAGRO, IDFCFIRSTB, IEX, INDIGOPNTS, IRCTC, IT, ITBEES, JIOFIN, JKPAPER, KALYANKJIL, KIMS, LTI, LTIM, LUPIN, MAHKTECH, MAXHEALTH, MINDTREE, MOM100, MON100, MOTILALOFS, MUTHOOTFIN, NATCOPHARM, NIFTYBEES, NUVAMA, PAGEIND, PGHH, PIIND, PNB, POLICYBZR, RAJESHEXPO, RECLTD, RUSHIL, SBICARD, SBILIFE, SFL, SILVERBEES, SONATSOFTW, STARHEALTH, SUZLON, SWIGGY, SWSOLAR, TANLA, TARSONS, TATAELXSI, TATAMOTORS, TIINDIA, TRENT, VAIBHAVGBL, VBL, VEDL, VGUARD, ZOMATO
