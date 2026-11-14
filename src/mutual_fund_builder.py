@@ -804,6 +804,14 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
         if i == 0 or len(row) <= 1 or row[0] == "" or "SUBTOTAL" in row[0] or "TOTAL" in row[0] or "GROWW" in row[0] or "ZERODHA" in row[0] or "WIFE" in row[0]:
             continue
 
+        # Highlight Fund Name (col 0) & Category (col 1) in light red for all funds excluding Small Cap, Flexi Cap, and Sectoral/Thematic
+        cat_val = str(row[1]).strip().lower() if len(row) > 1 and row[1] else ""
+        if cat_val:
+            is_core = any(ex in cat_val for ex in ["small cap", "flexi cap", "sectoral", "thematic"])
+            if not is_core:
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 0, "fde9d9", "c62828", bold=False))
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 1, "fde9d9", "c62828", bold=False))
+
         try:
             pnl = float(str(row[7]).replace("₹", "").replace(",", "").strip()) if row[7] else 0.0
             req = sheet_formatter.color_positive_negative(ws.id, rn, 7, pnl)
@@ -815,6 +823,16 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
             req = sheet_formatter.color_positive_negative(ws.id, rn, 8, ret_pct)
             if req: reqs.append(req)
         except: pass
+
+        # Weight% column colour (col 9) — continuous green-to-red scale
+        try:
+            wt_raw = str(row[9]).replace("%", "").replace(",", "").strip() if len(row) > 9 and row[9] != "" else None
+            wt_val = float(wt_raw) if wt_raw is not None else None
+            if wt_val is not None and wt_val > 0:
+                bg, fg = sheet_formatter.get_continuous_green_to_red_rgb(wt_val, min_val=0.5, max_val=20.0)
+                if bg and fg:
+                    reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 9, bg, fg, bold=(wt_val >= 20.0)))
+        except (ValueError, TypeError): pass
 
         # Signal column colour (col 10) — same colour_cell_req approach as GITHUB DATA
         sig = str(row[10])
@@ -840,6 +858,19 @@ def write_mutual_funds(sh, holdings, tax_data, overlap_data=None, stock_overlap_
         elif ai_dec == "HOLD":            reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 22, "e8eaf6", "3949ab", bold=True))
         elif ai_dec == "WATCH":           reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 22, "fff2cc", "f57f17", bold=True))
         elif ai_dec == "REVIEW / REDUCE": reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 22, "fce8b2", "d32f2f", bold=True))
+
+        # Decision Reason column colour (col 23) — matches AI Decision colours (Strong, Stable, Average, Underperforming)
+        dec_reason = str(row[23]).strip() if len(row) > 23 and row[23] else ""
+        if dec_reason:
+            reason_lower = dec_reason.lower()
+            if "strong" in reason_lower or ai_dec == "BUY / ADD":
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 23, "d9ead3", "0b8043", bold=False))
+            elif "stable" in reason_lower or ai_dec == "HOLD":
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 23, "e8eaf6", "3949ab", bold=False))
+            elif "average" in reason_lower or ai_dec == "WATCH":
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 23, "fff2cc", "f57f17", bold=False))
+            elif "underperforming" in reason_lower or ai_dec == "REVIEW / REDUCE":
+                reqs.append(sheet_formatter.color_cell_req(ws.id, rn, 23, "fce8b2", "d32f2f", bold=False))
 
         # 1Y / 3Y / 5Y Ret% (cols 18, 19, 20) — color_positive_negative (same as GITHUB DATA)
         for ret_col in [18, 19, 20]:
