@@ -21,7 +21,7 @@ NEWS_WORKERS            = 6   # bounded pool for Google News RSS fetch — diffe
 PORTFOLIO_COLUMNS = [
     "Symbol", "Shares", "Avg Buy", "CMP", 
     "Day Chg%", "1W Return %", "1M Return %", "3M Return %", "6M Return %", "12 Months",
-    "Invested", "Value", "P&L", "Not > 5%", "XIRR", "Return %", "Wt %", 
+    "Invested", "Value", "P&L", "Not > 5%", "XIRR", "Return %", "Suggested Exit Target %", "Wt %", 
     "Stop Loss", "Target", "Buy More@", "Signal"
 ]
 SYMBOL_COL = PORTFOLIO_COLUMNS.index("Symbol")

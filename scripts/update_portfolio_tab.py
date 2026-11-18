@@ -89,13 +89,13 @@ def update_portfolio(dry_run=False, exclude_smallcases=False):
 
     if dry_run:
         print("\n=== DRY RUN: PORTFOLIO ROWS ===")
-        header = f"{'Symbol':<14} {'Shares':>8} {'Avg Buy':>10} {'CMP':>10} {'12 Months':>11} {'Invested':>12} {'Value':>12} {'P&L':>10} {'XIRR':>9} {'Return %':>9} {'Signal':<12}"
+        header = f"{'Symbol':<14} {'Shares':>8} {'Avg Buy':>10} {'CMP':>10} {'12 Months':>11} {'Invested':>12} {'Value':>12} {'P&L':>10} {'XIRR':>9} {'Return %':>9} {'Exit Target':<20} {'Signal':<12}"
         print(header)
         print("-" * len(header))
         for r in combined_rows:
             m12_str = f"{r.get('return_12m', '')}%" if r.get('return_12m', '') != "" else ""
             xirr_str = f"{r.get('xirr', '')}%" if r.get('xirr', '') != "" else ""
-            print(f"{r['symbol']:<14} {r['shares']:>8.1f} {r['avg_buy']:>10.2f} {r['cmp']:>10.2f} {m12_str:>11} {r['invested']:>12.2f} {r['value']:>12.2f} {r['pnl']:>10.2f} {xirr_str:>9} {r['return_pct']:>8.2f}% {r.get('signal',''):<12}")
+            print(f"{r['symbol']:<14} {r['shares']:>8.1f} {r['avg_buy']:>10.2f} {r['cmp']:>10.2f} {m12_str:>11} {r['invested']:>12.2f} {r['value']:>12.2f} {r['pnl']:>10.2f} {xirr_str:>9} {r['return_pct']:>8.2f}% {r.get('suggested_exit_target','').replace(chr(10),' | '):<20} {r.get('signal',''):<12}")
         print("-" * len(header))
         tot_xirr_str = f"{portfolio_dict.get('portfolio_xirr', '')}%" if portfolio_dict.get('portfolio_xirr') is not None else ""
         print(f"{'TOTAL':<14} {'':>8} {'':>10} {'':>10} {'':>11} {tot_inv:>12.2f} {tot_val:>12.2f} {tot_pnl:>10.2f} {tot_xirr_str:>9} {tot_ret:>8.2f}%\n")

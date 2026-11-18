@@ -690,7 +690,32 @@ def build_portfolio(prices, imports_dir="data/imports", fund_map=None, source_ma
             c["xirr"] = xirr_val if xirr_val is not None else ""
         except Exception:
             c["xirr"] = ""
-        
+
+        # Suggested Exit Target % — holding-period-based exit range + 20% XIRR equivalent
+        try:
+            entry_dt = get_entry_date(sym, legacy_trades)
+            if entry_dt is not None:
+                holding_days = (date.today() - entry_dt).days
+                holding_months = holding_days / 30.44  # average days per month
+
+                # Suggested gross profit target range based on holding period
+                if holding_months < 3:
+                    target_range = "12–15%"
+                elif holding_months < 6:
+                    target_range = "15–18%"
+                elif holding_months < 12:
+                    target_range = "18–20%"
+                else:
+                    target_range = "20–25%"
+
+                # 20% annualised XIRR equivalent: ((1.20)^(days/365)) - 1
+                xirr_equiv = ((1.20 ** (holding_days / 365)) - 1) * 100
+                c["suggested_exit_target"] = f"{target_range}\n20% XIRR: {xirr_equiv:.2f}%"
+            else:
+                c["suggested_exit_target"] = "N/A"
+        except Exception:
+            c["suggested_exit_target"] = "N/A"
+
         if sym in source_map and source_map[sym]:
             c["investment_source"] = source_map[sym].upper()
         elif fund_map.get(sym, {}).get("sector") == "ETFs" or "BEES" in sym.upper() or sym.upper().endswith("ETF") or sym.upper() in ("ICICIB22", "CPSEETF", "SETFNIF50", "GOLDBEES", "NIFTYBEES"):
@@ -751,7 +776,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
         "Invested": "invested", "Value": "value", "P&L": "pnl",
         "Not > 5%": "not_gt_5pct",
         "XIRR": "xirr",
-        "Return %": "return_pct", "Wt %": "wt_pct",
+        "Return %": "return_pct", "Suggested Exit Target %": "suggested_exit_target", "Wt %": "wt_pct",
         "Stop Loss": "sl_price", "Target": "target", "Buy More@": "buy_more", "Signal": "signal"
     }
 
@@ -954,7 +979,7 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
         "Symbol": 100, "Shares": 55, "Avg Buy": 70, "CMP": 65,
         "Day Chg%": 55, "1W Return %": 65, "1M Return %": 65, "3M Return %": 65, "6M Return %": 65,
         "12 Months": 65,
-        "Invested": 85, "Value": 85, "P&L": 80, "Not > 5%": 75, "XIRR": 65, "Return %": 65, "Wt %": 55,
+        "Invested": 85, "Value": 85, "P&L": 80, "Not > 5%": 75, "XIRR": 65, "Return %": 65, "Suggested Exit Target %": 130, "Wt %": 55,
         "Stop Loss": 70, "Target": 70, "Buy More@": 70, "Signal": 110
     }
     widths = [width_map.get(h, 70) for h in headers]
@@ -1121,6 +1146,35 @@ def write_portfolio(sh, portfolio_dict, tab_name="Portfolio", view_title=None):
                 reqs.append(sheet_formatter.color_cell_req(ws.id, rn, sig_idx, "fff2cc", "7f4f00", bold=True))
             elif "REVIEW" in sig_v:
                 reqs.append(sheet_formatter.color_cell_req(ws.id, rn, sig_idx, "fce8b2", "7f4f00", bold=True))
+
+        # Format Suggested Exit Target % column — wrap text, blue tint
+        if "Suggested Exit Target %" in headers:
+            set_idx = headers.index("Suggested Exit Target %")
+            if set_idx < len(row) and str(row[set_idx]).strip() not in ("", "N/A"):
+                reqs.append({
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": ws.id,
+                            "startRowIndex": rn,
+                            "endRowIndex": rn + 1,
+                            "startColumnIndex": set_idx,
+                            "endColumnIndex": set_idx + 1,
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "wrapStrategy": "WRAP",
+                                "verticalAlignment": "MIDDLE",
+                                "backgroundColor": sheet_formatter.hex_rgb("e8f0fe"),
+                                "textFormat": {
+                                    "foregroundColor": sheet_formatter.hex_rgb("1a237e"),
+                                    "fontSize": 8,
+                                    "bold": False
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat.wrapStrategy,userEnteredFormat.verticalAlignment,userEnteredFormat.backgroundColor,userEnteredFormat.textFormat",
+                    }
+                })
 
         # Color Day Chg%, 1W Return %, 1M Return %, 3M Return %, 6M Return % with canonical return palette
         for ret_col in ("Day Chg%", "1W Return %", "1M Return %", "3M Return %", "6M Return %"):

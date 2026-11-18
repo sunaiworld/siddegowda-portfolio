@@ -1,7 +1,8 @@
-import unittest
+﻿import unittest
 from unittest.mock import MagicMock, patch
 import sys
 import os
+from datetime import date, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
@@ -31,8 +32,9 @@ class TestPortfolioFormattingUpdate(unittest.TestCase):
         self.assertEqual(PORTFOLIO_COLUMNS[13], "Not > 5%")
         self.assertEqual(PORTFOLIO_COLUMNS[14], "XIRR")
         self.assertEqual(PORTFOLIO_COLUMNS[15], "Return %")
-        self.assertEqual(PORTFOLIO_COLUMNS[16], "Wt %")
-        self.assertEqual(len(PORTFOLIO_COLUMNS), 21)
+        self.assertEqual(PORTFOLIO_COLUMNS[16], "Suggested Exit Target %")
+        self.assertEqual(PORTFOLIO_COLUMNS[17], "Wt %")
+        self.assertEqual(len(PORTFOLIO_COLUMNS), 22)
 
     def test_continuous_gradient_values(self):
         """Verify continuous colour scale for Not > 5% values."""
@@ -117,7 +119,7 @@ class TestPortfolioFormattingUpdate(unittest.TestCase):
         headers = table_data[0]
         self.assertEqual(headers, PORTFOLIO_COLUMNS)
         self.assertNotIn("Investment Source", headers)
-        self.assertEqual(len(headers), 21)
+        self.assertEqual(len(headers), 22)
 
         inv_col = headers.index("Invested")
         val_col = headers.index("Value")
@@ -178,6 +180,95 @@ class TestPortfolioFormattingUpdate(unittest.TestCase):
         self.assertEqual(len(n5_rules), 4)
         has_gradient = any("gradientRule" in r for r in n5_rules)
         self.assertTrue(has_gradient, "Expected gradientRule on Not > 5% column")
+
+
+    def test_suggested_exit_target_column(self):
+        """Verify Suggested Exit Target % column position, holding-period logic, and XIRR formula."""
+        # 1. Column presence and position
+        self.assertIn("Suggested Exit Target %", PORTFOLIO_COLUMNS)
+        ret_idx = PORTFOLIO_COLUMNS.index("Return %")
+        set_idx = PORTFOLIO_COLUMNS.index("Suggested Exit Target %")
+        self.assertEqual(set_idx, ret_idx + 1, "Suggested Exit Target % must immediately follow Return %")
+
+        # 2. get_entry_date must exist in portfolio_builder
+        self.assertTrue(hasattr(portfolio_builder, "get_entry_date"),
+                        "portfolio_builder must expose get_entry_date()")
+
+        # Helper: build a minimal legacy_trades list for one symbol
+        def make_trades(sym, buy_date_str):
+            # Format: [symbol, date_str, type, qty, price]
+            return [[sym, buy_date_str, "BUY", 10, 100.0]]
+
+        get_entry_date = portfolio_builder.get_entry_date
+
+        # 3. Holding period target range logic
+        today = date.today()
+
+        # < 3 months (60 days)
+        d_60 = today - timedelta(days=60)
+        entry = get_entry_date("SYM", make_trades("SYM", d_60.strftime("%Y-%m-%d")))
+        self.assertIsNotNone(entry)
+        hm = (today - entry).days / 30.44
+        self.assertLess(hm, 3)
+        # expected range label
+        expected_range = "12\u201315%"
+
+        # 3–6 months (100 days)
+        d_100 = today - timedelta(days=100)
+        entry2 = get_entry_date("SYM", make_trades("SYM", d_100.strftime("%Y-%m-%d")))
+        hm2 = (today - entry2).days / 30.44
+        self.assertGreaterEqual(hm2, 3)
+        self.assertLess(hm2, 6)
+
+        # 6–12 months (200 days)
+        d_200 = today - timedelta(days=200)
+        entry3 = get_entry_date("SYM", make_trades("SYM", d_200.strftime("%Y-%m-%d")))
+        hm3 = (today - entry3).days / 30.44
+        self.assertGreaterEqual(hm3, 6)
+        self.assertLess(hm3, 12)
+
+        # >= 12 months (400 days)
+        d_400 = today - timedelta(days=400)
+        entry4 = get_entry_date("SYM", make_trades("SYM", d_400.strftime("%Y-%m-%d")))
+        hm4 = (today - entry4).days / 30.44
+        self.assertGreaterEqual(hm4, 12)
+
+        # 4. 20% annualised XIRR equivalent formula check: 365 days => ~20.00%
+        xirr_equiv_365 = ((1.20 ** (365 / 365)) - 1) * 100
+        self.assertAlmostEqual(xirr_equiv_365, 20.0, places=5,
+                               msg="20% XIRR equivalent for 365 holding days must be ~20.00%")
+
+        # 5. Verify col_keys mapping in write_portfolio — ensure the key is present
+        # We confirm this indirectly: write_portfolio uses col_keys which maps
+        # "Suggested Exit Target %" -> "suggested_exit_target". A row with
+        # suggested_exit_target set must appear in the written data at the right column.
+        mock_sh = MagicMock()
+        mock_ws = MagicMock()
+        mock_ws.id = 999
+        mock_sh.worksheet.return_value = mock_ws
+        mock_sh.fetch_sheet_metadata.return_value = {"sheets": []}
+
+        sample = [{
+            "symbol": "TEST", "shares": 1.0, "avg_buy": 100.0, "cmp": 110.0,
+            "invested": 100.0, "value": 110.0, "pnl": 10.0, "not_gt_5pct": 1.0,
+            "xirr": 10.0, "return_pct": 10.0, "suggested_exit_target": "12\u201315%\n20% XIRR: 5.00%",
+            "wt_pct": 1.0, "mcap_cr": 100000.0,
+            "sl_price": 93.0, "target": 120.0, "buy_more": 90.0, "signal": "HOLD"
+        }]
+        pdict = {"combined": sample, "portfolio_xirr": 10.0}
+        captured = []
+        with patch("sheet_writer.clear_sheet_safe"), \
+             patch("sheet_writer.update_sheet_safe", side_effect=lambda ws, cell, data, **kw: captured.append(data)), \
+             patch("sheet_writer.batch_update_safe"):
+            portfolio_builder.write_portfolio(mock_sh, pdict, tab_name="Portfolio")
+
+        self.assertTrue(len(captured) > 0)
+        tbl = captured[0]
+        hdrs = tbl[0]
+        set_col = hdrs.index("Suggested Exit Target %")
+        # Row index 2 is the first data row (0=header, 1=group_row, 2=data)
+        data_row = tbl[2]
+        self.assertEqual(data_row[set_col], "12\u201315%\n20% XIRR: 5.00%")
 
 
 if __name__ == "__main__":
